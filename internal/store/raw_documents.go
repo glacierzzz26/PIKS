@@ -14,21 +14,22 @@ const rawDocCols = `id,source_id,external_id,url,title,content,content_hash,` +
 	`published_at,retrieved_at,status,pipeline_version,error,created_at`
 
 // InsertRawDocument 幂等插入;命中 (source_id, content_hash) 唯一约束时返回 (false, nil)。
+// 注意:ON CONFLICT DO NOTHING 冲突时无错误,须用 RowsAffected()==1 判断是否真插入。
 func (s *Store) InsertRawDocument(ctx context.Context, doc *model.RawDocument) (bool, error) {
-	_, err := s.Pool.Exec(ctx,
+	ct, err := s.Pool.Exec(ctx,
 		`INSERT INTO raw_documents(source_id,external_id,url,title,content,content_hash,published_at,status)
 		 VALUES($1,$2,$3,$4,$5,$6,$7,$8)
 		 ON CONFLICT (source_id, content_hash) DO NOTHING`,
 		doc.SourceID, doc.ExternalID, doc.URL, doc.Title, doc.Content,
 		doc.ContentHash, doc.PublishedAt, defaultStr(doc.Status, "raw"))
-	if err == nil {
-		return true, nil
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return false, nil // 并发竞态下的重复
+		}
+		return false, err
 	}
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-		return false, nil // 并发竞态下的重复
-	}
-	return false, err
+	return ct.RowsAffected() == 1, nil
 }
 
 func (s *Store) ListRawPending(ctx context.Context, limit int) ([]model.RawDocument, error) {

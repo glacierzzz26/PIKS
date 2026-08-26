@@ -16,10 +16,10 @@ func (s *Store) CreateSource(ctx context.Context, src *model.Source) error {
 	if len(cfg) == 0 {
 		cfg = json.RawMessage(`{}`)
 	}
-	_, err := s.Pool.Exec(ctx,
-		`INSERT INTO sources(name,source_type,config,status) VALUES($1,$2,$3,$4)`,
-		src.Name, src.SourceType, cfg, defaultStr(src.Status, "active"))
-	return err
+	// RETURNING id 回填 src.ID:新建源后续插入 raw_documents 需要外键。
+	return s.Pool.QueryRow(ctx,
+		`INSERT INTO sources(name,source_type,config,status) VALUES($1,$2,$3,$4) RETURNING id`,
+		src.Name, src.SourceType, cfg, defaultStr(src.Status, "active")).Scan(&src.ID)
 }
 
 func (s *Store) GetSourceByName(ctx context.Context, name string) (model.Source, error) {

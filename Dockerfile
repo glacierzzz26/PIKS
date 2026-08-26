@@ -19,5 +19,5 @@ ENV PIKS_GIT_SHORT=${GIT_SHORT}
 WORKDIR /app
 COPY --from=build /src/migrations /app/migrations
 COPY --from=build /src/prompts /app/prompts
-COPY --from=build /out/bin/ /usr/local/bin/
+COPY --from=build /out/bin/ /app/bin/        # 与 dev 布局一致,脚本统一 ./bin/<cmd>
 ENTRYPOINT []

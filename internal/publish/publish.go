@@ -201,23 +201,33 @@ func CommitVaultWithMsg(vault, msg string) (int, error) {
 	if err := run(vault, "git", "add", "-A"); err != nil {
 		return 0, err
 	}
-	// 无变更则跳过提交(幂等)。
+	// 无变更则跳过提交(幂等);但仍推送一次,把上次可能未推上去的提交补推(up-to-date 时 push 为 no-op)。
 	out, err := exec.Command("git", "-C", vault, "status", "--porcelain").CombinedOutput()
 	if err != nil {
 		return 0, err
 	}
+	remote := os.Getenv("PIKS_VAULT_REMOTE")
 	if len(strings.TrimSpace(string(out))) == 0 {
+		if remote != "" {
+			pushVault(vault)
+		}
 		return 0, nil
 	}
 	if err := run(vault, "git", "-c", "user.name="+gitName(), "-c", "user.email="+gitEmail(),
 		"commit", "-q", "-m", msg); err != nil {
 		return 0, err
 	}
-	if remote := os.Getenv("PIKS_VAULT_REMOTE"); remote != "" {
-		// 推送失败不阻断发布,记录即可
-		_ = run(vault, "git", "push", "-q")
+	if remote != "" {
+		pushVault(vault)
 	}
 	return 1, nil
+}
+
+// pushVault 推送 Generated 仓到远端。失败不阻断发布(设计 D-P10),但写入 stderr 进管线日志,下次运行重试。
+func pushVault(vault string) {
+	if err := run(vault, "git", "push", "-q"); err != nil {
+		fmt.Fprintf(os.Stderr, "warn: vault push failed (will retry next run): %v\n", err)
+	}
 }
 
 // GitShort 代码仓库当前短哈希(最佳努力;失败返回空)。用于卡片 pipeline 血缘。

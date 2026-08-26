@@ -276,7 +276,7 @@ TODAY=$(date +%F); DOW=$(date +%u); HMS=$(date +%H%M)
 [ "$DOW" -ge 6 ] && exit 0                     # 周末
 [ "$HMS" -lt 1610 ] && exit 0                  # 未过收盘后(16:10 放行)
 cd $C
-run(){ echo "== $(date '+%F %T %Z') $*" | tee -a $LOG/pipeline-$TODAY.log; docker compose run --rm tools ./bin/"$@" >> $LOG/pipeline-$TODAY.log 2>&1; }
+run(){ echo "== $(date '+%F %T %Z') $*" | tee -a $LOG/pipeline-$TODAY.log; docker compose run --rm -T tools ./bin/"$@" >> $LOG/pipeline-$TODAY.log 2>&1; }   # -T: cron 非交互,防吞 stdin
 run migrate
 run collector -driver dongcai   # 生产新闻源=东方财富 7x24 快讯;file 驱动仅迭代0 保底
 run worker

@@ -15,7 +15,7 @@ L="$LOG/pipeline-$TODAY.log"
 
 run() {
   echo "== $(date '+%F %T %Z') $*" >> "$L"
-  docker compose -f "$C/docker-compose.yml" run --rm tools ./bin/"$@" >> "$L" 2>&1
+  docker compose -f "$C/docker-compose.yml" run --rm -T tools ./bin/"$@" >> "$L" 2>&1
 }
 
 # 全链:新闻→抽取→聚类→行情→实体→快照→复盘→发布→对账。失败步骤记录不阻断(幂等,可重试)。

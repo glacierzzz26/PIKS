@@ -58,12 +58,13 @@ Collect → Normalize → Dedup(content_hash) → Extract(Event+Fact)
 
 ### 3.0 数据库与 steady 的关系(定稿决策 D7)
 
-- **同 Postgres 实例、独立 database**:PIKS 使用独立 database(库名 `piks`),与 steady 不共享表、不互相调用,保持领域零耦合(守住架构文档"与 steady 不耦合"非目标)。
-- 运维合并:同一实例 = 同一份 docker-compose / 备份脚本可覆盖两边,符合省事目的。
-- 实现配置化:`PIKS_DATABASE_URL` 默认指向 docker 自带独立 postgres;如需复用 steady 的实例,仅需改该连接串 + `CREATE DATABASE piks`,代码与迁移不变。
-- 迁移隔离:steady 的迁移与 PIKS 的 `migrations/` 完全独立,互不干扰。
-- **负载评估**:PIKS 日均 DB 操作约几十次插入 + 发布时几十次查询(数据量 <1MB/天);AI 抽取为外部 HTTP 调用,不占本地 DB/CPU。对共享实例的"压力"可忽略。
-- **真正代价 = 可用性耦合**:实例重启/升级/备份维护同时影响双方。若 steady 为实盘/关键系统 → 独立实例(同 host 双容器亦可),仅共享备份策略;若为个人开发研究 → 共享实例即可。决定不急于拍死:默认独立实例,后续要合并只改 DSN。
+**背景**:steady 后续将上实盘(真实资金),要求在线稳定。→ 隔离优先。
+
+- **决策:DB 级完全隔离** —— PIKS 使用**独立 Postgres 实例**(自带 postgres 容器;与 steady 容器同 host 亦可,DB 级零耦合)。不共享实例、不共享表、不互相调用。
+- 原因:实盘系统不可被 PIKS 的迁移/重启/维护打扰;同样,PIKS 也不受 steady 的升级影响。负载无关(见下),隔离的是**可用性与运维耦合**(blast radius)。
+- **负载评估**:PIKS 日均 DB 操作约几十次插入 + 发布时几十次查询(数据量 <1MB/天);AI 抽取为外部 HTTP 调用,不占本地 DB/CPU。对任何实例的"压力"均可忽略。
+- 备份:两实例各自备份,但**备份策略统一规划**(每日晚间窗口执行,与用户"晚上做迭代"的维护窗口一致)。
+- 实现配置化:`PIKS_DATABASE_URL` 指向 PIKS 自身实例;即使未来想合并,仅改该连接串即可,代码与迁移不变(但决策保持独立,该项仅作应急手段)。
 
 ### 3.1 `sources` — 数据源注册
 ```sql
@@ -391,6 +392,6 @@ pipeline: {pipeline_version}
 | D4 | V1 抽取只产 Fact | AI 推测不进库,Inference/Belief 由用户在 Obsidian 产生 |
 | D5 | 采集双轨 | file 驱动保底验收,dongcai 适配器待验证,G1 缺口化 |
 | D6 | Vault 独立仓库 | 代码仓库与 vault 仓库分离,Generated/Personal 隔离 |
-| D7 | 数据库与 steady | 同 Postgres 实例、独立 database(piks),领域零耦合不共享表;DSN 配置化(§3.0) |
+| D7 | 数据库与 steady | steady 将上实盘 → **独立 Postgres 实例**(DB 级零耦合,同 host 双容器亦可);备份策略统一走晚间窗口;DSN 配置化(§3.0) |
 
 > 确认后冻结本设计(`design/README.md` 登记),开始按契约实现。

@@ -1,0 +1,26 @@
+# 环境与密钥
+.env
+*.env
+.env.*
+
+# Go
+bin/
+*.exe
+*.test
+
+# 构建产物
+dist/
+build/
+
+# 本地数据
+data/
+*.db
+*.sqlite
+
+# Windows 残留
+*:Zone.Identifier
+
+# Obsidian 缓存
+.DS_Store
+.obsidian/
+*.tmp

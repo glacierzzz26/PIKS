@@ -90,6 +90,32 @@ type Observation struct {
 	CreatedAt    time.Time  `db:"created_at"`
 }
 
+// MarketSnapshot 每日市场状态快照(迭代 2,设计 §2.1;架构 §9.7 Market + §9.8 Emotion)。
+type MarketSnapshot struct {
+	ID               string          `db:"id"`
+	TradeDate        time.Time       `db:"trade_date"`
+	IndexJSON        json.RawMessage `db:"index_json"`
+	TurnoverAmt      *float64        `db:"turnover_amt"`
+	Breadth          json.RawMessage `db:"breadth"`
+	LimitUpCount     *int            `db:"limit_up_count"`
+	LimitDownCount   *int            `db:"limit_down_count"`
+	BrokenLimitCount *int            `db:"broken_limit_count"`
+	MaxBoard         *int            `db:"max_board"`
+	ZTPool           json.RawMessage `db:"zt_pool"`
+	StrongYesterday  json.RawMessage `db:"strong_yesterday"`
+	IndustryDist     json.RawMessage `db:"industry_dist"`
+	HotTopics        json.RawMessage `db:"hot_topics"`
+	TopEvents        json.RawMessage `db:"top_events"`
+	CapitalFlow      json.RawMessage `db:"capital_flow"`
+	EmotionScore     *float64        `db:"emotion_score"`
+	EmotionState     *string         `db:"emotion_state"`
+	EmotionDetail    json.RawMessage `db:"emotion_detail"`
+	MyJudgment       *string         `db:"my_judgment"`
+	Evidence         json.RawMessage `db:"evidence"`
+	CreatedAt        time.Time       `db:"created_at"`
+	UpdatedAt        time.Time       `db:"updated_at"`
+}
+
 type Relationship struct {
 	ID         string          `db:"id"`
 	FromType   string          `db:"from_type"`

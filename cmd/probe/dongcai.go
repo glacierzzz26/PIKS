@@ -46,6 +46,32 @@ type zhiboItem struct {
 }
 
 func main() {
+	// 手动扫 -probe 并把 -probe <值> 从 os.Args 中移除(各子命令注册自己 flag 后 Parse)。
+	probeName := "dongcai"
+	clean := []string{os.Args[0]}
+	for i := 1; i < len(os.Args); i++ {
+		if os.Args[i] == "-probe" {
+			if i+1 < len(os.Args) {
+				probeName = os.Args[i+1]
+				i++
+			}
+			continue
+		}
+		clean = append(clean, os.Args[i])
+	}
+	os.Args = clean
+	switch probeName {
+	case "dongcai":
+		probeDongcai()
+	case "quotemarket":
+		probeQuotemarket()
+	default:
+		fmt.Fprintf(os.Stderr, "unknown probe: %s\n", probeName)
+		os.Exit(2)
+	}
+}
+
+func probeDongcai() {
 	pages := flag.Int("pages", 2, "max pages to walk via sortEnd cursor")
 	pageSize := flag.Int("pageSize", 5, "items per page")
 	flag.Parse()

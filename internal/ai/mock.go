@@ -31,6 +31,41 @@ func (m *Mock) StructuredOutput(ctx context.Context, req StructuredRequest) (Str
 		} `json:"events"`
 	}
 	switch {
+	case strings.Contains(req.System, "事件去重确认"):
+		// 去重批量确认:按行解析 "#N: 事件A: X | 事件B: Y",同关键词 → 同事件。
+		var results []map[string]any
+		for _, ln := range strings.Split(user, "\n") {
+			ln = strings.TrimSpace(ln)
+			if !strings.HasPrefix(ln, "#") || !strings.Contains(ln, "事件A:") {
+				continue
+			}
+			idxStr := ln[1:]
+			if k := strings.Index(idxStr, ":"); k >= 0 {
+				idxStr = idxStr[:k]
+			}
+			var idx int
+			fmt.Sscanf(strings.TrimSpace(idxStr), "%d", &idx)
+			parts := strings.SplitN(ln, "|", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			ta := strings.TrimSpace(strings.SplitN(parts[0], "事件A:", 2)[1])
+			tb := strings.TrimSpace(strings.SplitN(parts[1], "事件B:", 2)[1])
+			jj := func(s string) bool { return strings.Contains(s, "降准") || strings.Contains(s, "存款准备金率") }
+			same, title := false, ""
+			if jj(ta) && jj(tb) {
+				same, title = true, "央行宣布下调存款准备金率"
+			} else if strings.Contains(ta, "固态电池") && strings.Contains(tb, "固态电池") {
+				same, title = true, "星河新能源发布新一代固态电池技术路线图"
+			}
+			results = append(results, map[string]any{
+				"pair_index":      idx,
+				"is_same":         same,
+				"canonical_title": title,
+			})
+		}
+		data, _ := json.Marshal(map[string]any{"results": results})
+		return StructuredResponse{Data: data, Usage: Usage{InputTokens: 50, OutputTokens: 30}}, nil
 	case strings.Contains(user, "降准"):
 		out.Events = append(out.Events, struct {
 			Title      string   `json:"title"`

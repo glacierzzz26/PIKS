@@ -87,11 +87,12 @@ func (s *Store) MarkEventPublished(ctx context.Context, id string) error {
 	return err
 }
 
-// ListUnclusteredEvents 返回未聚类候选(status 为可抽取/可复核,cluster_id IS NULL),供 cluster 命令使用。
+// ListUnclusteredEvents 返回未聚类候选(cluster_id IS NULL),供 cluster 命令使用。
+// 含已发布但从未聚类的事件:新事件可能与该已发布事件是同一真实事件,需一并参与去重。
 func (s *Store) ListUnclusteredEvents(ctx context.Context, limit int) ([]model.Event, error) {
 	rows, err := s.Pool.Query(ctx,
 		`SELECT `+eventCols+` FROM events
-		 WHERE cluster_id IS NULL AND status IN ('extracted','verified')
+		 WHERE cluster_id IS NULL AND status IN ('extracted','verified','published')
 		 ORDER BY created_at LIMIT $1`, limit)
 	if err != nil {
 		return nil, err

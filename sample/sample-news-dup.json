@@ -1,0 +1,19 @@
+{
+  "_comment": "迭代1去重验收fixture:与 sample-news.json 同一事件、不同措辞(content_hash不同,不被采集去重拦);mock抽取产出同标题事件 → 触发规则直合聚类",
+  "items": [
+    {
+      "external_id": "fixture-dup-001",
+      "url": "https://example.org/fixture/dup/001",
+      "title": "央行宣布降准0.25个百分点 释放流动性支持实体经济",
+      "content": "中国人民银行今日公布,自2026年9月1日起下调金融机构存款准备金率0.25个百分点,降准旨在保持流动性合理充裕,加大对实体经济支持力度。",
+      "published_at": "2026-08-26T10:00:00+08:00"
+    },
+    {
+      "external_id": "fixture-dup-002",
+      "url": "https://example.org/fixture/dup/002",
+      "title": "星河新能源固态电池路线图发布 公司称能量密度大幅提升",
+      "content": "星河新能源今日公布新一代固态电池技术路线图,固态电池能量密度较现有产品提升40%,公司设定2027年量产装车目标。",
+      "published_at": "2026-08-26T15:00:00+08:00"
+    }
+  ]
+}

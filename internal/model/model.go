@@ -116,6 +116,19 @@ type MarketSnapshot struct {
 	UpdatedAt        time.Time       `db:"updated_at"`
 }
 
+// Entity 统一实体(迭代 3,设计 §2.1;架构 §9.1)。type 判别 + detail JSONB。
+type Entity struct {
+	ID          string          `db:"id"`
+	Type        string          `db:"type"`
+	Name        string          `db:"name"`
+	Aliases     json.RawMessage `db:"aliases"`
+	Description *string         `db:"description"`
+	Detail      json.RawMessage `db:"detail"`
+	Status      string          `db:"status"`
+	CreatedAt   time.Time       `db:"created_at"`
+	UpdatedAt   time.Time       `db:"updated_at"`
+}
+
 type Relationship struct {
 	ID         string          `db:"id"`
 	FromType   string          `db:"from_type"`

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"piks/internal/model"
@@ -25,4 +26,61 @@ func (s *Store) CreateRelationship(ctx context.Context, rel *model.Relationship)
 		return nil // 并发竞态下的重复
 	}
 	return err
+}
+
+const relCols = `id,from_type,from_id,to_type,to_id,rel_type,properties,confidence,source,created_at,valid_from,valid_to`
+
+// ListEntityRelationships 某实体参与的全部关系(实体卡渲染:相关事件/相关行业)。
+func (s *Store) ListEntityRelationships(ctx context.Context, entityID string) ([]model.Relationship, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT `+relCols+` FROM relationships
+		WHERE (from_type='entity' AND from_id=$1) OR (to_type='entity' AND to_id=$1)
+		ORDER BY rel_type`, entityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Relationship])
+}
+
+// ListRelationshipsFromTo 按 from/to 定向查询(实体构建/补链用)。
+func (s *Store) ListRelationshipsFromTo(ctx context.Context, fromType, toType, relType string) ([]model.Relationship, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT `+relCols+` FROM relationships
+		WHERE from_type=$1 AND to_type=$2 AND rel_type=$3
+		ORDER BY from_id`, fromType, toType, relType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Relationship])
+}
+
+// EventRef 事件引用(实体卡相关事件 / hot_topics event_ids)。
+type EventRef struct {
+	ID    string
+	Title string
+}
+
+// ListEventsAffectingEntities rel_type='affects' 到指定实体的事件(去重)。
+// 供:hot_topics 补 event_ids(§3.4)、实体卡"相关事件"节。
+func (s *Store) ListEventsAffectingEntities(ctx context.Context, entityIDs []string) ([]EventRef, error) {
+	if len(entityIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := s.Pool.Query(ctx, `
+		SELECT DISTINCT e.id, e.title
+		FROM relationships r
+		JOIN events e ON e.id = r.from_id
+		WHERE r.from_type='event' AND r.to_type='entity' AND r.rel_type='affects'
+		  AND r.to_id = ANY($1)
+		ORDER BY e.title`, entityIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (EventRef, error) {
+		var ref EventRef
+		return ref, r.Scan(&ref.ID, &ref.Title)
+	})
 }

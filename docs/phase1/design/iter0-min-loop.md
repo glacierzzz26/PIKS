@@ -56,6 +56,13 @@ Collect → Normalize → Dedup(content_hash) → Extract(Event+Fact)
 
 > 迁移文件:`migrations/0001_init.sql`。`gen_random_uuid()` 需 `pgcrypto` 扩展。
 
+### 3.0 数据库与 steady 的关系(定稿决策 D7)
+
+- **同 Postgres 实例、独立 database**:PIKS 使用独立 database(库名 `piks`),与 steady 不共享表、不互相调用,保持领域零耦合(守住架构文档"与 steady 不耦合"非目标)。
+- 运维合并:同一实例 = 同一份 docker-compose / 备份脚本可覆盖两边,符合省事目的。
+- 实现配置化:`PIKS_DATABASE_URL` 默认指向 docker 自带独立 postgres;如需复用 steady 的实例,仅需改该连接串 + `CREATE DATABASE piks`,代码与迁移不变。
+- 迁移隔离:steady 的迁移与 PIKS 的 `migrations/` 完全独立,互不干扰。
+
 ### 3.1 `sources` — 数据源注册
 ```sql
 CREATE TABLE sources (
@@ -209,7 +216,13 @@ piks/
 ```
 
 ### 命令语义
-- `collector`:`-driver file|dongcai`,`-input`(file 驱动);产出 raw_documents,写 task_runs。
+- `collector`:`-driver file|dongcai`,`-input`(file 驱动);产出 raw_documents,写 task_runs;**记录每源成功/失败计数到 `task_runs.meta`,单源连续失败 ≥3 次自动暂停该源(`sources.status='paused'`)**。
+
+### 源健康监控(应对非官方源不稳定)
+"快讯"品类(东财/新浪/同花顺)均为网页内部接口,无官方公开 API、无 SLA、随时可能改格式或加反爬。对策:
+1. **健康监控**:每源成功/失败计数入 `task_runs.meta`,连续失败自动 pause(见上);
+2. **可换可补**:采集走适配器,补源/换源零成本;稳定替代源列入 G 缺口——巨潮公告(官方稳定)、政府/央媒官方 RSS、商业数据源(Tushare 积分/付费);
+3. **验收不依赖外部源**:file 驱动保证闭环先跑通。
 - `worker`:取 `status='raw'` 的 raw_documents → 逐条抽取 → 校验 → 入 events/evidences → 标记 processed/failed,写 task_runs。
 - `publisher`:取 `status in ('extracted','verified')` 且未发布的事件 → 渲染 Markdown → 提交并推送 vault 仓库,写 task_runs。
 
@@ -239,6 +252,7 @@ type Provider interface {
 
 ### 5.3 模型分层与路由(省钱核心)
 > 原则:**90% 调用(机械抽取)走最便宜档;高智模型只留给每周一两次、真正需要推理深度的节点。**
+> 无本地模型:本系统只使用厂商大模型(用户明确无本地 LLM),不配置本地回退。
 
 | 环节 | 频率 | 档位 | 默认模型建议 | 备注 |
 |---|---|---|---|---|
@@ -247,7 +261,6 @@ type Provider interface {
 | 语义去重/聚类 | 高频·迭代1 | 便宜档→规则优先 | 同上 | 先规则,规则不行再上模型 |
 | 每日复盘聚合 | 中频·每日1 | 中档 | 中等模型 | 单次调用 |
 | **周报/深度复盘/疑难判断** | **低频·每周1~2** | **高智档** | `deepseek-reasoner` 或 Claude 高智档 | **关键节点,全系统唯一值得花大钱处** |
-| 备用 | 随时 | 本地 | Ollama | Provider 抽象允许,断网可跑抽取 |
 
 配置结构(路由按任务键取模型):
 ```yaml
@@ -309,7 +322,7 @@ type RawNews struct {
 | 驱动 | 状态 | 说明 |
 |---|---|---|
 | `file` | ✅ 保底 | 读本地 JSON/txt,迭代 0 验收用样例,保证闭环不依赖外部 API |
-| `dongcai` | 🔶 待验证 | 东方财富快讯;真实 DTO 待实现时验证后填 §6.3,验证受阻则记为 G1 缺口 |
+| `dongcai` | 🔶 待验证 | 东方财富快讯(网页内部接口,**非官方、无 SLA**);真实 DTO 实现时验证后填 §6.3;不稳定 → 由源健康监控 + 适配器换源兜底(备选:巨潮公告/政府RSS/商业源,G2~G5) |
 | 未来 | ⬜ | 政策/行情/公告等(见 `进度总表.md` G2~G5) |
 
 ### 6.3 现有接口契约(待验证)
@@ -376,5 +389,6 @@ pipeline: {pipeline_version}
 | D4 | V1 抽取只产 Fact | AI 推测不进库,Inference/Belief 由用户在 Obsidian 产生 |
 | D5 | 采集双轨 | file 驱动保底验收,dongcai 适配器待验证,G1 缺口化 |
 | D6 | Vault 独立仓库 | 代码仓库与 vault 仓库分离,Generated/Personal 隔离 |
+| D7 | 数据库与 steady | 同 Postgres 实例、独立 database(piks),领域零耦合不共享表;DSN 配置化(§3.0) |
 
 > 确认后冻结本设计(`design/README.md` 登记),开始按契约实现。

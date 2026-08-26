@@ -62,6 +62,8 @@ Collect → Normalize → Dedup(content_hash) → Extract(Event+Fact)
 - 运维合并:同一实例 = 同一份 docker-compose / 备份脚本可覆盖两边,符合省事目的。
 - 实现配置化:`PIKS_DATABASE_URL` 默认指向 docker 自带独立 postgres;如需复用 steady 的实例,仅需改该连接串 + `CREATE DATABASE piks`,代码与迁移不变。
 - 迁移隔离:steady 的迁移与 PIKS 的 `migrations/` 完全独立,互不干扰。
+- **负载评估**:PIKS 日均 DB 操作约几十次插入 + 发布时几十次查询(数据量 <1MB/天);AI 抽取为外部 HTTP 调用,不占本地 DB/CPU。对共享实例的"压力"可忽略。
+- **真正代价 = 可用性耦合**:实例重启/升级/备份维护同时影响双方。若 steady 为实盘/关键系统 → 独立实例(同 host 双容器亦可),仅共享备份策略;若为个人开发研究 → 共享实例即可。决定不急于拍死:默认独立实例,后续要合并只改 DSN。
 
 ### 3.1 `sources` — 数据源注册
 ```sql

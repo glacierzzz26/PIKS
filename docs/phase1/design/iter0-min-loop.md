@@ -395,3 +395,36 @@ pipeline: {pipeline_version}
 | D7 | 数据库与 steady | steady 将上实盘 → **独立 Postgres 实例**(DB 级零耦合,同 host 双容器亦可);备份策略统一走晚间窗口;DSN 配置化(§3.0) |
 
 > 确认后冻结本设计(`design/README.md` 登记),开始按契约实现。
+
+---
+
+## 10. 部署资源评估(供准备机器)
+
+### 负载画像(为什么这么省)
+- 三个命令均为 **cron 定时批任务**,大部分时间空闲;
+- AI 全部走 **外部 HTTP API**(DeepSeek 等),本地无 GPU 需求、无持续计算;
+- 数据量极小:日均 <1MB,数年(含索引/原始新闻/备份)仍 <10GB;
+- 常驻进程只有 Postgres + Docker。
+
+### 建议配置
+
+| 资源 | 最低 | 推荐 | 说明 |
+|---|---|---|---|
+| vCPU | 1 | 2 | 定时批任务,无持续负载;2 核留余量 |
+| 内存 | 1GB | 2GB | Postgres ~0.5GB + 系统/Docker ~0.6GB + worker 峰值 ~0.1GB;2GB 舒适 |
+| 磁盘(SSD) | 20GB | 40GB | DB 数年 <10GB + Docker 镜像 + Go 构建缓存 + 备份 |
+| GPU | 无 | 无 | 不需要,AI 在外部 |
+| 带宽 | 出站 HTTPS | 同左 | 文本数据,流量极小 |
+
+### 与 steady 同机?
+- 建议 **不与实盘的 steady 同机**;若同机,把 steady 的资源需求叠加(实盘需充足余量),PIKS 部分仅 +1~2GB 内存 + 1 vCPU。
+
+### 区域与网络
+- 国内云(阿里云/腾讯云轻量):DeepSeek/东财访问顺畅;git 远端用 **Gitee 或自建 Gitea**(GitHub 可能不稳)。
+- 海外云:GitHub 顺畅,但访问东财等国内源可能慢/受限。
+- 需出站访问:AI API(base_url)、新闻源、git 远端。
+
+### 运维注意
+- **NTP 时间同步**(时间戳是核心数据的一部分);
+- 每日晚间备份窗口(与用户迭代窗口一致);
+- 需要 docker + docker compose。

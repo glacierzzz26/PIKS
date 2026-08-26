@@ -3,7 +3,7 @@
 # 输出一行到 logs/health.log;可挂 cron 或手动查。
 set -uo pipefail
 export TZ=Asia/Shanghai
-C=/srv/piks; LOG=$C/logs
+C=/home/rguo/piks; LOG=$C/logs
 TODAY=$(date +%F); DOW=$(date +%u); HMS=$(date +%H%M)
 mkdir -p "$LOG"
 line="ok"

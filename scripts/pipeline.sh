@@ -4,7 +4,7 @@
 # 免疫宿主时区:全部按北京时间判定(cron 用宿主 UTC,写死时刻会错 8h)。
 set -uo pipefail
 export TZ=Asia/Shanghai
-C=/srv/piks; LOG=$C/logs
+C=/home/rguo/piks; LOG=$C/logs
 TODAY=$(date +%F); DOW=$(date +%u); HMS=$(date +%H%M)
 
 [ -f "$LOG/pipeline-$TODAY.done" ] && exit 0      # 今日已跑

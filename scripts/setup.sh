@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# PIKS 生产机 lab 一次性初始化(幂等,可重跑)。真实密钥先填 /srv/piks/.env 再跑(见 configs/.env.prod.example)。
+# PIKS 生产机 lab 一次性初始化(幂等,可重跑)。真实密钥先填 /home/rguo/piks/.env 再跑(见 configs/.env.prod.example)。
 # 前置:rguo 免密 SSH、docker 组可用、出站可达 github/opencode/eastmoney。无 sudo 依赖。
 set -euo pipefail
 export TZ=Asia/Shanghai
-C=/srv/piks
+C=/home/rguo/piks
 ARCH=$(uname -m); [ "$ARCH" = "x86_64" ] && PLAT=linux-x86_64 || PLAT=linux-aarch64
 
 echo "== 1/12 目录"
@@ -58,8 +58,8 @@ cp "$C/piks/scripts/"*.sh "$C/scripts/"
 chmod +x "$C/scripts/"*.sh
 
 echo "== 11/12 crontab(幂等追加)"
-CRON_LINE="*/15 * * * * /srv/piks/scripts/pipeline.sh >> /srv/piks/logs/cron.log 2>&1"
-BACKUP_LINE="59 23 * * * /srv/piks/scripts/backup.sh >> /srv/piks/logs/cron.log 2>&1"
+CRON_LINE="*/15 * * * * /home/rguo/piks/scripts/pipeline.sh >> /home/rguo/piks/logs/cron.log 2>&1"
+BACKUP_LINE="59 23 * * * /home/rguo/piks/scripts/backup.sh >> /home/rguo/piks/logs/cron.log 2>&1"
 { crontab -l 2>/dev/null | grep -v -F "$CRON_LINE" | grep -v -F "$BACKUP_LINE"; echo "$CRON_LINE"; echo "$BACKUP_LINE"; } | crontab -
 
 echo "== 12/12 时间核对(容器内应为北京时间)"

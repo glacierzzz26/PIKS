@@ -17,6 +17,7 @@ import (
 
 func main() {
 	limit := flag.Int("limit", 50, "max raw documents to process per run")
+	retry := flag.Bool("retry", false, "also pick previously failed documents")
 	flag.Parse()
 
 	cfg := config.Load()
@@ -42,7 +43,7 @@ func main() {
 		finishFail(ctx, s, runID, err)
 	}
 
-	docs, err := s.ListRawPending(ctx, *limit)
+	docs, err := s.ListRawPendingStatus(ctx, *limit, *retry)
 	if err != nil {
 		finishFail(ctx, s, runID, err)
 	}

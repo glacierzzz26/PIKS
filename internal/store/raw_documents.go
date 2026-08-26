@@ -33,8 +33,17 @@ func (s *Store) InsertRawDocument(ctx context.Context, doc *model.RawDocument) (
 }
 
 func (s *Store) ListRawPending(ctx context.Context, limit int) ([]model.RawDocument, error) {
-	rows, err := s.Pool.Query(ctx,
-		`SELECT `+rawDocCols+` FROM raw_documents WHERE status='raw' ORDER BY retrieved_at LIMIT $1`, limit)
+	return s.ListRawPendingStatus(ctx, limit, false)
+}
+
+// ListRawPendingStatus 取待处理文档;includeFailed=true 时含 failed(重试场景)。
+func (s *Store) ListRawPendingStatus(ctx context.Context, limit int, includeFailed bool) ([]model.RawDocument, error) {
+	q := `SELECT ` + rawDocCols + ` FROM raw_documents WHERE status='raw'`
+	if includeFailed {
+		q = `SELECT ` + rawDocCols + ` FROM raw_documents WHERE status IN ('raw','failed')`
+	}
+	q += ` ORDER BY retrieved_at LIMIT $1`
+	rows, err := s.Pool.Query(ctx, q, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -43,7 +52,7 @@ func (s *Store) ListRawPending(ctx context.Context, limit int) ([]model.RawDocum
 
 func (s *Store) MarkRawProcessed(ctx context.Context, id string, pipelineVersion string) error {
 	_, err := s.Pool.Exec(ctx,
-		`UPDATE raw_documents SET status='processed', pipeline_version=$2, updated_at=now() WHERE id=$1`,
+		`UPDATE raw_documents SET status='processed', pipeline_version=$2, error=NULL, updated_at=now() WHERE id=$1`,
 		id, pipelineVersion)
 	return err
 }

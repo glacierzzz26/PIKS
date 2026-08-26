@@ -54,7 +54,7 @@ Collect → Normalize → Dedup(content_hash) → Extract(Event+Fact)
 
 ## 3. 数据模型(7 张表)
 
-> 迁移文件:`migrations/0001_init.sql`。`gen_random_uuid()` 需 `pgcrypto` 扩展。
+> 迁移文件:`migrations/0001_init.sql`。PostgreSQL 16+ 内置 `gen_random_uuid()`,无需 `pgcrypto` 扩展。
 
 ### 3.0 数据库与 steady 的关系(定稿决策 D7)
 

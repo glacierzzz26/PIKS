@@ -19,9 +19,11 @@ run() {
 }
 
 # 全链:新闻→抽取→聚类→行情→实体→快照→复盘→发布→对账。失败步骤记录不阻断(幂等,可重试)。
+# 生产新闻源 = 东方财富 7x24 快讯(dongcai 驱动);file 驱动仅迭代0 保底,生产不用。
 ok=1
-for c in migrate collector worker cluster quote-collector entity-build market-state daily-review publisher reconcile; do
-  if run "$c"; then echo "== ok $c" >> "$L"; else echo "== FAIL $c" >> "$L"; ok=0; fi
+for c in migrate "collector -driver dongcai" worker cluster quote-collector entity-build market-state daily-review publisher reconcile; do
+  # shellcheck disable=SC2086   # $c 含参数时按空格拆分为独立参数
+  if run $c; then echo "== ok $c" >> "$L"; else echo "== FAIL $c" >> "$L"; ok=0; fi
 done
 
 if [ "$ok" -eq 1 ]; then

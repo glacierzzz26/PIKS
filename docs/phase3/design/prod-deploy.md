@@ -278,7 +278,7 @@ TODAY=$(date +%F); DOW=$(date +%u); HMS=$(date +%H%M)
 cd $C
 run(){ echo "== $(date '+%F %T %Z') $*" | tee -a $LOG/pipeline-$TODAY.log; docker compose run --rm tools ./bin/"$@" >> $LOG/pipeline-$TODAY.log 2>&1; }
 run migrate
-run collector
+run collector -driver dongcai   # 生产新闻源=东方财富 7x24 快讯;file 驱动仅迭代0 保底
 run worker
 run cluster
 run quote-collector
@@ -421,6 +421,7 @@ ssh "$LAB" 'docker compose -f /home/rguo/piks/docker-compose.yml up -d postgres 
 - **构建模型改为 dev 本地编译 + 镜像传输**(用户明确「本地编译,把镜像拷贝过去」):lab 不再 clone 代码仓库、不再 lab 侧 `docker build`。交付物 = 镜像(`docker save | ssh docker load`)+ compose + 3 个 lab 侧脚本。`deploy.sh`/`setup.sh` 均为 dev 侧执行;§4 D-P5/D-P12、§6、§11、§14 已同步更新。
 - **vault 基线从 dev rsync 而非 lab clone GitHub**:lab 拉 GitHub 私有仓实测 HTTP2 framing error / 超时(即使 `http.version HTTP/1.1` 仍极慢);改由 dev 把 `PIKS-Vault/Generated` 基线(排除 09-Personal/.obsidian)rsync 到 lab,lab 侧只设 origin + env 凭据 helper,首次 push 仍由 publisher 完成(§10 方案 B 不变)。
 - **compose 插件从 dev 拷贝**:lab 无 compose 插件,`docker-compose` 二进制由 dev scp 到 `~/.docker/cli-plugins/`,免 GitHub 下载。
+- **collector 生产驱动 = dongcai(东方财富 7x24 快讯)**:`pipeline.sh` 显式传 `-driver dongcai`;`file` 驱动需 `-input` 路径,仅迭代0 保底,生产不用。
 
 ### 待办(需 sudo / 后续)
 

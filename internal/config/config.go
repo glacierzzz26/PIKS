@@ -13,7 +13,7 @@ type Config struct {
 	AIModelReasoning string
 	// 日 token 预算,0 = 关闭护栏
 	AIDailyTokenBudget int64
-	// 生成的 Obsidian vault 仓库路径
+	// 生成的 Obsidian vault 仓库路径(设计 §7:独立 git 仓库,与代码仓库分离)
 	VaultPath string
 }
 
@@ -25,7 +25,7 @@ func Load() Config {
 		AIModelExtract:     getenv("PIKS_AI_MODEL_EXTRACT", "deepseek-chat"),
 		AIModelReasoning:   getenv("PIKS_AI_MODEL_REASONING", "deepseek-reasoner"),
 		AIDailyTokenBudget: atoi64(os.Getenv("PIKS_AI_DAILY_TOKEN_BUDGET")),
-		VaultPath:          getenv("PIKS_VAULT_PATH", "./vault"),
+		VaultPath:          getenv("PIKS_VAULT_PATH", "./PIKS-Vault"),
 	}
 }
 

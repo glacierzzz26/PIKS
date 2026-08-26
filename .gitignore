@@ -24,3 +24,6 @@ data/
 .DS_Store
 .obsidian/
 *.tmp
+
+# Obsidian vault(独立 git 仓库,与代码仓库分离)
+PIKS-Vault/

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -41,6 +42,36 @@ func (s *Store) ListEventsForPublish(ctx context.Context) ([]model.Event, error)
 		return nil, err
 	}
 	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Event])
+}
+
+// EventForPublish 发布器视角的事件视图:事件字段 + 来源名(join sources)。
+type EventForPublish struct {
+	ID              string          `db:"id"`
+	Title           string          `db:"title"`
+	EventType       string          `db:"event_type"`
+	Summary         *string         `db:"summary"`
+	Facts           json.RawMessage `db:"facts"`
+	Affected        json.RawMessage `db:"affected"`
+	OccurredAt      *time.Time      `db:"occurred_at"`
+	CreatedAt       time.Time       `db:"created_at"`
+	Confidence      float64         `db:"confidence"`
+	PipelineVersion *string         `db:"pipeline_version"`
+	Status          string          `db:"status"`
+	SourceName      string          `db:"source_name"`
+}
+
+// ListEventsForPublishWithSource 同 ListEventsForPublish,附带来源名供卡片 front matter 使用。
+func (s *Store) ListEventsForPublishWithSource(ctx context.Context) ([]EventForPublish, error) {
+	rows, err := s.Pool.Query(ctx,
+		`SELECT e.id,e.title,e.event_type,e.summary,e.facts,e.affected,e.occurred_at,e.created_at,
+		        e.confidence,e.pipeline_version,e.status,s.name AS source_name
+		 FROM events e JOIN sources s ON s.id=e.source_id
+		 WHERE e.status IN ('extracted','verified')
+		 ORDER BY e.occurred_at NULLS LAST, e.created_at`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByName[EventForPublish])
 }
 
 func (s *Store) MarkEventPublished(ctx context.Context, id string) error {

@@ -19,6 +19,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -174,6 +175,49 @@ func (d *quotemarketDriver) Fetch(ctx context.Context, date string) (*MarketSnap
 	}
 
 	return raw, nil
+}
+
+// FetchDailyReturns 批量拉取一批代码的当日涨跌幅% → {code: pct}(昨日强势股计算用)。
+// 端点 ulist.np 实测(2026-08-26)受 WAF 限流(SSL RST)且不稳定 → 尽力而为,失败返回 nil 由调用方标 missing。
+func (d *quotemarketDriver) FetchDailyReturns(ctx context.Context, codes []string) (map[string]float64, error) {
+	if len(codes) == 0 {
+		return nil, nil
+	}
+	secids := make([]string, 0, len(codes))
+	for _, c := range codes {
+		secids = append(secids, codeToSecid(c))
+	}
+	u := fmt.Sprintf("%s?ut=fa5fd1943c7b386f172d6893dbfba10b&fltt=2&secids=%s&fields=f2,f3,f12",
+		ulistURL, strings.Join(secids, ","))
+	var r struct {
+		Data *struct {
+			Diff []struct {
+				F3  float64 `json:"f3"`  // 涨跌幅%
+				F12 string  `json:"f12"` // 代码
+			} `json:"diff"`
+		} `json:"data"`
+	}
+	if err := d.getJSON(ctx, u, &r, 2); err != nil {
+		return nil, err
+	}
+	if r.Data == nil {
+		return nil, fmt.Errorf("empty ulist data")
+	}
+	out := make(map[string]float64, len(r.Data.Diff))
+	for _, it := range r.Data.Diff {
+		if it.F12 != "" {
+			out[it.F12] = it.F3
+		}
+	}
+	return out, nil
+}
+
+// codeToSecid 6 开头 → 沪市(1.xxx),否则深市(0.xxx)。东财 secid 规则。
+func codeToSecid(code string) string {
+	if len(code) >= 1 && code[0] == '6' {
+		return "1." + code
+	}
+	return "0." + code
 }
 
 // fetchPool 拉取一个池端点;返回条目与 data.qdate。失败重试 attempts 次。

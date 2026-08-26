@@ -146,3 +146,19 @@ func (s *Store) GetEventByID(ctx context.Context, id string) (model.Event, error
 	}
 	return pgx.CollectOneRow(rows, pgx.RowToStructByName[model.Event])
 }
+
+// ListEventsByDate 某自然日的已抽取事件(occurred_at 命中该日;occurred_at 为空时退回 created_at)。
+// 供 market-state/daily-review 的 top_events(每日复盘第 11 项)与 hot_topics 派生。
+func (s *Store) ListEventsByDate(ctx context.Context, day time.Time) ([]model.Event, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT `+eventCols+` FROM events
+		WHERE (occurred_at >= $1 AND occurred_at < $1 + interval '1 day')
+		   OR (occurred_at IS NULL AND created_at >= $1 AND created_at < $1 + interval '1 day')
+		ORDER BY occurred_at NULLS LAST, created_at DESC
+		LIMIT 50`, day)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Event])
+}

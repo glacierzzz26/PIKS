@@ -1,68 +1,48 @@
 #!/usr/bin/env bash
-# PIKS 生产机 lab 一次性初始化(幂等,可重跑)。真实密钥先填 /home/rguo/piks/.env 再跑(见 configs/.env.prod.example)。
-# 前置:rguo 免密 SSH、docker 组可用、出站可达 github/opencode/eastmoney。无 sudo 依赖。
+# PIKS 生产机 lab 一次性初始化(在 dev 侧执行,幂等可重跑)。
+# 前置:rguo@192.168.0.202 免密 ssh;dev 可 docker 构建;/home/rguo/piks/.env 已按 configs/.env.prod.example 填真实值。
+# 模型:dev 本地编译镜像 → 传输 lab(docker save|load);lab 不保留代码仓库。
 set -euo pipefail
-export TZ=Asia/Shanghai
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+LAB="${PIKS_LAB:-rguo@192.168.0.202}"
 C=/home/rguo/piks
-ARCH=$(uname -m); [ "$ARCH" = "x86_64" ] && PLAT=linux-x86_64 || PLAT=linux-aarch64
 
-echo "== 1/12 目录"
-mkdir -p "$C"/{vault,backups,logs,scripts}
+echo "== 1/10 目录 + 传输 compose/脚本"
+ssh "$LAB" "mkdir -p $C/vault $C/backups $C/logs $C/scripts"
+scp "$REPO/configs/docker-compose.prod.yml" "$LAB:$C/docker-compose.yml"
+scp "$REPO/scripts/pipeline.sh" "$REPO/scripts/backup.sh" "$REPO/scripts/health.sh" "$LAB:$C/scripts/"
+ssh "$LAB" "chmod +x $C/scripts/*.sh"
 
-echo "== 2/12 代码(dev 线)"
-if [ ! -d "$C/piks/.git" ]; then
-  git clone -b dev https://github.com/glacierzzz26/PIKS.git "$C/piks"
-else
-  git -C "$C/piks" fetch origin && git -C "$C/piks" pull --ff-only
+echo "== 2/10 .env(必须已填真实值,无 CHANGE_ME 占位)"
+ssh "$LAB" "test -f $C/.env && ! grep -q CHANGE_ME $C/.env || { echo '!! 先创建 $C/.env(见 configs/.env.prod.example)再跑'; exit 1; }; chmod 600 $C/.env"
+
+echo "== 3/10 compose 插件(从 dev 拷贝,免网络下载)"
+scp /usr/libexec/docker/cli-plugins/docker-compose "$LAB:/tmp/docker-compose"
+ssh "$LAB" "mkdir -p ~/.docker/cli-plugins && mv /tmp/docker-compose ~/.docker/cli-plugins/docker-compose && chmod +x ~/.docker/cli-plugins/docker-compose && docker compose version"
+
+echo "== 4/10 镜像构建 + 传输"
+"$REPO/scripts/deploy.sh"
+
+echo "== 5/10 postgres 起 + 就绪"
+ssh "$LAB" "docker compose -f $C/docker-compose.yml up -d postgres"
+ssh "$LAB" "until docker compose -f $C/docker-compose.yml exec -T postgres pg_isready -U piks -d piks >/dev/null 2>&1; do sleep 2; done; echo 'pg ready'"
+
+echo "== 6/10 migrate"
+ssh "$LAB" "docker compose -f $C/docker-compose.yml run --rm tools ./bin/migrate"
+
+echo "== 7/10 vault 工作仓(基线从 dev Generated rsync,避免 lab 拉 GitHub 私有仓)"
+if ! ssh "$LAB" "test -d $C/vault/.git"; then
+  rsync -a --delete --exclude '09-Personal' --exclude '.obsidian' --exclude '.DS_Store' "$REPO/PIKS-Vault/" "$LAB:$C/vault/"
+  ssh "$LAB" "git -C $C/vault config remote.origin.url https://github.com/glacierzzz26/PIKS-Vault.git; git -C $C/vault config credential.helper '!f(){ echo username=glacierzzz26; echo password=\${PIKS_VAULT_GIT_TOKEN}; }; f'"
 fi
 
-echo "== 3/12 compose 实例化"
-[ -f "$C/docker-compose.yml" ] || cp "$C/piks/configs/docker-compose.prod.yml" "$C/docker-compose.yml"
-
-echo "== 4/12 .env(真实值)"
-if [ ! -f "$C/.env" ]; then
-  cp "$C/piks/configs/.env.prod.example" "$C/.env"; chmod 600 "$C/.env"
-  echo "!! 请先填 $C/.env 真实值(PIKS_DB_PASSWORD / PIKS_AI_API_KEY / PIKS_VAULT_GIT_TOKEN),再重跑"
-  exit 1
-fi
-chmod 600 "$C/.env"
-set -a; source "$C/.env"; set +a
-grep -q 'CHANGE_ME' "$C/.env" && { echo "!! $C/.env 仍有 CHANGE_ME 占位,先填真实值"; exit 1; }
-
-echo "== 5/12 compose 插件(用户级,免 sudo)"
-if ! docker compose version >/dev/null 2>&1; then
-  mkdir -p "$HOME/.docker/cli-plugins"
-  curl -sSL "https://github.com/docker/compose/releases/download/v2.39.3/docker-compose-$PLAT" \
-    -o "$HOME/.docker/cli-plugins/docker-compose"
-  chmod +x "$HOME/.docker/cli-plugins/docker-compose"
-fi
-
-echo "== 6/12 镜像"
-docker build --build-arg GIT_SHORT="$(git -C "$C/piks" rev-parse --short HEAD)" -t piks-tools:latest "$C/piks"
-
-echo "== 7/12 postgres"
-docker compose -f "$C/docker-compose.yml" up -d postgres
-until docker compose -f "$C/docker-compose.yml" exec -T postgres pg_isready -U piks -d piks >/dev/null 2>&1; do sleep 2; done
-
-echo "== 8/12 migrate"
-docker compose -f "$C/docker-compose.yml" run --rm tools ./bin/migrate
-
-echo "== 9/12 vault 工作仓(origin=GitHub 私有仓,credential helper 只从 env 读 token)"
-if [ ! -d "$C/vault/.git" ]; then
-  git clone "$PIKS_VAULT_REMOTE" "$C/vault"
-  git -C "$C/vault" config credential.helper '!f(){ echo username=glacierzzz26; echo password=${PIKS_VAULT_GIT_TOKEN}; }; f'
-fi
-
-echo "== 10/12 脚本"
-cp "$C/piks/scripts/"*.sh "$C/scripts/"
-chmod +x "$C/scripts/"*.sh
-
-echo "== 11/12 crontab(幂等追加)"
+echo "== 8/10 crontab(幂等追加)"
 CRON_LINE="*/15 * * * * /home/rguo/piks/scripts/pipeline.sh >> /home/rguo/piks/logs/cron.log 2>&1"
 BACKUP_LINE="59 23 * * * /home/rguo/piks/scripts/backup.sh >> /home/rguo/piks/logs/cron.log 2>&1"
-{ crontab -l 2>/dev/null | grep -v -F "$CRON_LINE" | grep -v -F "$BACKUP_LINE"; echo "$CRON_LINE"; echo "$BACKUP_LINE"; } | crontab -
+ssh "$LAB" "{ crontab -l 2>/dev/null | grep -v -F '$CRON_LINE' | grep -v -F '$BACKUP_LINE'; echo '$CRON_LINE'; echo '$BACKUP_LINE'; } | crontab -"
 
-echo "== 12/12 时间核对(容器内应为北京时间)"
-docker compose -f "$C/docker-compose.yml" run --rm tools date
+echo "== 9/10 时间核对(容器内应为北京时间)"
+ssh "$LAB" "docker compose -f $C/docker-compose.yml run --rm tools date"
 
-echo "setup done。剩余:初始数据同步(dev→lab pg_dump)+ 验收 §15,由部署者执行。"
+echo "== 10/10 初始数据同步由部署者单独执行(pg_dump dev→lab,设计 §8.3)"
+echo "setup done"

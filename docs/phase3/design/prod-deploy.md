@@ -93,14 +93,14 @@ reconcile(对账,放末尾)
 | D-P2 | 编排方式 | **compose**:用户级装插件 `~/.docker/cli-plugins/docker-compose`(免 sudo,一次性) | 裸 `docker run`(零安装,脚本内写死网络/卷) | dev 已用 compose;同一份配置单一来源 |
 | D-P3 | 时区 | 容器级 `TZ=Asia/Shanghai`(所有进程);lab 系统时区不改;NTP 系统级待办 | — | 非交易日判定/快照 trade_date/复盘页日期全是「本地日」,UTC 会错 8h;无 sudo 改不了系统 |
 | D-P4 | 代码来源 | lab `git clone` 公开仓 `origin/dev`,免密钥 | rsync 从 dev | PIKS 仓 PUBLIC;跟踪 dev 与发布线一致 |
-| D-P5 | 构建 | 仓库根 `Dockerfile` 多阶段,`CGO_ENABLED=0` 静态 → alpine 运行镜像;lab 本地 `docker build` | dev 构建 scp 镜像 | 复用 repo 内唯一 Dockerfile;lab 出站验证过,模块可下 |
+| D-P5 | 构建 | **dev 本地编译** → `docker save\|ssh docker load` 传输 lab(**用户 2026-08-27 指示变更**);lab 不保留代码仓库 | lab 本地 build(已弃) | 实测 lab 拉 GitHub git 协议不稳(HTTP2 framing / 超时);dev 编译最稳,镜像唯一交付物 |
 | D-P6 | 配置/密钥 | 提交 `configs/.env.prod.example`(无真实值);lab `/home/rguo/piks/.env`(0600);**密钥永不进 git、不打印** | — | 安全红线(不变) |
 | D-P7 | 数据库 | compose 内 postgres 容器 + named volume;migrate 容器内跑;初始数据 **pg_dump dev→lab 一次性同步** | 空库重采 | 迁移现有真实数据(事件/实体/快照/来源) |
 | D-P8 | 调度 | 用户 crontab 每 15min 触发 `pipeline.sh`;**脚本内用北京时间判定**「交易日 + 已过 16:10 + 今日未跑」;stamp + 幂等防重跑 | crontab 写死 `CRON_TZ` 与具体时刻 | cron 用宿主时区(UTC),写死时刻会错 8h;脚本判定免疫 |
 | D-P9 | 备份 | 每晚 `pg_dump -Fc` → `/home/rguo/piks/backups/`,保留 14 天;可选 rsync 副本到工作机 | — | DB 是唯一需落盘备份的资产;vault 在 git(GitHub)天然备份 |
 | D-P10 | vault 同步 | **方案 B(已确认):lab 直接推 GitHub** 私有 PIKS-Vault;工作机零改动 | 方案 A LAN 裸仓(已弃) | 用户确认 B;工作机 Obsidian 流程不变;PAT 只存 lab `.env` |
 | D-P11 | 健康/对账 | 管线末尾 `reconcile`(已有)+ 日志落 `/home/rguo/piks/logs/`;**stamp 缺失/对账异常 → 当日 report 标注**,不掩盖 | 邮件/推送(后续) | 数据诚实原则;个人系统先可观察 |
-| D-P12 | 更新/回滚 | `deploy.sh`:git pull → docker build → 起 postgres → migrate → 触发管线;回滚 = **备份恢复 DB + checkout 旧 commit 重建**(迁移只前向) | — | 迁移无 down;DB 回滚靠备份 |
+| D-P12 | 更新/回滚 | **dev 侧 `deploy.sh`**:build → 镜像传 lab → 起 postgres → migrate → 触发管线(§11);回滚 = **备份恢复 DB + dev checkout 旧 commit 重传镜像**(迁移只前向) | — | 迁移无 down;DB 回滚靠备份;镜像随 commit 可重建 |
 
 > 定稿门已过(2026-08-27):D-P1~D-P12 用户确认,D-P10 选定**方案 B**。此后按本设计执行。
 
@@ -112,11 +112,11 @@ reconcile(对账,放末尾)
 Dockerfile                    # 多阶段构建全部 cmd(§6)
 configs/docker-compose.prod.yml  # 生产 compose 模板(§8;lab 实例化为 /home/rguo/piks/docker-compose.yml)
 configs/.env.prod.example     # 生产配置模板,仅键名与占位,无真实值(§7)
-scripts/pipeline.sh           # 日管线(§9)
-scripts/backup.sh             # 每晚备份(§8.4)
-scripts/deploy.sh             # 更新部署(§11)
-scripts/setup.sh              # lab 一次性初始化(§14)
-scripts/health.sh             # 可选:完整性自检(§12)
+scripts/pipeline.sh           # 日管线(§9,lab 侧)
+scripts/backup.sh             # 每晚备份(§8.4,lab 侧)
+scripts/deploy.sh             # 更新部署(§11,dev 侧:build→传镜像→migrate)
+scripts/setup.sh              # lab 一次性初始化(§14,dev 侧)
+scripts/health.sh             # 可选:完整性自检(§12,lab 侧)
 ```
 
 ### 5.2 lab 运行布局(非代码仓)
@@ -125,35 +125,40 @@ scripts/health.sh             # 可选:完整性自检(§12)
 /home/rguo/piks/
 ├── docker-compose.yml   # 由模板实例化(静态,含绝对路径)
 ├── .env                 # 0600,生产真实配置(含 PIKS_VAULT_GIT_TOKEN)
-├── piks/                # 代码仓 clone(origin/dev),deploy.sh 用
 ├── vault/               # Generated 工作仓(容器内 /srv/vault,origin=GitHub 私有仓)
 ├── backups/             # piks-YYYY-MM-DD.dump
 ├── logs/                # pipeline-YYYY-MM-DD.log + stamp
-└── scripts/             # 从代码仓同步的 4 个脚本
+└── scripts/             # 从 dev 同步的 3 个 lab 侧脚本(pipeline/backup/health)
 ```
 
 ## 6. 镜像与构建(D-P5)
 
-`Dockerfile`(仓库根):
+`Dockerfile`(仓库根,**dev 本地构建**):
 
 ```dockerfile
 FROM golang:1.26-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN go mod download
+COPY vendor ./vendor          # 自包含构建,免模块下载(实测 proxy 可达性不稳)
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -o /out/bin/ ./cmd/...
+RUN CGO_ENABLED=0 go build -mod=vendor -trimpath -o /out/bin/ ./cmd/...
 
 FROM alpine:3.20
-RUN apk add --no-cache ca-certificates git tzdata   # git: publisher 提交;tzdata: TZ 生效
+RUN apk add --no-cache ca-certificates git tzdata
+ARG GIT_SHORT=unknown
+ENV PIKS_GIT_SHORT=${GIT_SHORT}   # 容器内无 .git,血缘字段取烘焙值
+WORKDIR /app
+COPY --from=build /src/migrations /app/migrations
+COPY --from=build /src/prompts /app/prompts
 COPY --from=build /out/bin/ /usr/local/bin/
 ENTRYPOINT []
 ```
 
 - 一次构建 10 个命令(`migrate collector worker cluster quote-collector entity-build market-state daily-review publisher reconcile`)。
 - 静态链接(无 CGO)→ 直接跑 alpine,运行镜像 ~50MB。
-- lab 上 `docker build -t piks-tools:latest /home/rguo/piks/piks`(deploy.sh 内做);构建缓存使增量更新秒级。
-- 运行镜像内**不含源码/密钥**;密钥只经 `.env` 注入。
+- **构建在 dev 执行**(`scripts/deploy.sh`),`docker save | ssh lab docker load` 传输;`PIKS_GIT_SHORT` 随构建烘焙血缘。
+- 运行镜像内**不含源码/密钥**;密钥只经 `/home/rguo/piks/.env` 注入。
+- 依赖 `go mod vendor`(仓库内 `vendor/`),避免镜像构建时访问 proxy.golang.org。
 
 ## 7. 配置与密钥(D-P6)
 
@@ -333,22 +338,24 @@ setup 一次性:
 
 ## 11. 更新与回滚(D-P12)
 
-`deploy.sh`:
+**deploy 在 dev 侧执行**(`scripts/deploy.sh`,镜像为唯一交付物):
 
 ```bash
 #!/usr/bin/env bash
+# dev 侧
 set -euo pipefail
-C=/home/rguo/piks
-cd $C/piks && git fetch origin && git pull --ff-only   # 代码=dev 线
-docker build -t piks-tools:latest $C/piks               # 重建镜像
-docker compose -f $C/docker-compose.yml up -d postgres  # 确保 postgres 在跑
-docker compose -f $C/docker-compose.yml run --rm tools ./bin/migrate
-echo "deploy done $(date)"
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+LAB="${PIKS_LAB:-rguo@192.168.0.202}"
+GS="$(git -C "$REPO" rev-parse --short HEAD)"
+docker build --build-arg GIT_SHORT="$GS" -t piks-tools:latest "$REPO"
+docker save piks-tools:latest | ssh "$LAB" docker load
+ssh "$LAB" 'docker compose -f /home/rguo/piks/docker-compose.yml up -d postgres && \
+  docker compose -f /home/rguo/piks/docker-compose.yml run --rm tools ./bin/migrate'
 ```
 
 - 之后 `pipeline.sh` 由 cron 自然触发,或手动跑一次立即生效。
-- **回滚**:数据=从昨晚/当日备份 `pg_restore --clean` 恢复;代码=`cd piks && git checkout <旧commit>` + 重建镜像 + migrate 前滚(迁移无 down,旧代码+新表若有兼容问题以备份为准)。
-- pipeline 血缘字段 `@<git-short>` 随代码 HEAD 前进 → 每次 deploy 后卡片 lineage 更新(已确认是诚实预期行为)。
+- **回滚**:数据=从昨晚/当日备份 `pg_restore --clean` 恢复;代码=dev `git checkout <旧commit>` + 重跑 deploy 传旧镜像 + migrate 前滚(迁移无 down,旧代码+新表若有兼容问题以备份为准)。
+- pipeline 血缘字段 `@<git-short>` 随 dev HEAD 前进 → 每次 deploy 后卡片 lineage 更新(已确认是诚实预期行为)。
 
 ## 12. 健康 / 对账 / 日志(D-P11)
 
@@ -369,18 +376,20 @@ echo "deploy done $(date)"
 
 ## 14. 一次性初始化(setup.sh)
 
-1. `mkdir -p /home/rguo/piks/{vault,backups,logs}`。
-2. 实例化 compose:复制 `configs/docker-compose.prod.yml` → `/home/rguo/piks/docker-compose.yml`。
-3. 创建 `/home/rguo/piks/.env`(0600,按 `.env.prod.example` 填真实值:DB 口令、AI key、GitHub token)。
-4. 安装 compose 用户级插件:`docker-compose` 二进制 → `~/.docker/cli-plugins/docker-compose`(从 GitHub release 下载或从 dev 拷贝;校验版本 ≥ 对应 docker 29)。
-5. `git clone https://github.com/glacierzzz26/PIKS.git /home/rguo/piks/piks`(`-b dev`)。
-6. `docker compose up -d`(起 postgres)。
-7. `docker build -t piks-tools:latest /home/rguo/piks/piks`。
-8. `run migrate` → 恢复初始 dump(§8.3)→ reconcile 验证。
-9. 建 vault 工作仓 + origin + credential helper + 拉取 GitHub 基线(§10)。
-10. 同步 4 个脚本到 `/home/rguo/piks/scripts/` 并 `chmod +x`。
-11. 写 crontab(§9.2)。
-12. 时间核对:容器内 `date` = Asia/Shanghai;系统 NTP 状态如实记录(风险项)。
+**模型(实现期修正):所有编排在 dev 侧执行**;lab 只收镜像/compose/脚本/基线,不保留代码仓库、不 clone GitHub。由 `scripts/setup.sh`(dev 侧,幂等可重跑)执行,共 10 步:
+
+1. **目录 + 传输**:`mkdir -p /home/rguo/piks/{vault,backups,logs,scripts}`;scp `configs/docker-compose.prod.yml` → `docker-compose.yml`,scp lab 侧 3 脚本 `pipeline.sh/backup.sh/health.sh` → `scripts/` 并 `chmod +x`。
+2. **.env 校验**:lab `/home/rguo/piks/.env` 已存在且不含 `CHANGE_ME`(部署者先按 `.env.prod.example` 填真实值);`chmod 600`。
+3. **compose 插件**:从 dev 拷贝二进制 `/usr/libexec/docker/cli-plugins/docker-compose` → lab `~/.docker/cli-plugins/docker-compose`(免网络下载,版本随 dev 锁定)。
+4. **镜像构建 + 传输**:调 `scripts/deploy.sh` —— dev `docker build`(bake GIT_SHORT)→ `docker save | ssh lab docker load` → `docker compose up -d postgres` → `run --rm tools ./bin/migrate`。
+5. **postgres 就绪**:`until pg_isready` 轮询确认。
+6. **migrate**:`run --rm tools ./bin/migrate`(幂等,重复执行安全)。
+7. **vault 工作仓**:若 `vault/.git` 不存在,`rsync -a --delete --exclude 09-Personal --exclude .obsidian` 把 dev `PIKS-Vault/Generated` 基线同步过去(避免 lab 拉 GitHub 私有仓);设 origin = GitHub 私有仓 + credential.helper 读 `PIKS_VAULT_GIT_TOKEN` 环境变量(不落 `.git/config`)。
+8. **crontab(幂等)**:pipeline 每 15 分钟 + backup 每日 23:59,追加写 `logs/cron.log`(先去掉旧行再重写,可重跑不重复)。
+9. **时间核对**:`run --rm tools date` 应显示 Asia/Shanghai;系统 NTP 状态如实记录(风险项,见 §16 待办)。
+10. **初始数据同步(单独执行)**:§8.3 的 pg_dump dev→lab 由部署者显式执行,不在 setup.sh 内。
+
+> 说明:postgres 常驻、tools 按需 `run --rm`;lab 上镜像 = 交付物,更新=dev 重 build→重 load(§11)。
 
 ## 15. 验收清单
 
@@ -408,6 +417,9 @@ echo "deploy done $(date)"
 ### 实现期修正(2026-08-27)
 
 - **运行根目录 `/srv/piks` → `/home/rguo/piks`**:实测 rguo 无 sudo,`/srv` 为 root 属主不可建目录;迁到用户家目录。其余布局/脚本不变。
+- **构建模型改为 dev 本地编译 + 镜像传输**(用户明确「本地编译,把镜像拷贝过去」):lab 不再 clone 代码仓库、不再 lab 侧 `docker build`。交付物 = 镜像(`docker save | ssh docker load`)+ compose + 3 个 lab 侧脚本。`deploy.sh`/`setup.sh` 均为 dev 侧执行;§4 D-P5/D-P12、§6、§11、§14 已同步更新。
+- **vault 基线从 dev rsync 而非 lab clone GitHub**:lab 拉 GitHub 私有仓实测 HTTP2 framing error / 超时(即使 `http.version HTTP/1.1` 仍极慢);改由 dev 把 `PIKS-Vault/Generated` 基线(排除 09-Personal/.obsidian)rsync 到 lab,lab 侧只设 origin + env 凭据 helper,首次 push 仍由 publisher 完成(§10 方案 B 不变)。
+- **compose 插件从 dev 拷贝**:lab 无 compose 插件,`docker-compose` 二进制由 dev scp 到 `~/.docker/cli-plugins/`,免 GitHub 下载。
 
 ### 待办(需 sudo / 后续)
 

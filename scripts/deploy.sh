@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
-# PIKS 更新部署(D-P12):代码(dev 线)→ 重建镜像(GIT_SHORT 烘焙血缘)→ 确保 postgres → migrate。
-# 之后 pipeline.sh 由 cron 自然触发,或手动跑一次立即生效。
-# 回滚:数据=备份 pg_restore --clean;代码=git checkout <旧commit> + 重建镜像 + migrate(迁移只前向)。
+# PIKS 生产更新/部署(在 dev 侧执行):本地编译镜像 → 传输加载到 lab → 起 postgres → migrate。
+# 生产代码变更经此命令生效;lab 不保留代码仓库,镜像为唯一交付物。
 set -euo pipefail
-C=/home/rguo/piks
-cd "$C/piks" && git fetch origin && git pull --ff-only
-docker build --build-arg GIT_SHORT="$(git -C "$C/piks" rev-parse --short HEAD)" -t piks-tools:latest "$C/piks"
-docker compose -f "$C/docker-compose.yml" up -d postgres
-docker compose -f "$C/docker-compose.yml" run --rm tools ./bin/migrate
-echo "deploy done $(date '+%F %T %Z')"
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+LAB="${PIKS_LAB:-rguo@192.168.0.202}"
+GS="$(git -C "$REPO" rev-parse --short HEAD)"
+
+echo "== build image ($GS)"
+docker build --build-arg GIT_SHORT="$GS" -t piks-tools:latest "$REPO"
+
+echo "== transfer to lab (docker save | ssh docker load)"
+docker save piks-tools:latest | ssh "$LAB" docker load
+
+echo "== ensure postgres + migrate"
+ssh "$LAB" 'docker compose -f /home/rguo/piks/docker-compose.yml up -d postgres && docker compose -f /home/rguo/piks/docker-compose.yml run --rm tools ./bin/migrate'
+
+echo "deploy done: image $GS loaded on lab, migrate ok"

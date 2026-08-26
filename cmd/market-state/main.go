@@ -146,7 +146,13 @@ func buildHotTopics(industryRaw []byte, events []model.Event) []map[string]any {
 		for n, c := range dist {
 			ks = append(ks, kv{n, c})
 		}
-		sort.Slice(ks, func(i, j int) bool { return ks[i].count > ks[j].count })
+		sort.Slice(ks, func(i, j int) bool {
+			// count 降序,name 升序作次级键,保证确定性(否则同 count 时 Go map 随机序 → 幂等破坏)
+			if ks[i].count != ks[j].count {
+				return ks[i].count > ks[j].count
+			}
+			return ks[i].name < ks[j].name
+		})
 		for i, k := range ks {
 			if i >= 5 {
 				break

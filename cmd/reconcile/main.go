@@ -57,7 +57,7 @@ func main() {
 	if err := os.WriteFile(path, []byte(report), 0o644); err != nil {
 		finishFail(ctx, s, runID, err)
 	}
-	committed, err := publish.CommitVault(cfg.VaultPath)
+	committed, err := publish.CommitVaultWithMsg(cfg.VaultPath, "reconcile: 对账报告")
 
 	// 按类别计数
 	counts := map[string]int{}

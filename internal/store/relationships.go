@@ -56,6 +56,26 @@ func (s *Store) ListRelationshipsFromTo(ctx context.Context, fromType, toType, r
 	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Relationship])
 }
 
+// ListAffectedTermEvents affected 词 → 事件 id 映射(实体构建用)。
+func (s *Store) ListAffectedTermEvents(ctx context.Context) (map[string][]string, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT elem AS term, e.id AS event_id
+		FROM events e, jsonb_array_elements_text(e.affected) elem`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string][]string)
+	for rows.Next() {
+		var term, eventID string
+		if err := rows.Scan(&term, &eventID); err != nil {
+			return nil, err
+		}
+		out[term] = append(out[term], eventID)
+	}
+	return out, rows.Err()
+}
+
 // EventRef 事件引用(实体卡相关事件 / hot_topics event_ids)。
 type EventRef struct {
 	ID    string

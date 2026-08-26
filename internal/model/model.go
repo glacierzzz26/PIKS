@@ -45,10 +45,21 @@ type Event struct {
 	Status          string          `db:"status"`
 	PipelineVersion *string         `db:"pipeline_version"`
 	SourceID        *string         `db:"source_id"`
+	ClusterID       *string         `db:"cluster_id"`
+	PublishedAt     *time.Time      `db:"published_at"`
 	CreatedAt       time.Time       `db:"created_at"`
 	UpdatedAt       time.Time       `db:"updated_at"`
 	ValidFrom       *time.Time      `db:"valid_from"`
 	ValidTo         *time.Time      `db:"valid_to"`
+}
+
+// EventCluster 事件簇:同一真实事件的报道集合(迭代 1,设计 D8)。
+type EventCluster struct {
+	ID        string    `db:"id"`
+	Title     string    `db:"title"`
+	Status    string    `db:"status"`
+	CreatedAt time.Time `db:"created_at"`
+	UpdatedAt time.Time `db:"updated_at"`
 }
 
 type Evidence struct {

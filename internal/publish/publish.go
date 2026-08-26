@@ -30,7 +30,8 @@ func shortID(id string) string {
 
 // RenderEvent 按设计 §7 模板渲染单张事件卡片。
 // 严格遵守 Fact≠Inference≠Belief:卡片只有 AI 抽取的事实;推测留给"我的理解"占位。
-func RenderEvent(it store.EventForPublish, evs []model.Evidence) string {
+// resolve:affected 词 → 实体 wikilink 目标(迭代 3,设计 §3.3)。命中 → [[entity-xxx|原词]],未命中保持纯文本(诚实)。
+func RenderEvent(it store.EventForPublish, evs []model.Evidence, resolve func(string) (string, bool)) string {
 	var b strings.Builder
 
 	date := it.CreatedAt.Format("2006-01-02")
@@ -72,7 +73,11 @@ func RenderEvent(it store.EventForPublish, evs []model.Evidence) string {
 		b.WriteString("- _无(原文未提及实体)_\n")
 	}
 	for _, a := range affected {
-		fmt.Fprintf(&b, "- [[%s]]\n", a) // 未解析链接,迭代 3 建实体后自动可跳
+		if target, ok := resolve(a); ok {
+			fmt.Fprintf(&b, "- [[%s|%s]]\n", target, a)
+		} else {
+			fmt.Fprintf(&b, "- %s\n", a) // 未匹配到实体 → 纯文本(诚实,不假造链接)
+		}
 	}
 
 	b.WriteString("\n## 证据\n")
@@ -213,6 +218,15 @@ func CommitVaultWithMsg(vault, msg string) (int, error) {
 		_ = run(vault, "git", "push", "-q")
 	}
 	return 1, nil
+}
+
+// GitShort 代码仓库当前短哈希(最佳努力;失败返回空)。用于卡片 pipeline 血缘。
+func GitShort() string {
+	out, err := exec.Command("git", "rev-parse", "--short", "HEAD").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func gitName() string {

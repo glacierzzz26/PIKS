@@ -63,9 +63,9 @@ type EventForPublish struct {
 	UpdatedAt       time.Time       `db:"updated_at"`
 }
 
-// ListEventsForPublishWithSource 增量发布候选:
-// 未发布(extracted/verified)或已发布但被更新(updated_at>published_at)。
-// 非 canonical 成员已由 cluster 置为 status='merged',此处仅凭状态过滤即可。
+// ListEventsForPublishWithSource 发布候选 = 全部有效事件(extracted/verified/published)。
+// 迭代 3 起全量返回:实体层更新后(新实体建成),已发布事件卡也要重渲染升级 wikilink。
+// 幂等靠调用方 md5 内容比对(未变跳过写盘 → git 零提交),而非依赖 updated_at 增量。
 func (s *Store) ListEventsForPublishWithSource(ctx context.Context) ([]EventForPublish, error) {
 	rows, err := s.Pool.Query(ctx,
 		`SELECT e.id,e.title,e.event_type,e.summary,e.facts,e.affected,e.occurred_at,e.created_at,
@@ -73,7 +73,6 @@ func (s *Store) ListEventsForPublishWithSource(ctx context.Context) ([]EventForP
 		        s.name AS source_name
 		 FROM events e JOIN sources s ON s.id=e.source_id
 		 WHERE e.status IN ('extracted','verified','published')
-		   AND (e.published_at IS NULL OR e.updated_at > e.published_at)
 		 ORDER BY e.occurred_at NULLS LAST, e.created_at`)
 	if err != nil {
 		return nil, err

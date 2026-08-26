@@ -48,6 +48,18 @@ func NewClassifier(provider ai.Provider) *Classifier {
 	return &Classifier{Provider: provider, Prompt: systemPrompt}
 }
 
+// StripSuffixes 后缀剥离候选:原词 + 依次去掉 板块/概念/指数/股/类 后的形式。
+// 用于 affected 词 → 实体名匹配(设计 §3.1 步骤 2;发布器 wikilink 解析同用)。
+func StripSuffixes(term string) []string {
+	cands := []string{term}
+	for _, suf := range []string{"板块", "概念", "指数", "股", "类"} {
+		if strings.HasSuffix(term, suf) && len(term) > len(suf) {
+			cands = append(cands, strings.TrimSuffix(term, suf))
+		}
+	}
+	return cands
+}
+
 // Classify 对一批未匹配词一次性分类。known 为已知实体名(帮模型对齐规范名,可空)。
 // 返回分类结果与 token 用量。全部被校验拒绝时返回 error(由调用方兜底为 unknown)。
 func (c *Classifier) Classify(ctx context.Context, terms []string, known []string) ([]ClassifiedEntity, int64, error) {

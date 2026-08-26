@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strings"
 	"time"
 
 	"piks/internal/ai"
@@ -304,9 +303,9 @@ func buildEntityIndex(list []model.Entity) map[entityKey]*model.Entity {
 	return idx
 }
 
-// matchEntity 已知实体匹配:name/alias 精确,或剥离后缀(板块/概念/指数/股/类)后精确。
+// matchEntity 已知实体匹配:name/alias 精确,或剥离后缀后精确。
 func matchEntity(idx map[entityKey]*model.Entity, term string) *model.Entity {
-	for _, c := range stripCandidates(term) {
+	for _, c := range entityextract.StripSuffixes(term) {
 		for _, typ := range []string{TypeCompany, TypeIndustry, TypeConcept, TypeTopic, TypeUnknown} {
 			if e := idx[entityKey{typ, c}]; e != nil {
 				return e
@@ -318,7 +317,7 @@ func matchEntity(idx map[entityKey]*model.Entity, term string) *model.Entity {
 
 // matchClassified 原词 → 分类实体:名称/别名精确或后缀剥离精确。
 func matchClassified(idx map[entityKey]*entityextract.ClassifiedEntity, term string) *entityextract.ClassifiedEntity {
-	for _, c := range stripCandidates(term) {
+	for _, c := range entityextract.StripSuffixes(term) {
 		if e := idx[entityKey{TypeCompany, c}]; e != nil {
 			return e
 		}
@@ -333,16 +332,6 @@ func matchClassified(idx map[entityKey]*entityextract.ClassifiedEntity, term str
 		}
 	}
 	return nil
-}
-
-func stripCandidates(term string) []string {
-	cands := []string{term}
-	for _, suf := range []string{"板块", "概念", "指数", "股", "类"} {
-		if strings.HasSuffix(term, suf) && len(term) > len(suf) {
-			cands = append(cands, strings.TrimSuffix(term, suf))
-		}
-	}
-	return cands
 }
 
 // classifyIndex 分类结果 → (type,name/alias) 索引。

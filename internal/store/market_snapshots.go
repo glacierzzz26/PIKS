@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -54,6 +55,23 @@ func (s *Store) GetMarketSnapshotByDate(ctx context.Context, tradeDate time.Time
 		return nil, nil
 	}
 	return &snap, err
+}
+
+// ListZTAppearances 某股票代码在 zt_pool 出现的交易日期(升序),实体卡"涨停记录"用。
+func (s *Store) ListZTAppearances(ctx context.Context, code string) ([]time.Time, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT trade_date FROM market_snapshots
+		WHERE zt_pool @> $1::jsonb
+		ORDER BY trade_date`,
+		fmt.Sprintf(`[{"code":%q}]`, code))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (time.Time, error) {
+		var t time.Time
+		return t, r.Scan(&t)
+	})
 }
 
 // ListMarketSnapshots 最近 N 日快照(倒序),供复盘/回填。

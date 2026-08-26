@@ -37,6 +37,14 @@ func main() {
 	vault := cfg.VaultPath
 	published, updated, unchanged, deleted := 0, 0, 0, 0
 
+	// 实体 → affected 词 wikilink 解析(迭代 3,设计 §3.3)。全量实体索引,未命中保持纯文本。
+	entities, err := s.ListAllEntities(ctx)
+	if err != nil {
+		finishFail(ctx, s, runID, err)
+	}
+	resolver := publish.NewTermResolver(entities)
+	entityPublished, entityUnchanged := 0, 0
+
 	items, err := s.ListEventsForPublishWithSource(ctx)
 	if err != nil {
 		finishFail(ctx, s, runID, err)
@@ -44,19 +52,20 @@ func main() {
 	for _, it := range items {
 		path := publish.EventPath(vault, it)
 		evs, _ := s.ListEvidenceByEventID(ctx, it.ID)
-		content := publish.RenderEvent(it, evs)
+		content := publish.RenderEvent(it, evs, resolver.Resolve)
 
+		unchangedCard := false
 		if existing, err := os.ReadFile(path); err == nil {
 			if hash(content) == hash(string(existing)) {
-				// 内容未变(如仅 updated_at 被触碰):不写盘,仍标记发布态
+				// 内容未变:不写盘(git 零提交)。已发布事件(如实体层更新触发重渲染但词未解析)不计入。
 				unchanged++
-				_ = s.MarkEventPublished(ctx, it.ID)
-				continue
+				unchangedCard = true
+			} else {
+				if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+					finishFail(ctx, s, runID, err)
+				}
+				updated++ // 增量重写(如 affected 词解析成 wikilink)
 			}
-			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-				finishFail(ctx, s, runID, err)
-			}
-			updated++ // 增量重写
 		} else {
 			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 				finishFail(ctx, s, runID, err)
@@ -66,8 +75,11 @@ func main() {
 			}
 			published++ // 首次发布
 		}
-		if err := s.MarkEventPublished(ctx, it.ID); err != nil {
-			finishFail(ctx, s, runID, err)
+		// 仅首次发布时打发布标记;已发布事件重渲染不触碰 published_at/updated_at(保持零 DB churn)。
+		if it.PublishedAt == nil && !unchangedCard {
+			if err := s.MarkEventPublished(ctx, it.ID); err != nil {
+				finishFail(ctx, s, runID, err)
+			}
 		}
 	}
 
@@ -83,14 +95,39 @@ func main() {
 		}
 	}
 
+	// 实体卡(迭代 3,设计 §3.3):全量渲染,内容未变跳过写盘(git 零提交)。
+	entityPipeline := "entity-build@" + publish.GitShort()
+	for _, ent := range entities {
+		card, err := publish.BuildEntityCardData(ctx, s, &ent, entityPipeline)
+		if err != nil {
+			finishFail(ctx, s, runID, err)
+		}
+		path := publish.EntityPath(vault, ent.Type, ent.Name)
+		content := publish.RenderEntityCard(card)
+		if existing, err := os.ReadFile(path); err == nil && hash(content) == hash(string(existing)) {
+			entityUnchanged++
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			finishFail(ctx, s, runID, err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			finishFail(ctx, s, runID, err)
+		}
+		entityPublished++
+	}
+
 	committed, err := publish.CommitVault(vault)
 	meta := map[string]any{
-		"published":  published,
-		"updated":    updated,
-		"unchanged":  unchanged,
-		"deleted":    deleted,
-		"vault":      vault,
-		"git_commit": committed,
+		"published":        published,
+		"updated":          updated,
+		"unchanged":        unchanged,
+		"deleted":          deleted,
+		"entity_published": entityPublished,
+		"entity_unchanged": entityUnchanged,
+		"entities":         len(entities),
+		"vault":            vault,
+		"git_commit":       committed,
 	}
 	status, errMsg := "success", ""
 	if err != nil {

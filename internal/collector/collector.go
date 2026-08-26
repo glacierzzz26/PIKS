@@ -29,7 +29,7 @@ func NewDriver(name, input string) (Driver, error) {
 	case "file":
 		return &fileDriver{path: input}, nil
 	case "dongcai":
-		return &dongcaiDriver{}, nil
+		return newDongcaiDriver(), nil
 	default:
 		return nil, fmt.Errorf("unknown driver: %s", name)
 	}

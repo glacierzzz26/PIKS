@@ -6,9 +6,9 @@
 
 | 文档 | 状态 | 定稿日期 | 备注 |
 |---|---|---|---|
-| [iter0-min-loop.md](./iter0-min-loop.md) | 🔶 待定稿门 | — | 6 领域表 + task_runs;采集(file 保底 + dongcai 待验证);AI OpenAI 兼容 + 模型分层;Markdown 发布 |
+| [iter0-min-loop.md](./iter0-min-loop.md) | ✅ 已定稿冻结 | 2026-08-26 | 6 领域表 + task_runs;采集(file 保底 + dongcai 待验证);AI OpenAI 兼容 + 模型分层;Markdown 发布。归档见 `../stages/iter0.md` |
 
 ## 待办
 
-- [ ] 迭代 0 定稿门确认(D1~D6)
+- [x] 迭代 0 定稿门确认(D1~D7,用户批准计划即定稿)
 - [ ] 迭代 1 设计(事件去重聚类、对账、增量发布)

@@ -3,8 +3,10 @@ package store_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"piks/internal/model"
 	"piks/internal/store"
@@ -25,15 +27,20 @@ func TestSmoke(t *testing.T) {
 	defer pool.Close()
 	s := store.New(pool)
 
-	src := &model.Source{Name: "smoke-test", SourceType: "news", Config: json.RawMessage(`{}`)}
+	// 唯一名保证可重复运行(上次残留不冲突),结束清理不留痕。
+	name := fmt.Sprintf("smoke-%d", time.Now().UnixNano())
+	src := &model.Source{Name: name, SourceType: "news", Config: json.RawMessage(`{}`)}
 	if err := s.CreateSource(ctx, src); err != nil {
 		t.Fatalf("create source: %v", err)
 	}
-	got, err := s.GetSourceByName(ctx, "smoke-test")
+	t.Cleanup(func() {
+		_, _ = s.Pool.Exec(ctx, `DELETE FROM sources WHERE id=$1`, src.ID)
+	})
+	got, err := s.GetSourceByName(ctx, name)
 	if err != nil {
 		t.Fatalf("get source: %v", err)
 	}
-	if got.Name != "smoke-test" || got.SourceType != "news" {
+	if got.Name != name || got.SourceType != "news" {
 		t.Fatalf("roundtrip mismatch: %+v", got)
 	}
 	t.Logf("source roundtrip ok: %s (%s, status=%s)", got.Name, got.SourceType, got.Status)

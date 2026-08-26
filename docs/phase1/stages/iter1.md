@@ -43,11 +43,13 @@
 
 ## 4. 成本记录(模型分层延续)
 
-| 环节 | 模型档 | 实测(mock) |
+| 环节 | 模型档 | 实测 |
 |---|---|---|
-| 事件抽取(高频) | `deepseek-chat` | 150 tokens/文档(固定) |
-| 去重确认(中等置信候选) | `deepseek-chat` | 批量提示词;本轮 mock 走纯规则(auto_groups=2, llm_pairs=0),真实对由真实 provider 消耗 |
-| 深度复盘/周报 | `deepseek-reasoner` | 迭代 4 接入 |
+| 事件抽取(高频) | 便宜档(实际部署 `deepseek-v4-flash`) | mock 固定 150 tokens/文档;真实 3720 tokens/3 文档 |
+| 去重确认(中等置信候选) | 便宜档(实际部署 `deepseek-v4-flash`) | mock 走纯规则;真实 405 tokens/1 对(含 1 batch) |
+| 深度复盘/周报 | 推理档(`deepseek-v4-pro` 预留) | 迭代 4 接入 |
+
+> 设计文档的模型档(cheap/reasoning)在真实部署中由 env 指定:`PIKS_AI_MODEL_EXTRACT=deepseek-v4-flash`、`PIKS_AI_MODEL_REASONING=deepseek-v4-flash`(迭代 4 周报上线后可视质量换 `deepseek-v4-pro`)。
 
 去重确认与抽取复用 `PIKS_AI_DAILY_TOKEN_BUDGET`(同池有上限)。
 
@@ -55,7 +57,18 @@
 
 | 缺口 | 说明 |
 |---|---|
-| **真实 AI provider 验证** | 用户提供 opencode API(base URL+key)后,去 mock 跑一次全链,抽查 facts 质量、去重 LLM 路径(真实 llm_pairs)、token 真实用量 |
+| ~~**真实 AI provider 验证**~~ | **✅ 已闭环(2026-08-26,见 §5.1)** |
+| **后到重复** | 已聚类 canonical 不在 cluster 候选池;晚到的重复报道不会与新 canonical 合并(设计已知,后续迭代可放宽候选池) |
+| **Obsidian 本地确认** | vault 需用户机器打开确认渲染 |
+| **G1 稳定生产化** | 东财接口无 SLA,真实驱动已就位;源健康监控(3 连败 pause)兜底 |
+
+### 5.1 真实 AI provider 验证记录(#17)
+
+- **根因**:PIKS 原指向 `https://opencode.ai/zen/v1`(OpenAI 兼容),实测对当前账号**两个 key 均报 `CreditsError: Insufficient balance`**;而 Claude Code 能跑,因其走 `https://opencode.ai/zen/go/v1/messages`(Anthropic 协议)。实测确认**带 `/go` 路由前缀的 OpenAI 兼容端点有效**:`https://opencode.ai/zen/go/v1/chat/completions`。修复:`.env.local` 的 `PIKS_AI_BASE_URL` 加 `/go`(key 不变)。
+- **全链实测(sample-real.json, 3 条真实措辞含一对央行重复)**:采集 new=3 → worker 抽取 events=3 `ai_tokens=3720` → 聚类真实 LLM 确认 `llm_pairs=1 llm_batches=1 merged=1 ai_tokens=405` → 发布 published=2(仅 canonical 出卡,merged 无卡)。
+- **抽查 facts 质量**:宁德事件保留来源措辞(宣称/实测/计划),"业内人士称"等观点**未入 facts**(Fact≠Inference 生效);央行两篇抽取准确;speculative 均为 0(公告类事实,正确)。
+- **暴露并修复缺陷**:真实抽取实体措辞有方差(real-001 `["金融机构","银行"]` vs real-002 `["银行板块","LPR"]`),聚类 pre-filter 的**精确字符串实体交集**漏掉该重复对(`llm_pairs=0`)。修复为**任一方向包含(较短者≥2 字符)即视为重叠**,pre-filter 只求召回、精确判定交 LLM。commit `835a8e8`,含回归测试。
+- **真实用量**:本次验证共 **4125 tokens**(worker 3720 + cluster 405),deepseek-v4-flash;已落 `task_runs.meta.ai_tokens`,卡片 front matter 记录 `pipeline: extract@7840f2e2-deepseek-v4-flash`。
 | **后到重复** | 已聚类 canonical 不在 cluster 候选池;晚到的重复报道不会与新 canonical 合并(设计已知,后续迭代可放宽候选池) |
 | **Obsidian 本地确认** | vault 需用户机器打开确认渲染 |
 | **G1 稳定生产化** | 东财接口无 SLA,真实驱动已就位;源健康监控(3 连败 pause)兜底 |

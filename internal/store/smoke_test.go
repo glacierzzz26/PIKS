@@ -13,8 +13,12 @@ import (
 )
 
 // TestSmoke 集成冒烟:需要已迁移的 Postgres(设 PIKS_DATABASE_URL)。
-// 无环境变量时跳过,不阻塞普通单测。
+// 双开关缺一即跳过,不阻塞普通单测;普通 `go test ./...` 绝不触碰真库:
+//   PIKS_TEST_INTEGRATION 未显式设置 → 跳过(防普通测试污染真库,reconcile 曾误报 smoke 静默源)。
 func TestSmoke(t *testing.T) {
+	if os.Getenv("PIKS_TEST_INTEGRATION") == "" {
+		t.Skip("PIKS_TEST_INTEGRATION not set (integration smoke off by default)")
+	}
 	dsn := os.Getenv("PIKS_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("PIKS_DATABASE_URL not set")

@@ -6,10 +6,10 @@
 
 | 文档 | 状态 | 定稿日期 | 备注 |
 |---|---|---|---|
-| [iter2-market-intel.md](./iter2-market-intel.md) | 🔄 待定稿(D12~D17) | — | 每日复盘 12 项、observations 填充、情绪规则模型、02-Market 聚合页;G2 东财行情 |
+| [iter2-market-intel.md](./iter2-market-intel.md) | ✅ 已定稿冻结 | 2026-08-26 | 每日复盘 12 项、observations 填充、情绪规则模型、02-Market 聚合页;G2 东财行情 |
 
 ## 待办
 
-- [ ] 迭代 2 定稿门确认(D12~D17)
+- [x] 迭代 2 定稿门确认(D12~D17,用户确认:东财源 + 只做市场情报)
 - [ ] 迭代 2 实现与验收(§5 八项)
 - [ ] 归档 `../stages/iter2.md`

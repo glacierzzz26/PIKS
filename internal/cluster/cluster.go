@@ -65,17 +65,24 @@ func Jaccard(a, b map[string]struct{}) float64 {
 	return float64(inter) / float64(union)
 }
 
+// entityOverlap 实体交集:任一方向包含(较短者≥2 字符)即视为重叠。
+// 真实 provider 抽取的实体措辞有方差("银行" vs "银行板块"),精确相等会漏掉重复事件对(#17 真实验证暴露)。
+// pre-filter 只求召回,精确判定交给 LLM 确认;中文实体名互相包含通常意味着同属一个主体,误报成本低。
 func entityOverlap(a, b json.RawMessage) bool {
 	var x, y []string
 	_ = json.Unmarshal(a, &x)
 	_ = json.Unmarshal(b, &y)
-	set := make(map[string]struct{}, len(x))
 	for _, s := range x {
-		set[s] = struct{}{}
-	}
-	for _, s := range y {
-		if _, ok := set[s]; ok {
-			return true
+		if len(s) < 2 {
+			continue
+		}
+		for _, t := range y {
+			if len(t) < 2 {
+				continue
+			}
+			if strings.Contains(s, t) || strings.Contains(t, s) {
+				return true
+			}
 		}
 	}
 	return false

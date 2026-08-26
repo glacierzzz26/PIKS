@@ -35,6 +35,22 @@ func TestGenCandidatesAuto(t *testing.T) {
 	}
 }
 
+// #17 真实验证回归:实体措辞不一致("银行" vs "银行板块")→ 包含关系视为重叠 → LLM 候选。
+func TestEntityContainmentCandidate(t *testing.T) {
+	now := time.Now()
+	events := []model.Event{
+		mkEvent("a", "央行宣布下调金融机构存款准备金率0.25个百分点", "policy", []string{"金融机构", "银行"}, now, 0.9),
+		mkEvent("b", "央行降准0.25个百分点 释放约5000亿流动性", "policy", []string{"银行板块", "LPR"}, now.Add(45*time.Minute), 0.8),
+	}
+	c := GenCandidates(events)
+	if len(c.Auto) != 0 {
+		t.Fatalf("different titles should not auto-merge: %v", c.Auto)
+	}
+	if len(c.LLM) != 1 {
+		t.Fatalf("containment entity overlap must produce 1 LLM pair, got %d", len(c.LLM))
+	}
+}
+
 // 中等置信:标题不同但实体重叠+时间近 → LLM 候选 → mock 确认同事件。
 func TestLLMPath(t *testing.T) {
 	now := time.Now()

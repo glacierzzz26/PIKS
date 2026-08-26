@@ -150,7 +150,8 @@ ENV PIKS_GIT_SHORT=${GIT_SHORT}   # 容器内无 .git,血缘字段取烘焙值
 WORKDIR /app
 COPY --from=build /src/migrations /app/migrations
 COPY --from=build /src/prompts /app/prompts
-COPY --from=build /out/bin/ /app/bin/   # 与 dev bin/ 布局一致,脚本统一 ./bin/<cmd>
+# 与 dev bin/ 布局一致,脚本统一 ./bin/<cmd>
+COPY --from=build /out/bin/ /app/bin/
 ENTRYPOINT []
 ```
 

@@ -164,8 +164,13 @@ func ensurePersonalRepo(vault string) error {
 }
 
 // CommitVault 把生成的卡片提交进独立 git 仓库(Generated 侧)。返回提交数;err 非 nil 时 git 步失败(文件已落盘,仅记录)。
-// 推送可选:设置 PIKS_VAULT_REMOTE 后自动 push。09-Personal 由 gitignore 隔离,不进本仓库。
 func CommitVault(vault string) (int, error) {
+	return CommitVaultWithMsg(vault, fmt.Sprintf("publish: 事件卡片更新 %s", time.Now().Format("2006-01-02")))
+}
+
+// CommitVaultWithMsg 同 CommitVault,但允许自定义提交信息(每日复盘用独立消息)。
+// 幂等:git add -A 后 status --porcelain 为空 → 0 提交(重跑零提交,设计 §5.6)。
+func CommitVaultWithMsg(vault, msg string) (int, error) {
 	if err := os.MkdirAll(vault, 0o755); err != nil {
 		return 0, err
 	}
@@ -199,7 +204,6 @@ func CommitVault(vault string) (int, error) {
 	if len(strings.TrimSpace(string(out))) == 0 {
 		return 0, nil
 	}
-	msg := fmt.Sprintf("publish: 事件卡片更新 %s", time.Now().Format("2006-01-02"))
 	if err := run(vault, "git", "-c", "user.name="+gitName(), "-c", "user.email="+gitEmail(),
 		"commit", "-q", "-m", msg); err != nil {
 		return 0, err

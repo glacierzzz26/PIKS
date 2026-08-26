@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -33,6 +34,14 @@ func (s *Store) GetTaskRunByID(ctx context.Context, id int64) (model.TaskRun, er
 		return model.TaskRun{}, err
 	}
 	return pgx.CollectOneRow(rows, pgx.RowToStructByName[model.TaskRun])
+}
+
+// TokensSince 统计 since 以来 task_runs 累计 AI token(预算护栏用)。
+func (s *Store) TokensSince(ctx context.Context, since time.Time) (int64, error) {
+	var n int64
+	err := s.Pool.QueryRow(ctx,
+		`SELECT COALESCE(SUM((meta->>'ai_tokens')::bigint),0) FROM task_runs WHERE created_at >= $1`, since).Scan(&n)
+	return n, err
 }
 
 func nullIfEmpty(v string) *string {

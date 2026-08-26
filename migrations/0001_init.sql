@@ -27,6 +27,7 @@ CREATE TABLE raw_documents (
   pipeline_version TEXT,
   error            TEXT,
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (source_id, content_hash)
 );
 CREATE INDEX idx_raw_docs_status ON raw_documents(status);

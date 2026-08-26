@@ -93,7 +93,16 @@ func main() {
 	if len(topEvents) > 0 {
 		snap.TopEvents = mustJSON(topEvents)
 	}
-	snap.HotTopics = mustJSON(buildHotTopics(snap.IndustryDist, events))
+	hot := buildHotTopics(snap.IndustryDist, events)
+	// 迭代 3 设计 §3.4:行业热点补 event_ids(Industry 实体 → affects 事件)。无实体关系时保持迭代 2 现状(空,降级兼容)。
+	indEvent := industryEventIndex(ctx, s)
+	for i := range hot {
+		name, _ := hot[i]["name"].(string)
+		if ids, ok := indEvent[name]; ok && len(ids) > 0 {
+			hot[i]["event_ids"] = ids
+		}
+	}
+	snap.HotTopics = mustJSON(hot)
 
 	// 血缘:本快照派生自 observations(quote-collector 写入)
 	snap.Evidence = mustJSON(map[string]any{
@@ -165,6 +174,35 @@ func buildHotTopics(industryRaw []byte, events []model.Event) []map[string]any {
 			break
 		}
 		out = append(out, map[string]any{"name": ev.Title, "event_ids": []string{ev.ID}})
+	}
+	return out
+}
+
+// industryEventIndex 行业名 → affects 它的事件 id(迭代 3 设计 §3.4 补链)。
+// 从 affects 关系 + 实体类型反查;失败/无关系 → nil(降级:hot_topics 保持 name/count)。
+func industryEventIndex(ctx context.Context, s *store.Store) map[string][]string {
+	entities, err := s.ListAllEntities(ctx)
+	if err != nil {
+		return nil
+	}
+	idToEnt := map[string]*model.Entity{}
+	for i := range entities {
+		idToEnt[entities[i].ID] = &entities[i]
+	}
+	rels, err := s.ListRelationshipsFromTo(ctx, "event", "entity", "affects")
+	if err != nil {
+		return nil
+	}
+	out := map[string][]string{}
+	for _, r := range rels {
+		e, ok := idToEnt[r.ToID]
+		if !ok || e.Type != "industry" {
+			continue
+		}
+		out[e.Name] = append(out[e.Name], r.FromID)
+	}
+	for name := range out {
+		sort.Strings(out[name]) // 确定性:event_ids 稳定,重跑同内容
 	}
 	return out
 }

@@ -171,13 +171,20 @@ func renderHotTopics(b *strings.Builder, raw []byte) {
 		return
 	}
 	for _, t := range topics {
-		if name, ok := t["name"].(string); ok {
-			if count, ok := t["count"].(float64); ok {
-				fmt.Fprintf(b, "- %s(涨停 %d 家)\n", name, int(count))
-			} else {
-				fmt.Fprintf(b, "- %s\n", name)
+		name, _ := t["name"].(string)
+		if name == "" {
+			continue
+		}
+		fmt.Fprintf(b, "- %s", name)
+		if count, ok := t["count"].(float64); ok {
+			fmt.Fprintf(b, "(涨停 %d 家)", int(count))
+		}
+		if ids, ok := t["event_ids"].([]any); ok {
+			for _, id := range ids {
+				fmt.Fprintf(b, " [[event-%s]]", shortID(fmt.Sprint(id)))
 			}
 		}
+		b.WriteString("\n")
 	}
 }
 

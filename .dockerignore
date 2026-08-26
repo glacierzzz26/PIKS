@@ -1,0 +1,21 @@
+# 密钥与本地数据:永不进构建上下文/镜像
+.env
+*.env
+.env.*
+
+# 独立 git 仓库与历史
+.git
+.gitignore
+PIKS-Vault/
+
+# 构建产物与缓存
+bin/
+dist/
+build/
+*.test
+vendor-verify/
+
+# 文档与样本(镜像不需要)
+docs/
+sample/
+*.md

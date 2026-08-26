@@ -2,6 +2,8 @@
 .env
 *.env
 .env.*
+# 唯一例外:生产配置模板(无真实值,占位 CHANGE_ME),其余 .env* 仍一律忽略
+!configs/.env.prod.example
 
 # Go
 bin/

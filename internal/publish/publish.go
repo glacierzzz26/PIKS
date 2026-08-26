@@ -221,7 +221,11 @@ func CommitVaultWithMsg(vault, msg string) (int, error) {
 }
 
 // GitShort 代码仓库当前短哈希(最佳努力;失败返回空)。用于卡片 pipeline 血缘。
+// 生产容器内无 .git → 优先取 PIKS_GIT_SHORT 环境变量(deploy 时随镜像烘焙)。
 func GitShort() string {
+	if v := os.Getenv("PIKS_GIT_SHORT"); v != "" {
+		return v
+	}
 	out, err := exec.Command("git", "rev-parse", "--short", "HEAD").Output()
 	if err != nil {
 		return ""

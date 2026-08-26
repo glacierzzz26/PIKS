@@ -1,0 +1,41 @@
+# PIKS 生产 compose(lab 实例化到 /srv/piks/docker-compose.yml,setup.sh 复制)。
+# 与 dev 的 configs/docker-compose.yml 区别:tools 服务、私有网络 piks、5433 只绑回环、容器内用户对齐宿主 rguo(uid 1000)。
+# postgres:  `docker compose up -d`(仅此常驻)。
+# tools:    `docker compose run --rm tools ./bin/<cmd>`(profile=run,不随 up 常驻)。
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: piks-postgres
+    environment:
+      POSTGRES_USER: piks
+      POSTGRES_PASSWORD: ${PIKS_DB_PASSWORD:-piks_dev_password}
+      POSTGRES_DB: piks
+    ports:
+      - "127.0.0.1:5433:5432"          # 只绑回环,不对外暴露
+    volumes:
+      - piks_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U piks -d piks"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    networks: [piks]
+
+  tools:
+    image: piks-tools:latest
+    profiles: ["run"]                  # 仅 compose run --rm 用,不随 up 常驻
+    user: "1000:1000"                  # 对齐宿主 rguo,挂载目录写出的文件归 rguo
+    env_file: [".env"]                 # /srv/piks/.env(真实密钥,0600)
+    environment:
+      - TZ=Asia/Shanghai               # 非交易日判定/复盘日期均为北京时间
+    volumes:
+      - /srv/piks/vault:/srv/vault     # Generated 工作仓(挂载进容器,git 配置持久)
+    networks: [piks]
+    command: ["sh", "-c", "true"]
+
+networks:
+  piks:
+
+volumes:
+  piks_pgdata:

@@ -72,7 +72,7 @@ func (s *Store) ListEventsForPublishWithSource(ctx context.Context) ([]EventForP
 		        e.confidence,e.pipeline_version,e.status,e.cluster_id,e.published_at,e.updated_at,
 		        s.name AS source_name
 		 FROM events e JOIN sources s ON s.id=e.source_id
-		 WHERE e.status IN ('extracted','verified')
+		 WHERE e.status IN ('extracted','verified','published')
 		   AND (e.published_at IS NULL OR e.updated_at > e.published_at)
 		 ORDER BY e.occurred_at NULLS LAST, e.created_at`)
 	if err != nil {
@@ -81,9 +81,12 @@ func (s *Store) ListEventsForPublishWithSource(ctx context.Context) ([]EventForP
 	return pgx.CollectRows(rows, pgx.RowToStructByName[EventForPublish])
 }
 
+// MarkEventPublished 标记事件已发布:只设 published_at,不改 status。
+// status 恒表示知识状态(extracted/verified/merged),发布生命周期由 published_at 承载(设计 §3.4)。
+// 好处:卡片 front matter 稳定,已发布事件即使 updated_at 被触碰,内容未变时渲染逐字节相同 → hash 跳过 → git 零提交。
 func (s *Store) MarkEventPublished(ctx context.Context, id string) error {
 	_, err := s.Pool.Exec(ctx,
-		`UPDATE events SET status='published', published_at=now(), updated_at=now() WHERE id=$1`, id)
+		`UPDATE events SET published_at=now(), updated_at=now() WHERE id=$1`, id)
 	return err
 }
 
@@ -115,6 +118,14 @@ func (s *Store) SetEventCluster(ctx context.Context, eventID, clusterID, status 
 	_, err := s.Pool.Exec(ctx,
 		`UPDATE events SET cluster_id=$2, status=$3, updated_at=now() WHERE id=$1`,
 		eventID, clusterID, status)
+	return err
+}
+
+// SetEventClusterNoTouch 仅设 cluster_id(不改 status/updated_at)。
+// 用于已发布 canonical:聚类不应触发无谓的卡片重写与 git 噪音。
+func (s *Store) SetEventClusterNoTouch(ctx context.Context, eventID, clusterID string) error {
+	_, err := s.Pool.Exec(ctx,
+		`UPDATE events SET cluster_id=$2 WHERE id=$1`, eventID, clusterID)
 	return err
 }
 

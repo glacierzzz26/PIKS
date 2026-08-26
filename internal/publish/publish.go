@@ -30,7 +30,7 @@ func shortID(id string) string {
 
 // RenderEvent 按设计 §7 模板渲染单张事件卡片。
 // 严格遵守 Fact≠Inference≠Belief:卡片只有 AI 抽取的事实;推测留给"我的理解"占位。
-func RenderEvent(it store.EventForPublish, ev *model.Evidence) string {
+func RenderEvent(it store.EventForPublish, evs []model.Evidence) string {
 	var b strings.Builder
 
 	date := it.CreatedAt.Format("2006-01-02")
@@ -76,7 +76,7 @@ func RenderEvent(it store.EventForPublish, ev *model.Evidence) string {
 	}
 
 	b.WriteString("\n## 证据\n")
-	b.WriteString(renderEvidence(ev))
+	b.WriteString(renderEvidence(evs))
 	b.WriteString("\n")
 
 	b.WriteString("\n## AI 分析\n")
@@ -88,18 +88,23 @@ func RenderEvent(it store.EventForPublish, ev *model.Evidence) string {
 	return b.String()
 }
 
-func renderEvidence(ev *model.Evidence) string {
-	if ev == nil || ev.ID == "" {
+func renderEvidence(evs []model.Evidence) string {
+	if len(evs) == 0 {
 		return "- _无(待补充)_"
 	}
-	title := ev.Claim
-	if ev.Title != nil && strings.TrimSpace(*ev.Title) != "" {
-		title = strings.TrimSpace(*ev.Title)
+	var b strings.Builder
+	for _, ev := range evs {
+		title := ev.Claim
+		if ev.Title != nil && strings.TrimSpace(*ev.Title) != "" {
+			title = strings.TrimSpace(*ev.Title)
+		}
+		if ev.URL != nil && strings.TrimSpace(*ev.URL) != "" {
+			fmt.Fprintf(&b, "- [%s](%s)\n", title, strings.TrimSpace(*ev.URL))
+		} else {
+			fmt.Fprintf(&b, "- %s\n", title)
+		}
 	}
-	if ev.URL != nil && strings.TrimSpace(*ev.URL) != "" {
-		return fmt.Sprintf("[%s](%s)", title, strings.TrimSpace(*ev.URL))
-	}
-	return "- " + title
+	return b.String()
 }
 
 // vaultReadme 首次初始化时写入的 vault 说明。

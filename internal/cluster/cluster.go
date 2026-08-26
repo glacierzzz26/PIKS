@@ -304,8 +304,11 @@ func ApplyClusters(ctx context.Context, s *store.Store, events []model.Event, co
 			}
 			merged++
 		}
-		// canonical 保留原状态(extracted/verified/published),并入簇,updated_at 变化触发增量发布
-		if err := s.SetEventCluster(ctx, events[canonical].ID, cid, events[canonical].Status); err != nil {
+		// canonical 保留原状态(extracted/verified/published)并入簇。
+		// 用 NoTouch:仅设 cluster_id,不动 status/updated_at。
+		// 未发布 canonical 靠 published_at IS NULL 被发布查询选中;已发布 canonical 因 updated_at 未变不会被重选,
+		// 避免聚类引发无谓卡片重写与 git 噪音。
+		if err := s.SetEventClusterNoTouch(ctx, events[canonical].ID, cid); err != nil {
 			return merged, fmt.Errorf("set canonical: %w", err)
 		}
 	}

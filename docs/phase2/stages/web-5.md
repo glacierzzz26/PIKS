@@ -101,3 +101,56 @@
 - **备份替代**:用户自理(方案 A 异地备份到其他机器),本阶段未代做。
 - **对账遗留**:lab 生产 `reconcile` 报 1 条 `failed_raw`(352413df,validation: empty events array)——旧采集失败滞留,非 5-2 引入,Web /recon 如实呈现。
 - 视觉/交互仍以浏览器目验为准(5-1 §2.5/2.6 已备)。
+
+---
+
+# 迭代 5-3 — AI 对话 + 截图 归档
+
+> 状态:**已完成(5-3)**。本阶段只读,续接请看 `进度总表.md` 与 `../../phase2/design/web-app.md`。
+> 日期:2026-08-27。验收在 lab 生产数据(192.168.0.202:8090)上进行。
+> 范围:设计 §9 5-3 行「/chat:问答带引用;截图上传识别/降级」。
+> 前置:5-2 已上线(settings 模型下拉 5-3 前置);G7 探针实测通过(vision 模型接受 image_url)。
+
+## 1. 目标与交付物
+
+Web 内嵌 AI 对话页:知识库问答(grounded,答案带可点事件/实体引用)+ 截图上传识别。AI 配置(服务地址/密钥/模型)全部读 `app_config` 表,`/settings` 编辑即刻生效(每请求重读)。
+
+| 交付物 | 状态 |
+|---|---|
+| `internal/ai/openai_compat.go` `Chat`:普通补全(非 JSON)+ image_url 视觉请求 | ✅ |
+| `internal/store/search.go` `SearchKnowledge`:中文问题 n-gram 拆词 → title/summary/facts + 实体 name/aliases OR 检索,Go 打分取 top | ✅ |
+| `internal/store/chat.go`:会话懒建/消息存取/附件元数据/清空 | ✅ |
+| `migrations/0008_chat.sql`:chat_sessions/chat_messages/attachments | ✅ |
+| `internal/web/chat.go` + templates/chat.html + base.css 气泡样式:/chat 问答+截图上传+清空;/api/attachments/{id} 回显 | ✅ |
+| config `PIKS_UPLOAD_DIR`(默认 data/uploads);prod compose `piks_data` 卷挂 /data | ✅ |
+| 5-3 验收 | ✅ 见 §2 |
+
+## 2. 验收结果(设计 §9 5-3 行)
+
+| # | 标准 | 结果 |
+|---|---|---|
+| 2.1 | 问答带引用 | ✅ 问「降准影响哪些板块」→ 答案引用真实央行降准事件卡(f34bccb7,可点跳 /events/{id});无相关板块结论时如实说明,不编造 |
+| 2.2 | 截图上传识别(G7) | ✅ G7 探针:真实图片 → Zen `deepseek-v4-flash-vision-exp`,image_url 格式,正确识别「红/蓝/绿色块」;lab 上传走通,答案含图片转录 + 如实关联说明 |
+| 2.3 | 引用可点 | ✅ 事件引用 → /events/{id},实体引用 → /entities/{id},chip 样式可点 |
+| 2.4 | 历史留存 | ✅ chat_messages 落库,刷新/重开页面回显完整对话 |
+| 2.5 | 截图降级 | ✅ 视觉模型未配置(ai_model_vision 空)→ 如实提示改用文字描述;配置齐 → vision 模型走通 |
+| 2.6 | 附件持久化 | ✅ 文件落 piks_data 卷(/data/uploads/{date}/),/api/attachments/{id} 200 回显 image/png |
+| 2.7 | 配置即时生效 | ✅ /chat 每请求重读 app_config(改 /settings 模型即刻生效,无需重启 web) |
+
+## 3. 关键实现决策(落地细节)
+
+- **检索拆词(n-gram)**:中文无分词器,把用户问题按字符类型切段 → 2/3 字符 n-gram 作候选关键词,`ILIKE ANY` OR 命中 title/summary/facts 与实体 name/aliases,Go 侧按命中 gram 数打分(title 命中权 2)取 top 8。常见停用词(哪些/什么/影响/板块…)整词剔除。初版零成本够用(设计 §4.1);语义检索留 G8。
+- **引用协议**:LLM 回答中标注 `[E:事件id]`/`[N:实体id]` → `extractRefs` 解析,**只保留检索结果中真实存在的 id**(防 LLM 自造引用),标注符清掉,引用改由消息下方 refs chips 呈现(规避模板 HTML 注入)。
+- **模型档位(iter0 D2)**:文本问答用 `ai_model_extract`(deepseek-v4-flash,便宜);截图问答用 `ai_model_vision`(deepseek-v4-flash-vision-exp)。`ai_model_vision` 为空时截图如实降级提示。
+- **每请求重读 AI 配置**:web 启动时 ApplyAppConfig 只给启动初值;`/chat` 按请求 `ListAppConfig` 重建客户端 → `/settings` 改配置即时生效(无需重启 web 容器)。
+- **multipart 分流**:非 multipart POST(纯文本/清空)与 multipart(带文件)分别 ParseForm/ParseMultipartForm,`FormFile` 仅在 multipart 时调用(避免非 multipart 误报)。
+- **G7 探针教训**:dev 直连 Zen 被 Cloudflare 1010 拦(python urllib UA 特征),lab 用 curl + 浏览器 UA 通过 → 探针在 lab 执行;生产 Go http.Client 通路(pipeline 在用)不受影响。
+- **会话模型**:单人系统恒用单个默认会话(懒创建),不做会话管理 UI(设计 §4.4 标可选);提供「清空对话」。
+
+## 4. 遗留与后续(登记,不在 5-3)
+
+- **G8 语义检索(embedding)**:设计 §9 标迭代 5+ 延后;当前 n-gram 关键词检索够用,中文同义词/语义近义命中差可后续换向量。
+- **对话多会话**:§4.4 可选,当前单会话;需要时可加 session 列表页。
+- **截图 OCR 降级**:§4.3 原备选(不支持视觉时 OCR);G7 通过后未走此路,逻辑未实现。
+- **备份替代**:用户自理(方案 A 异地备份)。
+- 迭代 5 全部三阶段(5-1/5-2/5-3)完成;设计 §9 迭代 5 行全部 ✅。

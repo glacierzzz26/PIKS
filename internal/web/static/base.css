@@ -263,3 +263,24 @@ table.kv .up{color:var(--red)} table.kv .down{color:var(--green)} table.kv .flat
 .ev-list li a{color:var(--accent);text-decoration:none;font-weight:500}
 .ev-list li a:hover{text-decoration:underline}
 .ev-list .sub{color:var(--muted);font-size:12.5px;display:flex;align-items:center;gap:6px}
+
+/* — AI 对话(迭代 5-3,§4) — */
+.chat-box{display:flex;flex-direction:column;gap:14px;margin-top:16px}
+.msg{max-width:78%;padding:11px 14px;border-radius:var(--radius-sm);border:1px solid var(--line);background:var(--card)}
+.msg.user{align-self:flex-end;background:var(--accent-soft);border-color:color-mix(in srgb,var(--accent) 35%,transparent)}
+.msg.assistant{align-self:flex-start}
+.msg-meta{font-size:11px;color:var(--muted);margin-bottom:4px}
+.msg-body{white-space:pre-wrap;line-height:1.75;color:var(--ink);word-break:break-word}
+.msg-imgs{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.msg-imgs img{max-width:220px;max-height:160px;border-radius:8px;border:1px solid var(--line);cursor:zoom-in}
+.refs{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:9px;font-size:12px;color:var(--muted)}
+.chat-form{margin-top:18px;display:flex;flex-direction:column;gap:8px}
+.chat-form textarea{width:100%;resize:vertical;min-height:52px;padding:10px 12px;border-radius:var(--radius-sm);
+      border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit}
+.chat-form-row{display:flex;gap:10px;align-items:center;justify-content:space-between}
+.file-label{font-size:13px;color:var(--muted);display:inline-flex;gap:6px;align-items:center;cursor:pointer}
+.file-label input[type=file]{display:none}
+.chat-clear{margin-top:10px}
+.btn-ghost{height:30px;padding:0 12px;border-radius:8px;border:1px solid transparent;background:transparent;
+      color:var(--muted);cursor:pointer;font-size:12.5px}
+.btn-ghost:hover{color:var(--red);border-color:var(--line)}

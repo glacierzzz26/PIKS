@@ -170,3 +170,24 @@ type PersonalNote struct {
 	CreatedAt  time.Time       `db:"created_at"`
 	UpdatedAt  time.Time       `db:"updated_at"`
 }
+
+// ChatMessage AI 对话消息(迭代 5-3,/chat)。refs 结构见 ChatRefs。
+type ChatMessage struct {
+	ID          string          `db:"id"`
+	SessionID   string          `db:"session_id"`
+	Role        string          `db:"role"`
+	Content     string          `db:"content"`
+	Refs        json.RawMessage `db:"refs"`
+	Attachments json.RawMessage `db:"attachments"`
+	CreatedAt   time.Time       `db:"created_at"`
+}
+
+// Attachment 截图附件元数据(文件本体存 data/uploads/,不进库)。
+type Attachment struct {
+	ID        string    `db:"id"`
+	Filename  string    `db:"filename"`
+	MIME      string    `db:"mime"`
+	Size      int64     `db:"size"`
+	Path      string    `db:"path"`
+	CreatedAt time.Time `db:"created_at"`
+}

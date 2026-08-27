@@ -101,6 +101,7 @@ func NewServer(s *store.Store, cfg config.Config) (*Server, error) {
 		{"note", "templates/note.html"},
 		{"weekly", "templates/weekly.html"},
 		{"settings", "templates/settings.html"},
+		{"chat", "templates/chat.html"},
 	}
 	for _, p := range pages {
 		t, err := template.New(p.name).Funcs(tmplFuncs()).ParseFS(templatesFS, "templates/base.html", p.file)
@@ -133,11 +134,13 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/notes/", s.handleNote)
 	mux.HandleFunc("/weekly", s.handleWeekly)
 	mux.HandleFunc("/settings", s.handleSettings)
+	mux.HandleFunc("/chat", s.handleChat)
 
-	// JSON API(图谱点选面板 + 迭代 5-3 对话 grounding 复用)
+	// JSON API(图谱点选面板 + 迭代 5-3 对话 grounding 复用 + 截图回显)
 	mux.HandleFunc("/api/graph", s.handleGraphAPI)
 	mux.HandleFunc("/api/events/", s.handleEventAPI)
 	mux.HandleFunc("/api/entities/", s.handleEntityAPI)
+	mux.HandleFunc("/api/attachments/", s.handleAttachmentAPI)
 
 	return mux
 }

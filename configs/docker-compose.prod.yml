@@ -34,6 +34,9 @@ services:
     environment:
       - TZ=Asia/Shanghai
       - PIKS_DATABASE_URL=postgres://piks:${PIKS_DB_PASSWORD:-piks_dev_password}@postgres:5432/piks?sslmode=disable
+      - PIKS_UPLOAD_DIR=/data/uploads  # 迭代 5-3:/chat 截图落盘(piks_data 命名卷)
+    volumes:
+      - piks_data:/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -57,3 +60,4 @@ networks:
 
 volumes:
   piks_pgdata:
+  piks_data:                              # /chat 截图上传(迭代 5-3)

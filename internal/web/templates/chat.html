@@ -1,0 +1,52 @@
+{{define "content"}}
+<div class="page-head">
+  <h1>AI 对话</h1>
+  <span class="sub">知识库问答(带引用可点) · 可上传截图识别</span>
+</div>
+
+{{if .Note}}<div class="alert" style="margin-top:10px"><b>提示</b> {{.Note}}</div>{{end}}
+
+<section class="chat-box">
+  {{if .Messages}}
+    {{range .Messages}}
+    <div class="msg {{.Role}}">
+      <div class="msg-meta">{{if eq .Role "user"}}你{{else}}AI{{end}} · {{.CreatedAt}}</div>
+      {{if .Content}}<div class="msg-body">{{.Content}}</div>{{end}}
+      {{if .Images}}
+        <div class="msg-imgs">
+          {{range .Images}}<a href="/api/attachments/{{.}}" target="_blank" rel="noopener"><img src="/api/attachments/{{.}}" alt="截图"></a>{{end}}
+        </div>
+      {{end}}
+      {{if .Refs.Events}}
+        <div class="refs">📌 引用事件
+          {{range .Refs.Events}}<a class="chip event" href="/events/{{.ID}}">{{.Title}}</a>{{end}}
+        </div>
+      {{end}}
+      {{if .Refs.Entities}}
+        <div class="refs">🏷 引用实体
+          {{range .Refs.Entities}}<a class="chip entity" href="/entities/{{.ID}}">{{.Title}}</a>{{end}}
+        </div>
+      {{end}}
+    </div>
+    {{end}}
+  {{else}}
+    <p class="empty">还没有对话。问一个关于知识库的问题(如「降准影响哪些板块?」),或上传截图让 AI 识别并关联。</p>
+  {{end}}
+</section>
+
+<form method="post" action="/chat" enctype="multipart/form-data" class="chat-form">
+  <textarea name="question" rows="2" placeholder="问:降准影响哪些板块?"></textarea>
+  <div class="chat-form-row">
+    <label class="file-label">📷 截图
+      <input type="file" name="file" accept="image/png,image/jpeg,image/webp,image/gif">
+    </label>
+    <button type="submit" class="btn">发送</button>
+  </div>
+  <p class="footnote">文本问答用「文本处理模型」,带截图时用「截图/视觉模型」;两者都在 /settings 配置。</p>
+</form>
+
+<form method="post" action="/chat" class="chat-clear">
+  <input type="hidden" name="action" value="clear">
+  <button type="submit" class="btn-ghost">清空对话</button>
+</form>
+{{end}}

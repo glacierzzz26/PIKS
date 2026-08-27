@@ -3,6 +3,7 @@ package ai
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -88,6 +89,100 @@ func (p *OpenAICompat) HealthCheck(ctx context.Context) error {
 		return fmt.Errorf("health check status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+// ImagePart 截图上传的图片二进制(进 image_url data URI)。
+type ImagePart struct {
+	Data []byte
+	MIME string // 如 image/png
+}
+
+// ChatOptions /chat 问答入参。Image 非空 = vision 请求(OpenAI 兼容 image_url 格式)。
+type ChatOptions struct {
+	System string
+	User   string
+	Image  *ImagePart
+}
+
+// ChatResponse 问答回复。
+type ChatResponse struct {
+	Content string
+	Usage   Usage
+}
+
+// Chat 普通补全(非 JSON mode),/chat 知识库问答用。支持带图(截图识别)。
+// 与 G7 探针一致:image_url 走 OpenAI 兼容格式;provider 不支持图片时由调用方降级。
+func (p *OpenAICompat) Chat(ctx context.Context, opts ChatOptions) (ChatResponse, error) {
+	if p.apiKey == "" {
+		return ChatResponse{}, fmt.Errorf("api key 未配置")
+	}
+	var content any
+	if opts.Image != nil {
+		content = []map[string]any{
+			{"type": "text", "text": opts.User},
+			{"type": "image_url", "image_url": map[string]string{
+				"url": "data:" + opts.Image.MIME + ";base64," + base64.StdEncoding.EncodeToString(opts.Image.Data),
+			}},
+		}
+	} else {
+		content = opts.User
+	}
+	payload := map[string]any{
+		"model": p.model,
+		"messages": []map[string]any{
+			{"role": "system", "content": opts.System},
+			{"role": "user", "content": content},
+		},
+		"temperature": 0.7,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return ChatResponse{}, err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", p.baseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return ChatResponse{}, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+
+	resp, err := p.client.Do(httpReq)
+	if err != nil {
+		return ChatResponse{}, fmt.Errorf("request: %w", err)
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return ChatResponse{}, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return ChatResponse{}, fmt.Errorf("api status %d: %s", resp.StatusCode, truncate(string(respBody), 400))
+	}
+
+	var out struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+		Usage struct {
+			PromptTokens     int64 `json:"prompt_tokens"`
+			CompletionTokens int64 `json:"completion_tokens"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal(respBody, &out); err != nil {
+		return ChatResponse{}, fmt.Errorf("parse response: %w", err)
+	}
+	if len(out.Choices) == 0 {
+		return ChatResponse{}, fmt.Errorf("no choices in response")
+	}
+	return ChatResponse{
+		Content: strings.TrimSpace(out.Choices[0].Message.Content),
+		Usage: Usage{
+			InputTokens:  out.Usage.PromptTokens,
+			OutputTokens: out.Usage.CompletionTokens,
+		},
+	}, nil
 }
 
 func (p *OpenAICompat) StructuredOutput(ctx context.Context, req StructuredRequest) (StructuredResponse, error) {

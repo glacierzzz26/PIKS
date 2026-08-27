@@ -73,9 +73,10 @@ type EventsPage struct {
 // EventPage 事件卡页数据。
 type EventPage struct {
 	Common
-	Event    EventVM
-	Affected []AffectedVM
-	Evidence []EvidenceVM
+	Event        EventVM
+	Affected     []AffectedVM
+	Evidence     []EvidenceVM
+	Understanding string // 我的理解(type='note',slug=event-<id>)
 }
 
 // ---- 事件流 ----
@@ -134,7 +135,12 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 // ---- 事件卡 ----
 
 func (s *Server) handleEvent(w http.ResponseWriter, r *http.Request) {
-	id := strings.TrimPrefix(r.URL.Path, "/events/")
+	path := strings.TrimPrefix(r.URL.Path, "/events/")
+	if strings.HasSuffix(path, "/understanding") {
+		s.handleUnderstanding(w, r, strings.TrimSuffix(path, "/understanding"))
+		return
+	}
+	id := path
 	ctx := r.Context()
 	ev, err := s.store.GetEventByID(ctx, id)
 	if err != nil {
@@ -171,10 +177,59 @@ func (s *Server) handleEvent(w http.ResponseWriter, r *http.Request) {
 		}
 		page.Evidence = append(page.Evidence, vm)
 	}
+	if un, err := s.store.GetPersonalNoteBySlug(ctx, "note", "event-"+id); err == nil && un != nil {
+		page.Understanding = orStr(un.Content, "")
+	}
 	s.render(w, "event", page)
 }
 
 // handleEventAPI 图谱点选面板用的事件详情 JSON。
+// handleUnderstanding 事件卡「我的理解」保存(POST /events/{id}/understanding)。
+// 落 personal_notes(type='note', slug='event-<id>')+ references 关系关联该事件。
+func (s *Server) handleUnderstanding(w http.ResponseWriter, r *http.Request, eventID string) {
+	if r.Method != http.MethodPost {
+		http.Redirect(w, r, "/events/"+eventID, http.StatusSeeOther)
+		return
+	}
+	ctx := r.Context()
+	ev, err := s.store.GetEventByID(ctx, eventID)
+	if err != nil {
+		http.Redirect(w, r, "/events", http.StatusSeeOther)
+		return
+	}
+	text := strings.TrimSpace(r.FormValue("understanding"))
+
+	note, err := s.store.GetPersonalNoteBySlug(ctx, "note", "event-"+eventID)
+	if err != nil {
+		s.render(w, "event", EventPage{Common: Common{Title: "事件 · PIKS", Active: "events", Err: "读取我的理解失败: " + err.Error()}})
+		return
+	}
+	if note == nil {
+		title := ev.Title
+		id, err := s.store.CreatePersonalNote(ctx, &model.PersonalNote{
+			Type: "note", Slug: "event-" + eventID, Title: &title,
+			Status: "active", Content: &text,
+		})
+		if err != nil {
+			s.render(w, "event", EventPage{Common: Common{Title: "事件 · PIKS", Active: "events", Err: "保存我的理解失败: " + err.Error()}})
+			return
+		}
+		_ = s.store.CreateRelationship(ctx, &model.Relationship{
+			FromType: "personal_note", FromID: id,
+			ToType: "event", ToID: eventID,
+			RelType: "references", Source: strPtr("web-我的理解"),
+		})
+	} else {
+		note.Content = &text
+		note.UpdatedBy = strPtr("me")
+		if err := s.store.UpdatePersonalNote(ctx, note); err != nil {
+			s.render(w, "event", EventPage{Common: Common{Title: "事件 · PIKS", Active: "events", Err: "保存我的理解失败: " + err.Error()}})
+			return
+		}
+	}
+	http.Redirect(w, r, "/events/"+eventID+"#understanding", http.StatusSeeOther)
+}
+
 func (s *Server) handleEventAPI(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/api/events/")
 	if id == "" {

@@ -1,0 +1,30 @@
+{{define "content"}}
+<div class="page-head">
+  <h1>个人笔记</h1>
+  <span class="sub">{{.Total}} 条沉淀</span>
+  <a class="btn" href="/notes/new" style="float:right">＋ 新建</a>
+</div>
+
+<div class="chips" style="margin-top:12px">
+  {{range .Types}}
+  <a class="chip {{if eq .Key $.ActiveType}}active{{end}}" href="/notes{{if .Key}}?type={{.Key}}{{end}}">{{.Label}}</a>
+  {{end}}
+</div>
+
+{{range .Notes}}
+<article class="card ev-card">
+  <div class="ev-meta">
+    <a class="ev-title" href="/notes/{{.ID}}">{{.Title}}</a>
+  </div>
+  <div class="ev-meta" style="margin-top:6px">
+    <span class="chip note-{{.Type}}">{{.TypeLabel}}</span>
+    <span class="chip status">{{zh .Status}}</span>
+    {{if .Confidence}}<span class="chip dim">置信 {{printf "%.2f" .Confidence}}</span>{{end}}
+    <span class="chip date">更新 {{.Updated}}</span>
+  </div>
+  {{if .Content}}<p class="ev-sum">{{.Content}}</p>{{end}}
+</article>
+{{else}}
+<div class="card empty" style="margin-top:14px">暂无笔记,点击「＋ 新建」开始沉淀。</div>
+{{end}}
+{{end}}

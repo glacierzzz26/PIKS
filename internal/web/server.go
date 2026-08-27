@@ -65,6 +65,15 @@ func tmplFuncs() template.FuncMap {
 			}
 		},
 		"inc": func(i int) int { return i + 1 },
+		// selIn 判断某 id 是否在已选集合里(笔记关联多选)。
+		"selIn": func(id string, list []string) bool {
+			for _, v := range list {
+				if v == id {
+					return true
+				}
+			}
+			return false
+		},
 	}
 }
 
@@ -87,6 +96,10 @@ func NewServer(s *store.Store, cfg config.Config) (*Server, error) {
 		{"reviews", "templates/reviews.html"},
 		{"review", "templates/review.html"},
 		{"recon", "templates/recon.html"},
+		{"notes", "templates/notes.html"},
+		{"note_form", "templates/note_form.html"},
+		{"note", "templates/note.html"},
+		{"weekly", "templates/weekly.html"},
 		{"settings", "templates/settings.html"},
 	}
 	for _, p := range pages {
@@ -115,6 +128,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/reviews", s.handleReviews)
 	mux.HandleFunc("/reviews/", s.handleReview)
 	mux.HandleFunc("/recon", s.handleRecon)
+	mux.HandleFunc("/notes", s.handleNotes)
+	mux.HandleFunc("/notes/new", s.handleNoteNew)
+	mux.HandleFunc("/notes/", s.handleNote)
+	mux.HandleFunc("/weekly", s.handleWeekly)
 	mux.HandleFunc("/settings", s.handleSettings)
 
 	// JSON API(图谱点选面板 + 迭代 5-3 对话 grounding 复用)

@@ -154,3 +154,19 @@ type TaskRun struct {
 	Meta      json.RawMessage `db:"meta"`
 	CreatedAt time.Time       `db:"created_at"`
 }
+
+// PersonalNote 个人认知沉淀(belief/case/mistake/note),Web 编辑,权威源=PG。
+type PersonalNote struct {
+	ID         string          `db:"id"`
+	Type       string          `db:"type"`
+	Slug       string          `db:"slug"`
+	Title      *string         `db:"title"`
+	Status     string          `db:"status"`
+	Confidence *float64        `db:"confidence"`
+	Content    *string         `db:"content"`
+	Detail     json.RawMessage `db:"detail"`
+	Author     string          `db:"author"`
+	UpdatedBy  *string         `db:"updated_by"`
+	CreatedAt  time.Time       `db:"created_at"`
+	UpdatedAt  time.Time       `db:"updated_at"`
+}

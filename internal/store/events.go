@@ -162,3 +162,32 @@ func (s *Store) ListEventsByDate(ctx context.Context, day time.Time) ([]model.Ev
 	defer rows.Close()
 	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Event])
 }
+
+// ListEventsBetween 区间事件(非 merged),按时间倒序(周报聚合用)。
+func (s *Store) ListEventsBetween(ctx context.Context, start, end time.Time) ([]model.Event, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT `+eventCols+` FROM events
+		WHERE status <> 'merged'
+		  AND COALESCE(occurred_at, created_at) >= $1 AND COALESCE(occurred_at, created_at) < $2
+		ORDER BY COALESCE(occurred_at, created_at) DESC
+		LIMIT 200`, start, end)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Event])
+}
+
+// ListEventsRecent 最近 N 条事件(非 merged),按时间倒序(笔记关联选择器用)。
+func (s *Store) ListEventsRecent(ctx context.Context, limit int) ([]model.Event, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT `+eventCols+` FROM events
+		WHERE status <> 'merged'
+		ORDER BY COALESCE(occurred_at, created_at) DESC
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Event])
+}

@@ -1,0 +1,59 @@
+{{define "content"}}
+<div class="page-head">
+  <h1>周报</h1>
+  <span class="sub">{{.Week}} · {{.Range}} · 本周行情 × 本周事件 × 本周沉淀</span>
+</div>
+
+<div class="chips" style="margin-top:12px">
+  <a class="chip" href="/weekly?offset={{.PrevOffset}}">← 上一周</a>
+  {{if gt .Offset 0}}<a class="chip" href="/weekly?offset={{.NextOffset}}">下一周 →</a>{{end}}
+  <a class="chip {{if eq .Offset 0}}active{{end}}" href="/weekly">本周</a>
+</div>
+
+<section class="sec" style="margin-top:20px">
+  <h2>本周行情</h2>
+  {{if .Snaps}}
+  <table class="wtable">
+    <thead><tr><th>日期</th><th>情绪</th><th>涨停</th><th>跌停</th><th>成交</th><th>我的判断</th></tr></thead>
+    <tbody>
+      {{range .Snaps}}
+      <tr>
+        <td class="nowrap">{{.Date}} <em class="dim">{{.Weekday}}</em></td>
+        <td><span class="chip">{{zh .Emotion}}</span></td>
+        <td class="num">{{.LimitUp}}</td>
+        <td class="num">{{.LimitDown}}</td>
+        <td class="num">{{.Turnover}}</td>
+        <td>{{if .Judgment}}<span class="judge">{{.Judgment}}</span>{{else}}<span class="empty">—</span>{{end}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="empty">本周无行情快照(非交易日或未采集)。</p>{{end}}
+</section>
+
+<section class="sec">
+  <h2>本周事件</h2>
+  {{if .Events}}
+  <ul class="ev-list">
+    {{range .Events}}
+    <li><a href="/events/{{.ID}}">{{.Title}}</a>
+      <span class="sub">{{.Date}} · {{zh .EventType}}</span>
+    </li>
+    {{end}}
+  </ul>
+  {{else}}<p class="empty">本周无事件。</p>{{end}}
+</section>
+
+<section class="sec">
+  <h2>本周沉淀</h2>
+  {{if .Notes}}
+  <ul class="ev-list">
+    {{range .Notes}}
+    <li><a href="/notes/{{.ID}}">{{.Title}}</a>
+      <span class="sub"><span class="chip note-{{.Type}}">{{.TypeLabel}}</span> · {{.Updated}}</span>
+    </li>
+    {{end}}
+  </ul>
+  {{else}}<p class="empty">本周没有新的笔记。</p>{{end}}
+</section>
+{{end}}

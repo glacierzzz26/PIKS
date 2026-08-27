@@ -84,6 +84,22 @@ code{font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;backgrou
 .cfg-form input{height:38px;padding:0 12px;border:1px solid var(--line);border-radius:var(--radius-sm);
       background:var(--card-soft);color:var(--ink);font-size:14px;font-family:inherit}
 .cfg-form input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.cfg-form select,.cfg-form textarea{width:100%;padding:8px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);
+      background:var(--card-soft);color:var(--ink);font-size:14px;font-family:inherit}
+.cfg-form select:focus,.cfg-form textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.cfg-form textarea{line-height:1.7;resize:vertical}
+.cfg-form select[multiple]{height:auto}
+.cfg-sec{margin-top:6px}
+.cfg-sec h3{font-size:13px;margin:14px 0 8px;color:var(--muted);font-weight:600}
+
+/* 笔记类型徽标 */
+.chip.note-belief{background:var(--accent-soft);color:var(--accent)}
+.chip.note-case{background:var(--amber-soft);color:var(--amber)}
+.chip.note-mistake{background:var(--red-soft);color:var(--red)}
+.chip.note-note{background:var(--green-soft);color:var(--green)}
+.chip.active{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+
+.note-body{white-space:pre-wrap;line-height:1.8;color:var(--ink)}
 .hint-inline{font-weight:400;font-size:12px;color:var(--muted)}
 .cfg-actions{margin-top:6px}
 .cfg-actions .btn{height:38px;padding:0 22px;font-size:14px;background:var(--accent);color:var(--accent-ink);
@@ -234,3 +250,16 @@ table.kv .up{color:var(--red)} table.kv .down{color:var(--green)} table.kv .flat
 .g-legend{position:absolute;top:12px;left:14px;display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--muted)}
 .g-legend span{display:flex;align-items:center;gap:6px}
 .g-legend i{width:9px;height:9px;border-radius:50%;display:inline-block}
+
+/* ---- 周报 ---- */
+.wtable{width:100%;border-collapse:collapse;font-size:13.5px}
+.wtable th,.wtable td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left}
+.wtable th{color:var(--muted);font-weight:600;font-size:12px}
+.wtable td.num{text-align:right;font-variant-numeric:tabular-nums}
+.wtable .nowrap{white-space:nowrap}
+.wtable .judge{color:var(--fg);font-size:13px}
+.ev-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.ev-list li{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;font-size:14px}
+.ev-list li a{color:var(--accent);text-decoration:none;font-weight:500}
+.ev-list li a:hover{text-decoration:underline}
+.ev-list .sub{color:var(--muted);font-size:12.5px;display:flex;align-items:center;gap:6px}

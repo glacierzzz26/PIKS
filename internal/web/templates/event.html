@@ -47,9 +47,15 @@
     </ul>
   </section>
 
-  <section class="sec note">
+  <section class="sec note" id="understanding">
     <h2>我的理解</h2>
-    <p class="empty" style="margin:0">迭代 5-2 在 Web 内直接编辑(个人笔记,替代 Obsidian)。</p>
+    <form method="post" action="/events/{{.Event.ID}}/understanding" class="cfg-form">
+      <textarea name="understanding" rows="3" placeholder="记录你对这个事件的判断、疑问、后续跟踪……">{{.Understanding}}</textarea>
+      <div class="cfg-actions" style="margin-top:8px">
+        <button type="submit" class="btn">保存我的理解</button>
+      </div>
+    </form>
+    <p class="footnote" style="margin-top:10px">保存到个人笔记(我的理解),在「笔记」页可见。</p>
   </section>
 </article>
 {{end}}

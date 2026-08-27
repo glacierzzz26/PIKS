@@ -48,3 +48,56 @@
 - **5-3**(AI 对话页 + 截图上传;G7 契约缺口需探测 Zen vision 支持,失败如实降级)——设计 §4 已定,延后。
 - 视觉/交互(§3.3 缩放、点卡片看内容、§3.4 时尚美观专业)最终以浏览器目验为准(2.5/2.6 已备好,用户目验确认)。
 - 后端仍有一处待办:lab 生产库 `recon` 显示「抽取失败(1)」,属诚实对账结果,已如实呈现(与 5-1 验收无关)。
+
+---
+
+# 迭代 5-2 — 编辑 + 去界面层 归档
+
+> 状态:**已完成(5-2)**。本阶段只读,续接请看 `进度总表.md` 与 `../../phase2/design/web-app.md`。
+> 日期:2026-08-27。验收在 lab 生产数据(192.168.0.202:8090,镜像 7102794)上进行。
+> 范围:设计 §9 5-2 行「personal_notes 编辑 + 事件卡『我的理解』;publisher/Obsidian/GitHub/harvest 下线;备份替代落地」。
+> 备份替代:用户已决策「会备份到别的机器上,暂时不用你管」(方案 A 异地备份由用户自理,本阶段不代做)。
+
+## 1. 目标与交付物
+
+把「写」也搬进 Web:个人笔记(Belief/Case/Mistake/我的理解)在 PG 直渲的页面里新建/编辑/归档,可关联事件/实体;事件卡上直接写「我的理解」;周报在 Web 聚合本周行情×事件×个人沉淀。同时**下线 publisher/Obsidian/GitHub**:pipeline 不再发布,vault 卷与 setup 步骤摘除,daily-review/reconcile 在 vault 禁用时跳过写盘+git。PG 成为唯一真相源,零 Markdown 投影。
+
+| 交付物 | 状态 |
+|---|---|
+| `migrations/0006_personal_notes.sql`:personal_notes 表(type/slug/status/confidence/content/detail/author)+ (type,slug) 唯一键 + 索引 | ✅ |
+| `internal/store/personal_notes.go`:CRUD + slug 查询 + 区间查询 + 引用(ReplaceNoteRefs 事务重建) | ✅ |
+| `internal/store/events.go`:ListEventsBetween / ListEventsRecent(周报与选择器) | ✅ |
+| `internal/web/notes.go` + templates(notes/note_form/note):列表(type 过滤)/新建/查看/编辑/归档 + 关联事件/实体多选 | ✅ |
+| 事件卡「我的理解」:POST /events/{id}/understanding,落 personal_notes(type='note',slug='event-<id>') + references 关系 | ✅ |
+| `internal/web/weekly.go` + templates/weekly.html:/weekly 周报聚合(本周快照×事件×笔记,?offset=N 前周导航) | ✅ |
+| M5 下线:config VaultPath 默认空(禁用);daily-review/reconcile vault 禁用跳过写盘+git;pipeline.sh 去 publisher;prod compose 摘 vault 卷;setup.sh 去 vault 步骤;.env.prod.example 清 PIKS_AI_*/PIKS_VAULT_* | ✅ |
+| 5-2 验收 | ✅ 见 §2 |
+
+## 2. 验收结果(设计 §9 5-2 行)
+
+| # | 标准 | 结果 |
+|---|---|---|
+| 2.1 | Web 新建/编辑笔记 | ✅ POST /notes/new 303→详情;编辑 POST /notes/{id}/edit 303;类型/状态/置信度校验(非法返回错误页,非 500);归档走 /notes/{id}/delete |
+| 2.2 | 关联事件/实体 | ✅ 表单字段 sel_events/sel_entities 多选 → relationships(from_type='personal_note',rel_type='references');DB 验证 ref 行 + 笔记页渲染 📌事件/🏷实体可点 chip;编辑重建引用不重复(count=1) |
+| 2.3 | 事件卡「我的理解」 | ✅ POST 创建 → 事件页回显;再次 POST 更新不重复(type='note',slug='event-<id>' 恒 1 行);redirect #understanding |
+| 2.4 | 周报聚合个人笔记 | ✅ /weekly 2026-W35 渲染本周快照(周三/周四+情绪+涨跌停)+ 本周事件 + 本周沉淀(含新建笔记标题);?offset=1 上一周、空周不崩 |
+| 2.5 | vault/GitHub 停更 | ✅ lab pipeline.sh publisher 出现 0 次;reconcile 输出「报告=(vault 已下线,Web /recon 实时渲染) (git=0)」;daily-review「vault 已下线,跳过写盘+git」;vault 目录无新文件、git log 无新提交;lab .env 已清 PIKS_VAULT_* 与 PIKS_AI_* |
+| 2.6 | 页面可达(部署) | ✅ /weekly /notes /notes/new /settings /recon 全 200;web 容器 Recreate 后正常,AppConfig 读库正常 |
+
+## 3. 关键实现决策(落地细节)
+
+- **personal_notes 状态随 type 变化**:belief 用 hypothesis/active/confirmed/questioned/rejected;case/mistake/note 用 active/archived。表单按类型动态给状态选项。
+- **关联复用 relationships**:不新造表,from_type='personal_note' + rel_type='references';编辑时 ReplaceNoteRefs 事务「删全部→重插」,幂等(ON CONFLICT DO NOTHING)。
+- **事件「我的理解」= 特殊笔记**:type='note'、slug='event-<id>' 稳定键,references 指向事件。事件卡 GET 时按 slug 回显,POST 时不存在则创建+建关系,存在则仅更新(不重复)。
+- **周报周界**:`weekRange` 按北京时区 ISO 周(周一始),返回 2026-W35 标签与 [start,end);行情快照按 trade_date 过滤、事件按 COALESCE(occurred_at,created_at)、笔记按 updated_at。导航偏移 ?offset=N(前 N 周)。
+- **模板函数约定复用**:zh(枚举中文化)、selIn(多选选中)、printf;fmtTime/fmtDate 为 Go 包级函数未注册进模板,一律 handler 预格式化传 string(避免模板层 undefined)。
+- **M5 下线的最小侵入**:不改 pipeline 数据链(collector→worker→cluster→quote→market-state 全留);只去掉「投影到 vault」这一步。daily-review/reconcile 的 vault 写盘+git 用 `VaultPath==""` 守卫跳过,命令仍跑、task_run 仍记、对账明细仍进 meta+stdout(数据不丢)。publisher 二进制保留(渲染数据组装逻辑 Web 复用,设计 §6.1)。
+- **部署顺序**:postgres → migrate(应用 0006)→ web 起;web 启动即 ApplyAppConfig 读 app_config(0005),顺序错会因表缺失崩溃循环。
+- **测试数据清理**:验收产生的临时笔记/事件理解已从 lab 生产库硬删(relationships + personal_notes 全清,现 0 行)。
+
+## 4. 遗留与后续(登记,不在 5-2)
+
+- **5-3**(AI 对话页 + 截图上传;G7 需探测 Zen vision 支持,失败如实降级)——设计 §4 已定,延后。
+- **备份替代**:用户自理(方案 A 异地备份到其他机器),本阶段未代做。
+- **对账遗留**:lab 生产 `reconcile` 报 1 条 `failed_raw`(352413df,validation: empty events array)——旧采集失败滞留,非 5-2 引入,Web /recon 如实呈现。
+- 视觉/交互仍以浏览器目验为准(5-1 §2.5/2.6 已备)。

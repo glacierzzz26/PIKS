@@ -36,7 +36,7 @@ func main() {
 	}
 	defer pool.Close()
 
-	sv, err := web.NewServer(store.New(pool))
+	sv, err := web.NewServer(store.New(pool), cfg)
 	if err != nil {
 		fatal("new server:", err)
 	}

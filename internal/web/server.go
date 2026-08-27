@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"piks/internal/config"
 	"piks/internal/store"
 )
 
@@ -70,12 +71,13 @@ func tmplFuncs() template.FuncMap {
 // Server Web 服务。只读展示(迭代 5 阶段 5-1);编辑/AI 对话在 5-2/5-3 加。
 type Server struct {
 	store *store.Store
+	cfg   config.Config
 	pages map[string]*template.Template // 页面名 → 已解析 base+page 模板集
 }
 
 // NewServer 解析全部页面模板。
-func NewServer(s *store.Store) (*Server, error) {
-	sv := &Server{store: s, pages: map[string]*template.Template{}}
+func NewServer(s *store.Store, cfg config.Config) (*Server, error) {
+	sv := &Server{store: s, cfg: cfg, pages: map[string]*template.Template{}}
 	pages := []struct{ name, file string }{
 		{"dashboard", "templates/dashboard.html"},
 		{"graph", "templates/graph.html"},
@@ -85,6 +87,7 @@ func NewServer(s *store.Store) (*Server, error) {
 		{"reviews", "templates/reviews.html"},
 		{"review", "templates/review.html"},
 		{"recon", "templates/recon.html"},
+		{"settings", "templates/settings.html"},
 	}
 	for _, p := range pages {
 		t, err := template.New(p.name).Funcs(tmplFuncs()).ParseFS(templatesFS, "templates/base.html", p.file)
@@ -112,6 +115,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/reviews", s.handleReviews)
 	mux.HandleFunc("/reviews/", s.handleReview)
 	mux.HandleFunc("/recon", s.handleRecon)
+	mux.HandleFunc("/settings", s.handleSettings)
 
 	// JSON API(图谱点选面板 + 迭代 5-3 对话 grounding 复用)
 	mux.HandleFunc("/api/graph", s.handleGraphAPI)

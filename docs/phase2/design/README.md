@@ -2,6 +2,13 @@
 
 > 阶段:增值(迭代 2 + 迭代 3 + 迭代 4)。已定稿设计在此登记,此后按它执行,改动需走变更。
 
+## 迭代 4 — 个人学习闭环 ✅ 已定稿冻结(实现进行中)
+
+| 文档 | 状态 | 定稿日期 | 备注 |
+|---|---|---|---|
+| [iter4-learning-loop.md](./iter4-learning-loop.md) | ✅ 已定稿冻结 | 2026-08-27 | Belief/Case/Mistake 单表 personal_notes + 单向 harvest 收割器(G6)+ 周报(规则聚合 + 高智档综述);lab clone PIKS-Personal 同步 |
+| [../stages/iter4.md](../stages/iter4.md) | ⬜ 待实现归档 | — | — |
+
 ## 迭代 2 — 市场情报 ✅ 已完成并冻结
 
 | 文档 | 状态 | 定稿日期 | 备注 |

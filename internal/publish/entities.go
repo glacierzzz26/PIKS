@@ -48,22 +48,30 @@ func NewTermResolver(entities []model.Entity) *TermResolver {
 	return &TermResolver{index: idx}
 }
 
-// Resolve 精确 + 后缀剥离匹配。命中返回 wikilink 目标,未命中 ok=false。
+// EntityLink 实体卡的 Obsidian wikilink 目标(与 EntityPath 文件名一致)。
+// 实体卡文件 = 03-Entities/{type}/{name}.md,故链接必须指向该路径;此前误用
+// "entity-{short8}" 造成全部事件→实体链接悬空(graph 只见裸 ID 假节点、点不动)。
+func EntityLink(e *model.Entity) string {
+	return "03-Entities/" + e.Type + "/" + e.Name
+}
+
+// Resolve 精确 + 后缀剥离匹配。命中返回可解析的 wikilink 目标,未命中 ok=false。
 func (r *TermResolver) Resolve(term string) (string, bool) {
 	for _, c := range entityextract.StripSuffixes(term) {
 		for _, typ := range []string{"company", "industry", "concept", "topic", "unknown"} {
 			if e := r.index[typ+"\x00"+c]; e != nil {
-				return "entity-" + shortID(e.ID), true
+				return EntityLink(e), true
 			}
 		}
 	}
 	return "", false
 }
 
-// EntityRef 实体引用(wikilink 用:name 展示 + id 定位)。
+// EntityRef 实体引用(wikilink 用:name 展示 + type/name 定位卡片路径)。
 type EntityRef struct {
 	ID   string
 	Name string
+	Type string
 }
 
 // EntityCardData 实体卡渲染数据(publisher 经 BuildEntityCardData 组装)。
@@ -102,7 +110,7 @@ func BuildEntityCardData(ctx context.Context, s *store.Store, ent *model.Entity,
 			return d, err
 		}
 		for _, p := range partners {
-			ref := EntityRef{p.ID, p.Name}
+			ref := EntityRef{p.ID, p.Name, p.Type}
 			if ent.Type == "company" {
 				d.Industries = append(d.Industries, ref)
 			} else {
@@ -165,14 +173,14 @@ func RenderEntityCard(d EntityCardData) string {
 			b.WriteString("_暂无_\n")
 		}
 		for _, in := range d.Industries {
-			fmt.Fprintf(&b, "- [[entity-%s|%s]]\n", shortID(in.ID), in.Name)
+			fmt.Fprintf(&b, "- [[03-Entities/%s/%s]]\n", in.Type, in.Name)
 		}
 	case "industry":
 		if len(d.Companies) == 0 {
 			b.WriteString("_暂无_\n")
 		}
 		for _, c := range d.Companies {
-			fmt.Fprintf(&b, "- [[entity-%s|%s]]\n", shortID(c.ID), c.Name)
+			fmt.Fprintf(&b, "- [[03-Entities/%s/%s]]\n", c.Type, c.Name)
 		}
 	default:
 		b.WriteString("_暂无_\n")

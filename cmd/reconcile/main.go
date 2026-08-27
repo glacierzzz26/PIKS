@@ -16,9 +16,17 @@ import (
 	"piks/internal/store"
 )
 
+var cst = time.FixedZone("CST", 8*3600)
+
 func main() {
 	vault := flag.String("vault", "", "override vault path (default from config)")
+	dateFlag := flag.String("date", "", "交易日(默认今天,北京时区;格式 2006-01-02)")
 	flag.Parse()
+
+	date := *dateFlag
+	if date == "" {
+		date = time.Now().In(cst).Format("2006-01-02")
+	}
 
 	cfg := config.Load()
 	if *vault != "" {
@@ -49,8 +57,8 @@ func main() {
 		all = append(all, items...)
 	}
 
-	report := buildReport(all)
-	path := filepath.Join(cfg.VaultPath, "00-System", "recon-"+time.Now().Format("2006-01-02")+".md")
+	report := buildReport(all, date)
+	path := filepath.Join(cfg.VaultPath, "00-System", "recon-"+date+".md")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		finishFail(ctx, s, runID, err)
 	}
@@ -90,7 +98,7 @@ func main() {
 	}
 }
 
-func buildReport(all []store.ReconIssue) string {
+func buildReport(all []store.ReconIssue, date string) string {
 	counts := map[string]int{}
 	for _, it := range all {
 		counts[it.Category]++
@@ -106,7 +114,7 @@ func buildReport(all []store.ReconIssue) string {
 	}
 	var b strings.Builder
 	b.WriteString("---\nid: recon\n")
-	fmt.Fprintf(&b, "date: %s\ntype: recon\n---\n\n", time.Now().Format("2006-01-02"))
+	fmt.Fprintf(&b, "date: %s\ntype: recon\n---\n\n", date)
 	b.WriteString("# 对账报告\n\n")
 	b.WriteString("> 自动生成,如实反映,不掩盖异常。\n\n## 检查项\n\n")
 	b.WriteString("| 检查项 | 异常数 |\n|---|---|\n")

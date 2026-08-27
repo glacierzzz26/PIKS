@@ -151,8 +151,9 @@ func (s *Store) GetEventByID(ctx context.Context, id string) (model.Event, error
 func (s *Store) ListEventsByDate(ctx context.Context, day time.Time) ([]model.Event, error) {
 	rows, err := s.Pool.Query(ctx, `
 		SELECT `+eventCols+` FROM events
-		WHERE (occurred_at >= $1 AND occurred_at < $1 + interval '1 day')
-		   OR (occurred_at IS NULL AND created_at >= $1 AND created_at < $1 + interval '1 day')
+		WHERE status <> 'merged'
+		  AND ((occurred_at >= $1 AND occurred_at < $1 + interval '1 day')
+		   OR (occurred_at IS NULL AND created_at >= $1 AND created_at < $1 + interval '1 day'))
 		ORDER BY occurred_at NULLS LAST, created_at DESC
 		LIMIT 50`, day)
 	if err != nil {

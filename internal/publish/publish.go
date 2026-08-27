@@ -30,7 +30,7 @@ func shortID(id string) string {
 
 // RenderEvent 按设计 §7 模板渲染单张事件卡片。
 // 严格遵守 Fact≠Inference≠Belief:卡片只有 AI 抽取的事实;推测留给"我的理解"占位。
-// resolve:affected 词 → 实体 wikilink 目标(迭代 3,设计 §3.3)。命中 → [[entity-xxx|原词]],未命中保持纯文本(诚实)。
+// resolve:affected 词 → 实体 wikilink 目标(迭代 3,设计 §3.3)。命中 → [[03-Entities/{type}/{name}|原词]],未命中保持纯文本(诚实)。
 func RenderEvent(it store.EventForPublish, evs []model.Evidence, resolve func(string) (string, bool)) string {
 	var b strings.Builder
 

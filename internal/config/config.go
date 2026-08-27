@@ -15,6 +15,7 @@ type Config struct {
 	AIAPIKey           string
 	AIModelExtract     string
 	AIModelReasoning   string
+	AIModelVision      string // 截图/视觉模型(5-3 截图识别;空=回退文本模型)
 	AIDailyTokenBudget int64
 }
 
@@ -39,6 +40,9 @@ func (c *Config) ApplyAppConfig(m map[string]string) {
 	}
 	if v := m["ai_model_reasoning"]; v != "" {
 		c.AIModelReasoning = v
+	}
+	if v := m["ai_model_vision"]; v != "" {
+		c.AIModelVision = v
 	}
 	if v := m["ai_daily_token_budget"]; v != "" {
 		c.AIDailyTokenBudget = atoi64(v)

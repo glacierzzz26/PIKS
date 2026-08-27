@@ -1,9 +1,12 @@
 package web
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
+
+	"piks/internal/ai"
 )
 
 // SettingsPage 大模型(AI)配置编辑页。
@@ -15,12 +18,16 @@ type SettingsPage struct {
 }
 
 // AIConfigForm 编辑表单视图。密钥字段永远空值 + 掩码占位,绝不回填明文。
+// 模型字段为下拉:选项来自 provider /models(实时拉取)+ 已保存值兜底。
 type AIConfigForm struct {
 	BaseURL        string
 	KeyMasked      string // 已配置(sk-k···i3Ab) / 未配置
 	ModelExtract   string
 	ModelReasoning string
+	ModelVision    string
 	Budget         string // 原始串("0" = 护栏关闭)
+	ModelOptions   []string
+	ModelNote      string // /models 拉取失败提示
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
@@ -42,10 +49,17 @@ func (s *Server) showSettings(w http.ResponseWriter, r *http.Request, errMsg str
 		KeyMasked:      maskSecret(m["ai_api_key"]),
 		ModelExtract:   m["ai_model_extract"],
 		ModelReasoning: m["ai_model_reasoning"],
+		ModelVision:    m["ai_model_vision"],
 		Budget:         m["ai_daily_token_budget"],
 	}
 	if form.Budget == "" {
 		form.Budget = "0"
+	}
+	form.ModelOptions = s.fetchModelOptions(r.Context(), m)
+	// 已保存模型必须出现在下拉(即使不在 provider 列表)。
+	form.ModelOptions = mergeOpts(form.ModelOptions, form.ModelExtract, form.ModelReasoning, form.ModelVision)
+	if len(form.ModelOptions) <= len(onlyNonEmpty(form.ModelExtract, form.ModelReasoning, form.ModelVision)) {
+		form.ModelNote = "模型列表获取失败(检查服务地址/密钥);下拉仅含已保存模型。"
 	}
 	page := SettingsPage{
 		Common: Common{Title: "系统配置 · PIKS", Active: "settings"},
@@ -58,6 +72,43 @@ func (s *Server) showSettings(w http.ResponseWriter, r *http.Request, errMsg str
 	s.render(w, "settings", page)
 }
 
+// fetchModelOptions 用当前已存 base_url+key 拉 provider 模型列表(失败返回 nil,页面兜底)。
+func (s *Server) fetchModelOptions(ctx context.Context, m map[string]string) []string {
+	if m["ai_service_base_url"] == "" || m["ai_api_key"] == "" {
+		return nil
+	}
+	c := ai.NewOpenAICompat(m["ai_service_base_url"], m["ai_api_key"], m["ai_model_extract"])
+	opts, err := c.ListModels(ctx)
+	if err != nil {
+		return nil
+	}
+	return opts
+}
+
+// mergeOpts 合并选项去重,保序;空值忽略。
+func mergeOpts(primary []string, extra ...string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(primary)+len(extra))
+	for _, s := range append(append([]string{}, primary...), extra...) {
+		if s == "" || seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return out
+}
+
+func onlyNonEmpty(vals ...string) []string {
+	var out []string
+	for _, v := range vals {
+		if v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
 func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		s.showSettings(w, r, "解析表单失败: "+err.Error())
@@ -68,11 +119,12 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 	base := strings.TrimSpace(r.FormValue("ai_service_base_url"))
 	extract := strings.TrimSpace(r.FormValue("ai_model_extract"))
 	reason := strings.TrimSpace(r.FormValue("ai_model_reasoning"))
+	vision := strings.TrimSpace(r.FormValue("ai_model_vision"))
 	budget := strings.TrimSpace(r.FormValue("ai_daily_token_budget"))
 	key := r.FormValue("ai_api_key") // 留空 = 不修改
 
 	if base == "" || extract == "" || reason == "" {
-		s.showSettings(w, r, "AI 服务地址与两个模型必填(不接受留空)。")
+		s.showSettings(w, r, "AI 服务地址、文本处理模型、深度推理模型必填(不接受留空);截图模型可留空(回退文本模型)。")
 		return
 	}
 	if budget == "" {
@@ -87,6 +139,7 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 		"ai_service_base_url":   base,
 		"ai_model_extract":      extract,
 		"ai_model_reasoning":    reason,
+		"ai_model_vision":       vision,
 		"ai_daily_token_budget": budget,
 	} {
 		if err := s.store.UpsertAppConfig(ctx, k, v); err != nil {

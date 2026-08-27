@@ -31,6 +31,45 @@ func NewOpenAICompat(baseURL, apiKey, model string) *OpenAICompat {
 
 func (p *OpenAICompat) Name() string { return "openai-compat:" + p.model }
 
+// ListModels 获取 provider 可用模型 id 列表(GET /models,OpenAI 兼容)。settings 页下拉选择用。
+func (p *OpenAICompat) ListModels(ctx context.Context) ([]string, error) {
+	if p.apiKey == "" {
+		return nil, fmt.Errorf("api key 未配置")
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", p.baseURL+"/models", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("models status %d: %s", resp.StatusCode, truncate(string(body), 200))
+	}
+	var out struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("parse models: %w", err)
+	}
+	ids := make([]string, 0, len(out.Data))
+	for _, m := range out.Data {
+		if m.ID != "" {
+			ids = append(ids, m.ID)
+		}
+	}
+	return ids, nil
+}
+
 func (p *OpenAICompat) HealthCheck(ctx context.Context) error {
 	if p.apiKey == "" {
 		return fmt.Errorf("PIKS_AI_API_KEY not set")

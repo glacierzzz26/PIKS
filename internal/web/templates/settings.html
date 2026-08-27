@@ -14,19 +14,30 @@
     <label>API Key<span class="hint-inline">留空 = 保持现值({{.Form.KeyMasked}})</span>
       <input type="password" name="ai_api_key" value="" autocomplete="new-password" placeholder="{{.Form.KeyMasked}}">
     </label>
-    <label>抽取模型(便宜档)
-      <input type="text" name="ai_model_extract" value="{{.Form.ModelExtract}}" required placeholder="deepseek-chat">
+    <label>文本处理模型<span class="hint-inline">抽取/归类/问答</span>
+      <select name="ai_model_extract" required>
+        {{range .Form.ModelOptions}}<option value="{{.}}" {{if eq . $.Form.ModelExtract}}selected{{end}}>{{.}}</option>{{end}}
+      </select>
     </label>
-    <label>推理模型(贵档)
-      <input type="text" name="ai_model_reasoning" value="{{.Form.ModelReasoning}}" required placeholder="deepseek-reasoner">
+    <label>深度推理模型<span class="hint-inline">聚类判断/综述</span>
+      <select name="ai_model_reasoning" required>
+        {{range .Form.ModelOptions}}<option value="{{.}}" {{if eq . $.Form.ModelReasoning}}selected{{end}}>{{.}}</option>{{end}}
+      </select>
+    </label>
+    <label>截图/视觉模型<span class="hint-inline">5-3 截图识别;留空=回退文本模型</span>
+      <select name="ai_model_vision">
+        <option value="">(留空 = 不启用)</option>
+        {{range .Form.ModelOptions}}<option value="{{.}}" {{if eq . $.Form.ModelVision}}selected{{end}}>{{.}}</option>{{end}}
+      </select>
     </label>
     <label>日 token 预算(护栏)<span class="hint-inline">0 = 关闭</span>
       <input type="number" name="ai_daily_token_budget" value="{{.Form.Budget}}" min="0" step="1000">
     </label>
+    {{if .Form.ModelNote}}<p class="alert" style="margin-top:10px">⚠️ {{.Form.ModelNote}}</p>{{end}}
     <div class="cfg-actions">
       <button type="submit" class="btn">保存配置</button>
     </div>
   </form>
-  <p class="footnote">档位分层(iter0 D2):抽取档 = 便宜模型(快讯归类/实体分类);推理档 = 贵模型(聚类判断/综述)。密钥只存数据库,页面仅掩码展示,不回填明文。</p>
+  <p class="footnote">模型下拉 = 实时从服务商 /models 获取(保存服务地址/密钥后刷新)。档位分层(iter0 D2):文本处理 = 便宜模型(快讯归类/实体分类/问答);深度推理 = 贵模型(聚类判断/综述);截图/视觉 = 独立模型(deepseek-v4-flash-vision-exp 等)。密钥只存数据库,页面仅掩码展示,不回填明文。</p>
 </section>
 {{end}}

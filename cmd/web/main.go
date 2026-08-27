@@ -1,5 +1,5 @@
 // web 命令:迭代 5 Web 平台(替换 Obsidian 界面层,设计 web-app.md)。
-// PostgreSQL 直接渲染 HTML;图谱/点选面板走 /api JSON。只读(5-1),编辑/AI 在 5-2/5-3。
+// PostgreSQL 直接渲染 HTML;图谱/点选面板走 /api JSON。读只读(5-1)+ 配置编辑(5-2 前置),AI 对话在 5-3。
 package main
 
 import (

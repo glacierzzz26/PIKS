@@ -68,7 +68,7 @@ func tmplFuncs() template.FuncMap {
 	}
 }
 
-// Server Web 服务。只读展示(迭代 5 阶段 5-1);编辑/AI 对话在 5-2/5-3 加。
+// Server Web 服务。只读展示(5-1)+ 大模型配置编辑(5-2 前置);AI 对话在 5-3 加。
 type Server struct {
 	store *store.Store
 	cfg   config.Config

@@ -43,7 +43,8 @@ After:   PostgreSQL <═════════ Web 应用(lab :8090,读+写+AI
 ### 3.1 Web 服务(`cmd/web`,Go)
 
 - `net/http` + `html/template` 服务端渲染;一小撮原生 JS(图谱/ECharts 本地 vendored,不依赖 CDN)。
-- compose 加 `web` 服务:同 postgres 网络,`0.0.0.0:8090` 暴露局域网;`PIKS_AI_*` 环境变量注入 LLM。
+- compose 加 `web` 服务:同 postgres 网络,`0.0.0.0:8090` 暴露局域网。
+- **大模型配置权威源 = 数据库 `app_config` 表**(2026-08-27 修订,替代 env 注入):`config.ApplyAppConfig` 从表合并,worker/cluster/entity-build/web 开库后套用;页面 `/settings` 可编辑(密钥掩码、留空=保持)。代码不再读 `PIKS_AI_*` 环境变量。
 - 复用 `internal/publish` 的数据组装(`BuildEntityCardData`、快照聚合、`ListEventsByDate` 等),把 **Markdown 渲染换成 HTML 模板**——渲染逻辑不重写,只换格式层。
 - 单用户 LAN 信任模型(与现状一致),不做登录;如需再议。
 
@@ -58,6 +59,7 @@ After:   PostgreSQL <═════════ Web 应用(lab :8090,读+写+AI
 | 实体卡 `/entities/{id}` | 基本信息/相关事件(可点)/相关实体(可点)/涨停 | entities / relationships |
 | 复盘 `/reviews/{date}` | 每日复盘 12 项(继承 daily-review) | market_snapshots / observations |
 | 对账 `/recon` | reconcile 异常清单可视化 | task_runs / 检查项 |
+| 系统配置 `/settings` | 大模型配置编辑(密钥掩码、留空=保持) | app_config |
 | 个人笔记 `/notes` | belief/case/mistake 列表/新建/编辑;关联事件/实体 | personal_notes / relationships |
 | **AI 对话** `/chat` | 问知识库 + 上传截图(§4.3) | LLM + 检索 |
 
@@ -93,7 +95,7 @@ After:   PostgreSQL <═════════ Web 应用(lab :8090,读+写+AI
 ### 4.2 模型档位(遵循 iter0 D2 分层)
 
 - 问答用 **extract 档**(deepseek-v4-flash),便宜;截图深度分析/周报综述可选 **reasoning 档**(按需)。
-- provider = 现有 Zen `/zen/go` 路由,复用 `PIKS_AI_BASE_URL` / `PIKS_AI_MODEL_EXTRACT` / `PIKS_AI_MODEL_REASONING`。
+- provider = 现有 Zen `/zen/go` 路由,配置读 `app_config` 表(`ai_service_base_url` / `ai_model_extract` / `ai_model_reasoning`),`/settings` 页编辑。
 
 ### 4.3 截图流程(契约缺口,§9 G7)
 

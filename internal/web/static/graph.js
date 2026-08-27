@@ -321,6 +321,22 @@
   btnLocal.addEventListener('click', () => setScope('local'));
   btnGlobal.addEventListener('click', () => setScope('global'));
 
+  // 全屏:让图谱容器独占视口,退出/ESC 自动恢复
+  const btnFs = document.getElementById('gFullscreen');
+  const stageEl = svg.parentElement;
+  btnFs.addEventListener('click', () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else {
+      stageEl.requestFullscreen().catch(() => {});
+    }
+  });
+  document.addEventListener('fullscreenchange', () => {
+    W = svg.clientWidth || 820;
+    H = svg.clientHeight || 520;
+    render();
+  });
+
   // 搜索聚焦
   search.addEventListener('keydown', e => {
     if (e.key !== 'Enter') return;

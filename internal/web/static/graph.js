@@ -208,6 +208,14 @@
     });
   }
   function chip(label, cls) { return '<span class="chip ' + cls + '">' + esc(label) + '</span>'; }
+  // zh 后台英文枚举 → "中文(英文)",未收录原样返回。
+  function zh(v) {
+    const m = {company:'公司',earnings:'业绩',industry:'行业',macro:'宏观',policy:'政策',tech:'科技',
+      concept:'概念',topic:'主题',active:'活跃',extracted:'已抽取',merged:'已合并',
+      Strong:'强势',Neutral:'中性',Weak:'弱势',limit_up:'涨停数',limit_down:'跌停数',breadth_ratio:'涨跌比',
+      broken_rate:'炸板率',max_board:'最高连板',strong_yesterday:'昨日强势',industry_count:'涨停行业数'};
+    return m[v] ? m[v] + '(' + v + ')' : v;
+  }
   function entChip(name, type, id) {
     return '<a class="chip entity" href="javascript:;" data-open="entity" data-id="' + esc(id) + '" title="点此看实体">' +
       esc(name) + '<em>' + esc(type) + '</em></a>';
@@ -219,8 +227,8 @@
       : chip(a.Word, 'dim')).join('');
     const evs = (d.evidence || []).map(e => '<li>' + (e.URL ? '<a href="' + esc(e.URL) + '" target="_blank" rel="noopener">' +
       esc(e.Claim) + '</a>' : esc(e.Claim)) + '</li>').join('');
-    return '<div class="meta"><span class="chip">' + esc(d.event_type) + '</span>' +
-      chip(d.status, 'status') + chip(d.date, 'date') +
+    return '<div class="meta"><span class="chip">' + zh(d.event_type) + '</span>' +
+      chip(zh(d.status), 'status') + chip(d.date, 'date') +
       '<span class="chip">置信 ' + Number(d.confidence).toFixed(2) + '</span></div>' +
       '<h3>' + esc(d.title) + '</h3>' +
       (d.summary ? '<p class="kpi" style="margin:6px 0">' + esc(d.summary) + '</p>' : '') +
@@ -234,7 +242,7 @@
     const rels = (d.industries || []).concat(d.companies || []).map(r =>
       entChip(r.Name, r.Type === 'industry' ? '行业' : '公司', r.ID)).join('');
     const zt = (d.zt_dates || []).map(z => chip(z + ' 涨停', 'zt')).join('');
-    return '<div class="meta">' + chip(d.type, '') + chip(d.status, 'status') +
+    return '<div class="meta">' + chip(zh(d.type), '') + chip(zh(d.status), 'status') +
       (d.code ? chip(d.code, 'code') : '') + '</div>' +
       '<h3>' + esc(d.name) + '</h3>' +
       (d.description ? '<p class="kpi" style="margin:6px 0">' + esc(d.description) + '</p>' : '') +

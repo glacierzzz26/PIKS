@@ -1,10 +1,10 @@
 {{define "content"}}
 <article class="card page" style="margin-top:20px">
-  <div class="crumb"><a href="/graph">关系图谱</a> / {{.Entity.Type}}</div>
+  <div class="crumb"><a href="/graph">关系图谱</a> / {{zh .Entity.Type}}</div>
   <h1>{{.Entity.Name}}</h1>
   <div class="meta">
-    <span class="chip">{{.Entity.Type}}</span>
-    <span class="chip status">{{.Entity.Status}}</span>
+    <span class="chip">{{zh .Entity.Type}}</span>
+    <span class="chip status">{{zh .Entity.Status}}</span>
     {{if .Entity.Code}}<span class="chip code">{{.Entity.Code}}</span>{{end}}
     {{if .Entity.IndustryNames}}<span class="chip">{{.Entity.IndustryNames}}</span>{{end}}
     {{if .Entity.Source}}<span class="chip">{{.Entity.Source}}</span>{{end}}

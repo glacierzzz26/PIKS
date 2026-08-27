@@ -1,10 +1,10 @@
 {{define "content"}}
 <article class="card page" style="margin-top:20px">
-  <div class="crumb"><a href="/events">事件流</a> / {{.Event.EventType}}</div>
+  <div class="crumb"><a href="/events">事件流</a> / {{zh .Event.EventType}}</div>
   <h1>{{.Event.Title}}</h1>
   <div class="meta">
-    <span class="chip">{{.Event.EventType}}</span>
-    <span class="chip status">{{.Event.Status}}</span>
+    <span class="chip">{{zh .Event.EventType}}</span>
+    <span class="chip status">{{zh .Event.Status}}</span>
     <span class="chip">置信 {{printf "%.2f" .Event.Confidence}}</span>
     <span class="chip">{{.Event.Source}}</span>
     <span class="chip date">{{.Event.Date}}</span>
@@ -27,7 +27,7 @@
     <div class="chips">
       {{if .Affected}}
       {{range .Affected}}
-      {{if .Linked}}<a class="chip entity" href="/entities/{{.EntityID}}">{{.Word}}<em>{{.EntityType}}</em></a>
+      {{if .Linked}}<a class="chip entity" href="/entities/{{.EntityID}}">{{.Word}}<em>{{zh .EntityType}}</em></a>
       {{else}}<span class="chip dim">{{.Word}}</span>{{end}}
       {{end}}
       {{else}}<span class="empty">无(原文未提及实体)</span>{{end}}

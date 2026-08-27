@@ -252,7 +252,8 @@ func (d *quotemarketDriver) fetchIndex(ctx context.Context, secid string) (Index
 	if r.Data == nil {
 		return IndexQuote{}, fmt.Errorf("empty index data")
 	}
-	return IndexQuote{Close: r.Data.F43, Pct: r.Data.F170}, nil
+	// 东财 f43=最新价(×100)、f170=涨跌幅%(×100),归一化为真实单位入库(上证 395657→3956.57,113→1.13)。
+	return IndexQuote{Close: r.Data.F43 / 100, Pct: r.Data.F170 / 100}, nil
 }
 
 // fetchBreadth 涨跌家数。实测持续被挡,失败即返回,标记 pending。

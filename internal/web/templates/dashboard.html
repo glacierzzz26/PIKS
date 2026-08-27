@@ -12,7 +12,7 @@
       <div class="snap card-soft{{if eq $i 0}} latest{{end}}">
         <div class="row1"><a class="date" href="/reviews/{{$s.Date}}">{{$s.Date}}</a>
           {{if eq $i 0}}<span class="latest-badge">最新</span>{{end}}
-          <span class="emotion em-{{emClass $s.Emotion}}">{{$s.Emotion}}</span></div>
+          <span class="emotion em-{{emClass $s.Emotion}}">{{zh $s.Emotion}}</span></div>
         <div class="mets">
           <div class="met"><b>{{$s.Score}}</b><span>情绪分</span></div>
           <div class="met"><b class="red">{{$s.LimitUp}}</b><span>涨停</span></div>
@@ -95,5 +95,5 @@
   <div class="stat"><b>{{.Stats.Snapshots}}</b><span>快照交易日</span></div>
 </section>
 
-<p class="footnote">生成于 {{.Generated}}(北京时间)。情绪模型 Strong / Neutral / Weak,规则加权,非交易信号。</p>
+<p class="footnote">生成于 {{.Generated}}(北京时间)。情绪模型 {{zh "Strong"}} / {{zh "Neutral"}} / {{zh "Weak"}},规则加权,非交易信号。</p>
 {{end}}

@@ -17,7 +17,7 @@ var templatesFS embed.FS
 //go:embed static
 var staticFS embed.FS
 
-// tmplFuncs 模板函数(情绪样式/条宽百分比/涨跌色/计数)。
+// tmplFuncs 模板函数(情绪样式/条宽百分比/涨跌色/计数/枚举中文化)。
 func tmplFuncs() template.FuncMap {
 	return template.FuncMap{
 		"emClass": func(s string) string {
@@ -30,6 +30,22 @@ func tmplFuncs() template.FuncMap {
 			default:
 				return "em-weak"
 			}
+		},
+		// zh 后台英文枚举 → 前台 "中文(英文)";未收录原样返回(诚实)。
+		"zh": func(v string) string {
+			zhMap := map[string]string{
+				"company": "公司", "earnings": "业绩", "industry": "行业", "macro": "宏观",
+				"policy": "政策", "tech": "科技", "concept": "概念", "topic": "主题",
+				"active": "活跃", "extracted": "已抽取", "merged": "已合并",
+				"Strong": "强势", "Neutral": "中性", "Weak": "弱势",
+				"limit_up": "涨停数", "limit_down": "跌停数", "breadth_ratio": "涨跌比",
+				"broken_rate": "炸板率", "max_board": "最高连板", "strong_yesterday": "昨日强势",
+				"industry_count": "涨停行业数",
+			}
+			if c, ok := zhMap[v]; ok {
+				return c + "(" + v + ")"
+			}
+			return v
 		},
 		"pct": func(v, max int) int {
 			if max <= 0 {

@@ -11,7 +11,7 @@
   <article class="card ev-card">
     <a class="ev-title" href="/events/{{.ID}}">{{.Title}}</a>
     <div class="ev-meta">
-      <span class="chip">{{.EventType}}</span>
+      <span class="chip">{{zh .EventType}}</span>
       <span class="chip dim">{{.Source}}</span>
       <span class="chip dim">置信 {{printf "%.2f" .Confidence}}</span>
     </div>
@@ -19,7 +19,7 @@
     {{if .Affected}}
     <div class="chips" style="margin-top:8px">
       {{range .Affected}}
-      {{if .Linked}}<a class="chip entity" href="/entities/{{.EntityID}}">{{.Word}}<em>{{.EntityType}}</em></a>
+      {{if .Linked}}<a class="chip entity" href="/entities/{{.EntityID}}">{{.Word}}<em>{{zh .EntityType}}</em></a>
       {{else}}<span class="chip dim">{{.Word}}</span>{{end}}
       {{end}}
     </div>

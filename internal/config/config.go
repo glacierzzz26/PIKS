@@ -7,7 +7,8 @@ import "os"
 type Config struct {
 	// 数据库连接串。默认指向 docker-compose 的独立 postgres(宿主端口 5433)。
 	DatabaseURL string
-	// 生成的 Obsidian vault 仓库路径(迭代 5-2 下线 publisher 后废弃)。
+	// 生成的 Obsidian vault 仓库路径。迭代 5-2 已废弃:Web 直读 PG,
+	// vault/GitHub 停更。空 = vault 禁用(daily-review/reconcile 跳过写盘+git)。
 	VaultPath string
 	// AI(OpenAI 兼容协议)。由 app_config 表提供,Load() 零值,ApplyAppConfig 合并。
 	AIServiceBaseURL   string
@@ -20,7 +21,7 @@ type Config struct {
 func Load() Config {
 	return Config{
 		DatabaseURL: getenv("PIKS_DATABASE_URL", "postgres://piks:piks_dev_password@localhost:5433/piks?sslmode=disable"),
-		VaultPath:   getenv("PIKS_VAULT_PATH", "./PIKS-Vault"),
+		VaultPath:   getenv("PIKS_VAULT_PATH", ""), // 迭代 5-2:默认禁用 vault(弃 Obsidian/GitHub)
 	}
 }
 

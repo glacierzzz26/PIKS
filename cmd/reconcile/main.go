@@ -57,28 +57,34 @@ func main() {
 		all = append(all, items...)
 	}
 
-	report := buildReport(all, date)
-	path := filepath.Join(cfg.VaultPath, "00-System", "recon-"+date+".md")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		finishFail(ctx, s, runID, err)
-	}
-	if err := os.WriteFile(path, []byte(report), 0o644); err != nil {
-		finishFail(ctx, s, runID, err)
-	}
-	committed, err := publish.CommitVaultWithMsg(cfg.VaultPath, "reconcile: 对账报告")
-
 	// 按类别计数
 	counts := map[string]int{}
 	for _, it := range all {
 		counts[it.Category]++
 	}
 	ok := len(all) == 0
+
+	// 迭代 5-2:vault/GitHub 停更,对账改由 Web /recon 实时渲染(ReconIssue 直读 PG)。
+	// vault 禁用(默认)时跳过写盘+git,异常明细仍在 task_runs.meta 与 stdout(数据不丢)。
+	report, path, committed, err := "", "(vault 已下线,Web /recon 实时渲染)", 0, nil
+	if cfg.VaultPath != "" {
+		report = buildReport(all, date)
+		path = filepath.Join(cfg.VaultPath, "00-System", "recon-"+date+".md")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			finishFail(ctx, s, runID, err)
+		}
+		if err := os.WriteFile(path, []byte(report), 0o644); err != nil {
+			finishFail(ctx, s, runID, err)
+		}
+		committed, err = publish.CommitVaultWithMsg(cfg.VaultPath, "reconcile: 对账报告")
+	}
+
 	meta := map[string]any{
-		"total":      len(all),
+		"total":       len(all),
 		"by_category": counts,
-		"conclusion": map[string]bool{"passed": ok},
-		"report":     path,
-		"git_commit": committed,
+		"conclusion":  map[string]bool{"passed": ok},
+		"report":      path,
+		"git_commit":  committed,
 	}
 	status, errMsg := "success", ""
 	if err != nil {

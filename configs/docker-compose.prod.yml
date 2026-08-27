@@ -30,7 +30,7 @@ services:
     container_name: piks-web
     ports:
       - "0.0.0.0:8090:8090"            # 对 lab 局域网暴露,浏览器访问 http://192.168.0.202:8090
-    env_file: [".env"]                 # 含 PIKS_AI_* 预留(5-3 AI 对话)
+    env_file: [".env"]                 # 仅 DB 变量;AI 配置走 app_config 表(/settings 编辑)
     environment:
       - TZ=Asia/Shanghai
       - PIKS_DATABASE_URL=postgres://piks:${PIKS_DB_PASSWORD:-piks_dev_password}@postgres:5432/piks?sslmode=disable
@@ -48,8 +48,7 @@ services:
     env_file: [".env"]                 # /home/rguo/piks/.env(真实密钥,0600)
     environment:
       - TZ=Asia/Shanghai               # 非交易日判定/复盘日期均为北京时间
-    volumes:
-      - /home/rguo/piks/vault:/srv/vault     # Generated 工作仓(挂载进容器,git 配置持久)
+      # 迭代 5-2:vault/GitHub 下线,不再挂载 vault 卷(Web 直读 PG)。
     networks: [piks]
     command: ["sh", "-c", "true"]
 

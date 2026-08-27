@@ -31,11 +31,12 @@ run() {
   docker compose -f "$C/docker-compose.yml" run --rm -T tools ./bin/"$@" >> "$L" 2>&1
 }
 
-# 全链:新闻→抽取→聚类→行情→实体→快照→复盘→发布→对账。失败步骤记录不阻断(幂等,可重试)。
+# 全链:新闻→抽取→聚类→行情→实体→快照→复盘→对账。失败步骤记录不阻断(幂等,可重试)。
+# 迭代 5-2:publisher/vault/GitHub 下线(Web 直读 PG),daily-review/reconcile 在 vault 禁用时跳过写盘+git。
 # 生产新闻源 = 东方财富 7x24 快讯(dongcai 驱动);file 驱动仅迭代0 保底,生产不用。
 # 日期敏感命令显式 -date $TODAY:quote-collector / market-state / daily-review / reconcile。
 ok=1
-for c in migrate "collector -driver dongcai" worker cluster "quote-collector -date $TODAY" entity-build "market-state -date $TODAY" "daily-review -date $TODAY" publisher "reconcile -date $TODAY"; do
+for c in migrate "collector -driver dongcai" worker cluster "quote-collector -date $TODAY" entity-build "market-state -date $TODAY" "daily-review -date $TODAY" "reconcile -date $TODAY"; do
   # shellcheck disable=SC2086   # $c 含参数时按空格拆分为独立参数
   if run $c; then echo "== ok $c" >> "$L"; else echo "== FAIL $c" >> "$L"; ok=0; fi
 done

@@ -56,6 +56,14 @@ func main() {
 		return
 	}
 
+	// 迭代 5-2:vault/GitHub 停更,复盘改由 Web 直读 market_snapshots 渲染(reviews 页)。
+	// vault 禁用(默认)时跳过写盘+git,仅记录 task_run;数据链(market-state 快照)不受影响。
+	if cfg.VaultPath == "" {
+		_ = s.FinishTaskRun(ctx, runID, "success", "", map[string]any{"date": date, "published": "vault-disabled"})
+		fmt.Printf("daily-review %s: vault 已下线(迭代 5-2,Web 直读 PG),跳过写盘+git\n", date)
+		return
+	}
+
 	pipeline := "market-state@" + gitShort()
 	content := publish.RenderMarket(snap, pipeline)
 	path := publish.MarketPath(cfg.VaultPath, dayUTC)

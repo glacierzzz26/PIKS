@@ -1,0 +1,30 @@
+{{define "content"}}
+<section class="graph-wrap">
+  <div class="graph-toolbar card">
+    <input id="gSearch" type="search" placeholder="搜索事件 / 实体… 回车聚焦" autocomplete="off">
+    <button id="gLocal" class="btn active" title="局部:最近事件邻域">局部</button>
+    <button id="gGlobal" class="btn" title="全局:全部节点">全局</button>
+    <span class="spacer"></span>
+    <button id="gZoomIn" class="btn icon" title="放大">＋</button>
+    <button id="gZoomOut" class="btn icon" title="缩小">－</button>
+    <button id="gReset" class="btn icon" title="复位视图">⤾</button>
+  </div>
+
+  <div class="graph-stage card">
+    <svg id="gSvg"><g id="gMain"></g></svg>
+    <div class="g-legend">
+      <span><i style="background:var(--accent)"></i>事件</span>
+      <span><i style="background:var(--green)"></i>公司</span>
+      <span><i style="background:var(--amber)"></i>行业</span>
+      <span><i style="background:var(--red)"></i>概念/主题</span>
+    </div>
+    <div class="hint">滚轮缩放 · 拖拽平移 · 点节点看内容 · 双击节点聚焦</div>
+    <aside class="panel hidden" id="gPanel">
+      <button class="close" id="gPanelClose" title="关闭">×</button>
+      <div id="gPanelBody"></div>
+    </aside>
+  </div>
+
+  <p class="footnote">共 {{.TotalEvents}} 事件 / {{.TotalEntities}} 实体。局部 = 最近事件邻域;全局 = 整图(节点多时较密)。</p>
+</section>
+{{end}}

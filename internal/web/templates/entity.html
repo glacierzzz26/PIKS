@@ -1,0 +1,41 @@
+{{define "content"}}
+<article class="card page" style="margin-top:20px">
+  <div class="crumb"><a href="/graph">关系图谱</a> / {{.Entity.Type}}</div>
+  <h1>{{.Entity.Name}}</h1>
+  <div class="meta">
+    <span class="chip">{{.Entity.Type}}</span>
+    <span class="chip status">{{.Entity.Status}}</span>
+    {{if .Entity.Code}}<span class="chip code">{{.Entity.Code}}</span>{{end}}
+    {{if .Entity.IndustryNames}}<span class="chip">{{.Entity.IndustryNames}}</span>{{end}}
+    {{if .Entity.Source}}<span class="chip">{{.Entity.Source}}</span>{{end}}
+  </div>
+  {{if .Entity.Description}}<p class="desc">{{.Entity.Description}}</p>{{end}}
+
+  <section class="sec">
+    <h2>相关事件</h2>
+    <ul class="evid">
+      {{if .Events}}{{range .Events}}<li><a href="/events/{{.ID}}">{{.Title}}</a></li>{{end}}
+      {{else}}<li class="empty">暂无</li>{{end}}
+    </ul>
+  </section>
+
+  <section class="sec">
+    <h2>相关实体</h2>
+    <div class="chips">
+      {{range .Industries}}<a class="chip entity" href="/entities/{{.ID}}">{{.Name}}<em>行业</em></a>{{end}}
+      {{range .Companies}}<a class="chip entity" href="/entities/{{.ID}}">{{.Name}}<em>公司</em></a>{{end}}
+      {{if and (not .Industries) (not .Companies)}}<span class="empty">暂无</span>{{end}}
+    </div>
+  </section>
+
+  {{if .HasZTField}}
+  <section class="sec">
+    <h2>涨停记录</h2>
+    <div class="chips">
+      {{if .ZTDates}}{{range .ZTDates}}<span class="chip zt">{{.}} 涨停</span>{{end}}
+      {{else}}<span class="empty">无(仅东财涨停池可回溯,或非公司实体)</span>{{end}}
+    </div>
+  </section>
+  {{end}}
+</article>
+{{end}}

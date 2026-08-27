@@ -1,6 +1,7 @@
 # PIKS 生产 compose(lab 实例化到 /home/rguo/piks/docker-compose.yml,setup.sh 复制)。
 # 与 dev 的 configs/docker-compose.yml 区别:tools 服务、私有网络 piks、5433 只绑回环、容器内用户对齐宿主 rguo(uid 1000)。
 # postgres:  `docker compose up -d`(仅此常驻)。
+# web:       迭代5 Web 平台常驻(:8090 对外只读,5-3 将加编辑/AI)。
 # tools:    `docker compose run --rm tools ./bin/<cmd>`(profile=run,不随 up 常驻)。
 services:
   postgres:
@@ -21,6 +22,24 @@ services:
       retries: 10
     restart: unless-stopped
     networks: [piks]
+
+  # 迭代5 Web 平台:PostgreSQL 直接渲染 HTML(只读)。图谱/点选面板走 /api JSON。
+  # 不依赖 Markdown/vault;仅经 postgres 读数据,故不需 tools 的 vault 挂载。
+  web:
+    image: piks-tools:latest
+    container_name: piks-web
+    ports:
+      - "0.0.0.0:8090:8090"            # 对 lab 局域网暴露,浏览器访问 http://192.168.0.202:8090
+    env_file: [".env"]                 # 含 PIKS_AI_* 预留(5-3 AI 对话)
+    environment:
+      - TZ=Asia/Shanghai
+      - PIKS_DATABASE_URL=postgres://piks:${PIKS_DB_PASSWORD:-piks_dev_password}@postgres:5432/piks?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [piks]
+    command: ["./bin/web"]
 
   tools:
     image: piks-tools:latest

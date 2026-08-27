@@ -115,6 +115,20 @@ func (s *Store) ListEntitiesByType(ctx context.Context, entityType string) ([]mo
 	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Entity])
 }
 
+// GetEntityByID 单实体(web 实体卡 / 图谱点选面板)。
+func (s *Store) GetEntityByID(ctx context.Context, id string) (*model.Entity, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT `+entityCols+` FROM entities WHERE id=$1`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	e, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[model.Entity])
+	if err != nil {
+		return nil, err
+	}
+	return &e, nil
+}
+
 // ListEntitiesByIDs 按 id 批量取(供 publisher 按关系反查实体)。
 func (s *Store) ListEntitiesByIDs(ctx context.Context, ids []string) ([]model.Entity, error) {
 	if len(ids) == 0 {

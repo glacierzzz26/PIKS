@@ -104,3 +104,39 @@ func (s *Store) ListEventsAffectingEntities(ctx context.Context, entityIDs []str
 		return ref, r.Scan(&ref.ID, &ref.Title)
 	})
 }
+
+// GraphEdge 图谱 affects 边(事件→实体),web 关系图谱用。
+type GraphEdge struct {
+	EventID  string `db:"event_id"`
+	EntityID string `db:"entity_id"`
+}
+
+// ListGraphEdges 全部 affects 边(事件→实体),供关系图谱与对话 grounding。
+func (s *Store) ListGraphEdges(ctx context.Context) ([]GraphEdge, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT r.from_id AS event_id, r.to_id AS entity_id
+		FROM relationships r
+		WHERE r.from_type='event' AND r.to_type='entity' AND r.rel_type='affects'`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (GraphEdge, error) {
+		var e GraphEdge
+		return e, r.Scan(&e.EventID, &e.EntityID)
+	})
+}
+
+// ListEventAffectedEntities 某事件 affects 到的全部实体(事件卡"影响"、图谱邻居)。
+func (s *Store) ListEventAffectedEntities(ctx context.Context, eventID string) ([]model.Entity, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT ent.* FROM entities ent
+		JOIN relationships r ON r.to_type='entity' AND r.to_id=ent.id
+		WHERE r.from_type='event' AND r.from_id=$1 AND r.rel_type='affects'
+		ORDER BY ent.name`, eventID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Entity])
+}

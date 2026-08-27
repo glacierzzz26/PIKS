@@ -1,0 +1,20 @@
+{{define "content"}}
+<div class="page-head">
+  <h1>每日复盘</h1>
+  <span class="sub">情绪 / 指数 / 涨停分布 / 热点 / Top 事件(继承 daily-review 12 节)</span>
+</div>
+
+<div class="daylist">
+  {{range .Days}}
+  <a class="card day-row" href="/reviews/{{.Date}}">
+    <span class="date">{{.Date}}</span>
+    <span class="chip em-{{emClass .Emotion}}">{{.Emotion}}</span>
+    <span class="sub">情绪分 {{.Score}}</span>
+    <span class="spacer"></span>
+    <span class="sub">涨停 {{.LimitUp}} / 跌停 {{.LimitDown}}</span>
+  </a>
+  {{else}}
+  <div class="card empty">暂无复盘数据</div>
+  {{end}}
+</div>
+{{end}}

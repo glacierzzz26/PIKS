@@ -103,6 +103,9 @@ code{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;backgrou
 .snap .row1{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .snap .date{font-weight:700;font-size:14px;color:var(--ink)}
 .snap .date:hover{color:var(--accent)}
+.snap.latest{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),var(--shadow)}
+.latest-badge{font-size:10px;font-weight:700;color:var(--accent-ink);background:var(--accent);
+              padding:1px 7px;border-radius:999px;margin-right:auto}
 .emotion{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
 .mets{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
 .met{text-align:center}

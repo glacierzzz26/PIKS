@@ -8,17 +8,18 @@
   <div class="card">
     <h2><span class="dot"></span>市场情绪趋势</h2>
     <div class="snapgrid">
-      {{range .Snaps}}
-      <div class="snap card-soft">
-        <div class="row1"><a class="date" href="/reviews/{{.Date}}">{{.Date}}</a>
-          <span class="emotion em-{{emClass .Emotion}}">{{.Emotion}}</span></div>
+      {{range $i, $s := .Snaps}}
+      <div class="snap card-soft{{if eq $i 0}} latest{{end}}">
+        <div class="row1"><a class="date" href="/reviews/{{$s.Date}}">{{$s.Date}}</a>
+          {{if eq $i 0}}<span class="latest-badge">最新</span>{{end}}
+          <span class="emotion em-{{emClass $s.Emotion}}">{{$s.Emotion}}</span></div>
         <div class="mets">
-          <div class="met"><b>{{.Score}}</b><span>情绪分</span></div>
-          <div class="met"><b class="red">{{.LimitUp}}</b><span>涨停</span></div>
-          <div class="met"><b class="green">{{.LimitDown}}</b><span>跌停</span></div>
-          <div class="met"><b>{{.MaxBoard}}</b><span>最高板</span></div>
+          <div class="met"><b>{{$s.Score}}</b><span>情绪分</span></div>
+          <div class="met"><b class="red">{{$s.LimitUp}}</b><span>涨停</span></div>
+          <div class="met"><b class="green">{{$s.LimitDown}}</b><span>跌停</span></div>
+          <div class="met"><b>{{$s.MaxBoard}}</b><span>最高板</span></div>
         </div>
-        <div class="sub" style="margin-top:8px">炸板 {{.Broken}} · 上涨 {{.BreadthAdvance}} / 下跌 {{.BreadthDecline}}</div>
+        <div class="sub" style="margin-top:8px">炸板 {{$s.Broken}} · 上涨 {{$s.BreadthAdvance}} / 下跌 {{$s.BreadthDecline}}</div>
       </div>
       {{else}}
       <div class="empty">暂无快照数据</div>

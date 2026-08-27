@@ -92,8 +92,8 @@
     if (!running) return;
     step();
     alpha *= 0.985;
-    if (alpha < 0.03) { alpha = 0.03; }
     render();
+    if (alpha < 0.03) { running = false; alpha = 0; return; } // 收敛即停,不再缓慢漂移
     requestAnimationFrame(loop);
   }
   function restart() { alpha = 1; if (!running) { running = true; requestAnimationFrame(loop); } }
@@ -331,11 +331,7 @@
       stageEl.requestFullscreen().catch(() => {});
     }
   });
-  document.addEventListener('fullscreenchange', () => {
-    W = svg.clientWidth || 820;
-    H = svg.clientHeight || 520;
-    render();
-  });
+  document.addEventListener('fullscreenchange', resizeStage);
 
   // 搜索聚焦
   search.addEventListener('keydown', e => {
@@ -347,10 +343,18 @@
     loadFocus(hit);
   });
 
-  // 尺寸
-  window.addEventListener('resize', () => {
-    W = svg.clientWidth || 820; H = svg.clientHeight || 520;
-  });
+  // 尺寸变化(窗口/全屏):保持世界坐标中心不动,内容不跳不漂
+  function resizeStage() {
+    const cx = (W / 2 - tx) / scale;
+    const cy = (H / 2 - ty) / scale;
+    W = svg.clientWidth || 820;
+    H = svg.clientHeight || 520;
+    tx = W / 2 - cx * scale;
+    ty = H / 2 - cy * scale;
+    applyViewport();
+    render();
+  }
+  window.addEventListener('resize', resizeStage);
 
   // 启动
   loadLocal();

@@ -29,6 +29,10 @@ func main() {
 	}
 	defer pool.Close()
 	s := store.New(pool)
+	// AI 配置权威源 = 数据库 app_config(不再读 PIKS_AI_* 环境变量)。
+	if err := s.ApplyAppConfig(ctx, &cfg); err != nil {
+		fatal("apply app config:", err)
+	}
 
 	runID, err := s.StartTaskRun(ctx, "cluster")
 	if err != nil {

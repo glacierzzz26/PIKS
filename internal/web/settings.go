@@ -2,57 +2,108 @@ package web
 
 import (
 	"net/http"
-	"os"
+	"strconv"
 	"strings"
 )
 
-// SettingRow 配置项视图行。
-type SettingRow struct {
-	Key    string // 配置名(中文)
-	Env    string // 环境变量名
-	Value  string // 生效值(敏感字段已掩码)
-	Source string // 默认 | 环境变量
-}
-
-// SettingsPage 系统配置页。只读展示;key 等敏感字段绝不落明文。
+// SettingsPage 大模型(AI)配置编辑页。
+// 配置权威源 = 数据库 app_config 表(代码不再读 PIKS_AI_* 环境变量)。
 type SettingsPage struct {
 	Common
-	AI     []SettingRow
-	System []SettingRow
+	Form  AIConfigForm
+	Saved bool // 本次保存成功(重定向回显)
+}
+
+// AIConfigForm 编辑表单视图。密钥字段永远空值 + 掩码占位,绝不回填明文。
+type AIConfigForm struct {
+	BaseURL        string
+	KeyMasked      string // 已配置(sk-k···i3Ab) / 未配置
+	ModelExtract   string
+	ModelReasoning string
+	Budget         string // 原始串("0" = 护栏关闭)
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
-	c := s.cfg
-	row := func(key, envName, value, def string) SettingRow {
-		src := "默认"
-		if os.Getenv(envName) != "" {
-			src = "环境变量"
-		}
-		if value == "" && def != "" {
-			value = def
-		}
-		return SettingRow{Key: key, Env: envName, Value: value, Source: src}
+	if r.Method == http.MethodPost {
+		s.saveSettings(w, r)
+		return
 	}
-
-	ai := []SettingRow{
-		row("AI 服务地址", "PIKS_AI_BASE_URL", c.AIServiceBaseURL, "https://api.deepseek.com"),
-		row("API Key", "PIKS_AI_API_KEY", maskSecret(c.AIAPIKey), ""),
-		row("抽取模型(便宜档)", "PIKS_AI_MODEL_EXTRACT", c.AIModelExtract, "deepseek-chat"),
-		row("推理模型(贵档)", "PIKS_AI_MODEL_REASONING", c.AIModelReasoning, "deepseek-reasoner"),
-		row("日 token 预算(护栏)", "PIKS_AI_DAILY_TOKEN_BUDGET", budgetStr(c.AIDailyTokenBudget), ""),
-	}
-	sys := []SettingRow{
-		row("数据库", "PIKS_DATABASE_URL", maskDBURL(c.DatabaseURL), ""),
-		row("vault 路径(待下线)", "PIKS_VAULT_PATH", c.VaultPath, "./PIKS-Vault"),
-	}
-
-	s.render(w, "settings", SettingsPage{
-		Common: Common{Title: "系统配置 · PIKS", Active: "settings"},
-		AI:     ai, System: sys,
-	})
+	s.showSettings(w, r, "")
 }
 
-// maskSecret API key 只显示首尾 4 位,绝不落明文。
+func (s *Server) showSettings(w http.ResponseWriter, r *http.Request, errMsg string) {
+	m, err := s.store.ListAppConfig(r.Context())
+	if err != nil {
+		s.render(w, "settings", SettingsPage{Common: Common{Title: "系统配置 · PIKS", Active: "settings", Err: "读取配置失败: " + err.Error()}})
+		return
+	}
+	form := AIConfigForm{
+		BaseURL:        m["ai_service_base_url"],
+		KeyMasked:      maskSecret(m["ai_api_key"]),
+		ModelExtract:   m["ai_model_extract"],
+		ModelReasoning: m["ai_model_reasoning"],
+		Budget:         m["ai_daily_token_budget"],
+	}
+	if form.Budget == "" {
+		form.Budget = "0"
+	}
+	page := SettingsPage{
+		Common: Common{Title: "系统配置 · PIKS", Active: "settings"},
+		Form:   form,
+		Saved:  r.URL.Query().Get("saved") == "1",
+	}
+	if errMsg != "" {
+		page.Err = errMsg
+	}
+	s.render(w, "settings", page)
+}
+
+func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		s.showSettings(w, r, "解析表单失败: "+err.Error())
+		return
+	}
+	ctx := r.Context()
+
+	base := strings.TrimSpace(r.FormValue("ai_service_base_url"))
+	extract := strings.TrimSpace(r.FormValue("ai_model_extract"))
+	reason := strings.TrimSpace(r.FormValue("ai_model_reasoning"))
+	budget := strings.TrimSpace(r.FormValue("ai_daily_token_budget"))
+	key := r.FormValue("ai_api_key") // 留空 = 不修改
+
+	if base == "" || extract == "" || reason == "" {
+		s.showSettings(w, r, "AI 服务地址与两个模型必填(不接受留空)。")
+		return
+	}
+	if budget == "" {
+		budget = "0"
+	}
+	if _, err := strconv.ParseInt(budget, 10, 64); err != nil {
+		s.showSettings(w, r, "日 token 预算必须是整数(0 = 关闭护栏)。")
+		return
+	}
+
+	for k, v := range map[string]string{
+		"ai_service_base_url":   base,
+		"ai_model_extract":      extract,
+		"ai_model_reasoning":    reason,
+		"ai_daily_token_budget": budget,
+	} {
+		if err := s.store.UpsertAppConfig(ctx, k, v); err != nil {
+			s.showSettings(w, r, "保存失败: "+err.Error())
+			return
+		}
+	}
+	if key != "" {
+		if err := s.store.UpsertAppConfig(ctx, "ai_api_key", key); err != nil {
+			s.showSettings(w, r, "保存失败: "+err.Error())
+			return
+		}
+	}
+	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
+}
+
+// maskSecret API key 只显示首尾 4 位,绝不落明文/回填。
 func maskSecret(k string) string {
 	if k == "" {
 		return "未配置"
@@ -61,47 +112,4 @@ func maskSecret(k string) string {
 		return "已配置(***)"
 	}
 	return "已配置(" + k[:4] + "···" + k[len(k)-4:] + ")"
-}
-
-// maskDBURL 掩码连接串里的密码部分。
-func maskDBURL(u string) string {
-	if i := strings.Index(u, "://"); i >= 0 {
-		rest := u[i+3:]
-		if at := strings.Index(rest, "@"); at >= 0 {
-			auth := rest[:at]
-			if colon := strings.Index(auth, ":"); colon >= 0 {
-				return u[:i+3] + auth[:colon+1] + "***" + rest[at:]
-			}
-		}
-	}
-	return u
-}
-
-func budgetStr(b int64) string {
-	if b <= 0 {
-		return "未设置(护栏关闭)"
-	}
-	return itoa(b) + " tokens/日"
-}
-
-func itoa(n int64) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var b [24]byte
-	i := len(b)
-	for n > 0 {
-		i--
-		b[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		b[i] = '-'
-	}
-	return string(b[i:])
 }

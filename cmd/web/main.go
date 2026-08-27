@@ -36,7 +36,12 @@ func main() {
 	}
 	defer pool.Close()
 
-	sv, err := web.NewServer(store.New(pool), cfg)
+	s := store.New(pool)
+	// AI 配置权威源 = 数据库 app_config(不再读 PIKS_AI_* 环境变量)。
+	if err := s.ApplyAppConfig(ctx, &cfg); err != nil {
+		fatal("apply app config:", err)
+	}
+	sv, err := web.NewServer(s, cfg)
 	if err != nil {
 		fatal("new server:", err)
 	}

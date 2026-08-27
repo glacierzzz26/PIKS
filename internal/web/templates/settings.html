@@ -1,26 +1,32 @@
 {{define "content"}}
 <section class="hero">
-  <h1>⚙️ 系统配置</h1>
-  <p class="sub">大模型服务与系统配置(只读展示;敏感字段已掩码,不落明文)。修改方式 = 改 lab 环境变量后重启容器。</p>
+  <h1>⚙️ 大模型配置</h1>
+  <p class="sub">权威源 = 数据库 app_config 表(代码不再读环境变量)。保存即刻生效,次日管线自动使用。</p>
+  {{if .Saved}}<div class="alert ok"><b>✅</b>已保存,新配置即刻生效。</div>{{end}}
 </section>
 
-<section class="grid cards2">
-  <div class="card">
-    <h2><span class="dot"></span>大模型(AI)配置</h2>
-    <table class="kv">
-      <tr><th>配置项</th><th>环境变量</th><th>生效值</th><th>来源</th></tr>
-      {{range .AI}}<tr><td>{{.Key}}</td><td><code>{{.Env}}</code></td><td>{{.Value}}</td><td>{{.Source}}</td></tr>{{end}}
-    </table>
-    <p class="footnote">档位分层(iter0 D2):抽取档 = 便宜模型(快讯归类/实体分类);推理档 = 贵模型(聚类判断/综述)。预算护栏 0 = 关闭。</p>
-  </div>
-
-  <div class="card">
-    <h2><span class="dot"></span>系统</h2>
-    <table class="kv">
-      <tr><th>配置项</th><th>环境变量</th><th>生效值</th><th>来源</th></tr>
-      {{range .System}}<tr><td>{{.Key}}</td><td><code>{{.Env}}</code></td><td>{{.Value}}</td><td>{{.Source}}</td></tr>{{end}}
-    </table>
-    <p class="footnote">vault 路径为迭代 4 遗留(Obsidian 工作仓),迭代 5-2 下线后随 publisher 移除。</p>
-  </div>
+<section class="card">
+  <h2><span class="dot"></span>大模型(AI)配置</h2>
+  <form method="post" action="/settings" class="cfg-form">
+    <label>AI 服务地址
+      <input type="url" name="ai_service_base_url" value="{{.Form.BaseURL}}" required placeholder="https://api.deepseek.com">
+    </label>
+    <label>API Key<span class="hint-inline">留空 = 保持现值({{.Form.KeyMasked}})</span>
+      <input type="password" name="ai_api_key" value="" autocomplete="new-password" placeholder="{{.Form.KeyMasked}}">
+    </label>
+    <label>抽取模型(便宜档)
+      <input type="text" name="ai_model_extract" value="{{.Form.ModelExtract}}" required placeholder="deepseek-chat">
+    </label>
+    <label>推理模型(贵档)
+      <input type="text" name="ai_model_reasoning" value="{{.Form.ModelReasoning}}" required placeholder="deepseek-reasoner">
+    </label>
+    <label>日 token 预算(护栏)<span class="hint-inline">0 = 关闭</span>
+      <input type="number" name="ai_daily_token_budget" value="{{.Form.Budget}}" min="0" step="1000">
+    </label>
+    <div class="cfg-actions">
+      <button type="submit" class="btn">保存配置</button>
+    </div>
+  </form>
+  <p class="footnote">档位分层(iter0 D2):抽取档 = 便宜模型(快讯归类/实体分类);推理档 = 贵模型(聚类判断/综述)。密钥只存数据库,页面仅掩码展示,不回填明文。</p>
 </section>
 {{end}}

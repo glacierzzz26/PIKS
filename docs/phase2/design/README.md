@@ -2,6 +2,12 @@
 
 > 阶段:增值(迭代 2 + 迭代 3 + 迭代 4 + 迭代 5 Web 平台)。已定稿设计在此登记,此后按它执行,改动需走变更。
 
+## 周报 AI 综述 — Web 适配 iter4 D26 ✅ 已定稿冻结(2026-08-28)
+
+| 文档 | 状态 | 定稿日期 | 备注 |
+|---|---|---|---|
+| [weekly-ai-summary.md](./weekly-ai-summary.md) | ✅ 已定稿冻结 | 2026-08-28 | 兑现 iter4 D26 可选「高智档综述」到 Web `/weekly`:新表 `weekly_summaries` 按 ISO 周缓存 + 手动按钮触发生成(GET 永不调 LLM);模型 reasoning 回退 extract + 预算护栏 + task_runs 记账;未配置/预算/无数据/失败如实降级;**只做 dev 验证不部署 lab** |
+
 ## 聚类质量 — 重审视 Pass ✅ 已定稿冻结(2026-08-28)
 
 | 文档 | 状态 | 定稿日期 | 备注 |
@@ -54,3 +60,5 @@
 - [x] G8 实现与验收 + 归档 `../stages/g8.md`(dev-only 不升级生产)
 - [x] 聚类质量定稿门确认(重审视 Pass,2026-08-28;复用迭代 1 阈值不降门槛)
 - [x] 聚类质量实现与验收 + 归档 `../stages/cluster-quality.md`(dev-only 验证不部署 lab)
+- [x] 周报 AI 综述定稿门确认(Web 适配 D26,2026-08-28;缓存表 + 手动触发 + 预算护栏)
+- [x] 周报 AI 综述实现与验收 + 归档 `../stages/weekly-ai-summary.md`(dev-only 验证不部署 lab)

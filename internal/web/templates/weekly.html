@@ -56,4 +56,25 @@
   </ul>
   {{else}}<p class="empty">本周没有新的笔记。</p>{{end}}
 </section>
+
+<section class="sec">
+  <h2>AI 综述</h2>
+  {{if .Summary}}
+  <div class="card" style="padding:14px 16px">
+    <p style="white-space:pre-wrap;margin:0">{{.Summary.Summary}}</p>
+    <p class="sub" style="margin:10px 0 0">模型 {{.Summary.Model}} · {{.Summary.Tokens}} tokens · 生成于 {{.Summary.UpdatedAt.Format "01-02 15:04"}}</p>
+  </div>
+  <form method="post" action="/weekly?offset={{.Offset}}" style="margin-top:10px">
+    <input type="hidden" name="action" value="generate">
+    <button type="submit" class="btn">重新生成</button>
+  </form>
+  {{else}}
+  <p class="empty">{{if .SummaryNote}}{{.SummaryNote}}{{else}}本周暂无 AI 综述。{{end}}</p>
+  <form method="post" action="/weekly?offset={{.Offset}}">
+    <input type="hidden" name="action" value="generate">
+    <button type="submit" class="btn">生成 AI 综述</button>
+  </form>
+  {{end}}
+  {{if and .Summary .SummaryNote}}<p class="sub" style="margin-top:10px">{{.SummaryNote}}</p>{{end}}
+</section>
 {{end}}

@@ -65,6 +65,8 @@ func main() {
 		probeDongcai()
 	case "quotemarket":
 		probeQuotemarket()
+	case "g8expand":
+		probeG8Expand()
 	default:
 		fmt.Fprintf(os.Stderr, "unknown probe: %s\n", probeName)
 		os.Exit(2)

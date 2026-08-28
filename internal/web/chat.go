@@ -223,23 +223,34 @@ func (s *Server) answerChat(ctx context.Context, cfg map[string]string, question
 		}, "截图识别已降级:未配置视觉模型。", nil
 	}
 
-	// 检索 grounding。
+	// 检索 grounding(同义扩展 + 关键词 hybrid,G8 方案 B)。
+	// 扩展失败自动降级纯关键词,页面如实标注检索模式,不报错不编造。
 	var events []model.Event
 	var entities []model.Entity
 	q := question
 	if q == "" {
 		q = "截图"
 	}
-	events, entities, err := s.store.SearchKnowledge(ctx, q, 8, 8)
+	note := ""
+	var extra []string
+	if question != "" {
+		var eerr error
+		extra, eerr = s.expandQuery(ctx, cfg, q)
+		if eerr != nil {
+			note += "同义扩展不可用(" + eerr.Error() + "),本次为纯关键词检索。"
+		} else {
+			note += "本次检索:同义扩展 + 关键词。"
+		}
+	}
+	events, entities, err := s.store.SearchKnowledgeExpanded(ctx, q, extra, 8, 8)
 	if err != nil {
 		return nil, "", fmt.Errorf("检索知识库: %w", err)
 	}
 
 	system, contextBlock := buildChatContext(events, entities, img != nil)
-	note := ""
 	if len(events) == 0 && len(entities) == 0 {
 		system += "\n注意:检索结果为空,如实说明'知识库未检索到相关内容',不要编造。"
-		note = "未检索到与问题相关的知识库条目(回答可能基于模型通用知识)。"
+		note += "未检索到与问题相关的知识库条目(回答可能基于模型通用知识)。"
 	}
 
 	modelName := extract
@@ -256,12 +267,27 @@ func (s *Server) answerChat(ctx context.Context, cfg map[string]string, question
 	}
 	resp, err := c.Chat(ctx, ai.ChatOptions{System: system, User: user, Image: img})
 	if err != nil {
-		return nil, "", err
+		// 失败也带回 note(检索模式/降级标注),页面如实显示。
+		return nil, note, err
 	}
 
 	content, refs := extractRefs(resp.Content, events, entities)
 	refsJSON, _ := json.Marshal(refs)
 	return &model.ChatMessage{Role: "assistant", Content: content, Refs: refsJSON}, note, nil
+}
+
+// expandQuery 用 extract 档模型把问题同义扩展(G8 方案 B)。失败返回错误,调用方降级纯关键词。
+func (s *Server) expandQuery(ctx context.Context, cfg map[string]string, q string) ([]string, error) {
+	base, key := cfg["ai_service_base_url"], cfg["ai_api_key"]
+	model := cfg["ai_model_extract"]
+	if model == "" {
+		model = "deepseek-chat"
+	}
+	if base == "" || key == "" {
+		return nil, fmt.Errorf("AI 未配置")
+	}
+	c := ai.NewOpenAICompat(base, key, model)
+	return c.ExpandQuery(ctx, q)
 }
 
 // buildChatContext 把检索结果组装成 LLM 可见的引用块(方括号 id 供答案标注)。

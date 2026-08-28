@@ -1,8 +1,10 @@
 package store
 
-// search 关键词知识检索(/chat grounding,迭代 5-3 设计 §4.1)。
+// search 关键词知识检索(/chat grounding,迭代 5-3 设计 §4.1;G8 方案 B 增强)。
 // 中文无分词器:把用户问题拆成字符 n-gram(2/3 gram)作候选关键词,
 // OR 命中 title/summary/facts 全文字段,Go 侧按命中 gram 数打分取 top。
+// G8(2026-08-28):Zen 无 embeddings 端点,改 query 端同义扩展——LLM 扩展词并入 gram 集,
+// 原文词权重 1.0 / 扩展词 0.5,排序按加权分降序(扩展命中不稀释原文排序)。
 
 import (
 	"context"
@@ -16,15 +18,21 @@ import (
 )
 
 // SearchKnowledge 按问题检索事件+实体(供 /chat 组装 grounding 上下文)。
-// limit≤0 跳过该类型。返回已按相关度降序的候选。
+// limit≤0 跳过该类型。返回已按相关度降序的候选。= SearchKnowledgeExpanded 的特例(无扩展词)。
 func (s *Store) SearchKnowledge(ctx context.Context, q string, eventLimit, entityLimit int) (events []model.Event, entities []model.Entity, err error) {
-	grams := queryGrams(q)
+	return s.SearchKnowledgeExpanded(ctx, q, nil, eventLimit, entityLimit)
+}
+
+// SearchKnowledgeExpanded 同义扩展版检索(G8 方案 B):原文 gram(权重 1.0)+ LLM 扩展词(权重 0.5)并集。
+// extra 为 nil/空 = 等同 SearchKnowledge(降级路径)。返回已按加权相关度降序的候选。
+func (s *Store) SearchKnowledgeExpanded(ctx context.Context, q string, extra []string, eventLimit, entityLimit int) (events []model.Event, entities []model.Entity, err error) {
+	grams := mergeGrams(queryGrams(q), expandQueryGrams(extra))
 	if len(grams) == 0 {
 		return nil, nil, nil
 	}
 	pats := make([]string, len(grams))
 	for i, g := range grams {
-		pats[i] = "%" + g + "%"
+		pats[i] = "%" + g.term + "%"
 	}
 
 	if eventLimit > 0 {
@@ -127,22 +135,90 @@ func queryGrams(q string) []string {
 	return grams
 }
 
-// scoreEvents 按命中 gram 数打分:全文短语优先,title 命中权重更高,再按时间新近。
-func scoreEvents(cands []model.Event, grams []string, limit int) []model.Event {
+// weightedGram 检索词 + 权重(原文=1.0,同义扩展=0.5)。
+type weightedGram struct {
+	term   string
+	weight float64
+}
+
+// mergeGrams 合并原文与扩展 gram:同词取较高权重,扩展词低权重不稀释原文排序。
+// 总量上限 40(原文优先在前),防 SQL/打分膨胀。
+func mergeGrams(orig []string, extra []weightedGram) []weightedGram {
+	best := map[string]float64{}
+	order := []string{}
+	add := func(term string, w float64) {
+		if term == "" {
+			return
+		}
+		if cur, ok := best[term]; ok {
+			if w > cur {
+				best[term] = w
+			}
+			return
+		}
+		best[term] = w
+		order = append(order, term)
+	}
+	for _, t := range orig {
+		add(t, 1.0)
+	}
+	for _, g := range extra {
+		add(g.term, g.weight)
+	}
+	if len(order) > 40 {
+		order = order[:40]
+	}
+	out := make([]weightedGram, 0, len(order))
+	for _, t := range order {
+		out = append(out, weightedGram{term: t, weight: best[t]})
+	}
+	return out
+}
+
+// expandQueryGrams 把 LLM 扩展词集转低权重 gram(与 queryGrams 同拆分规则,剔停用词/去重)。
+func expandQueryGrams(extra []string) []weightedGram {
+	var out []weightedGram
+	seen := map[string]bool{}
+	add := func(s string) {
+		if s == "" || seen[s] || isStopword(s) {
+			return
+		}
+		seen[s] = true
+		out = append(out, weightedGram{term: s, weight: 0.5})
+	}
+	for _, p := range extra {
+		if isStopword(p) {
+			continue
+		}
+		runes := []rune(p)
+		if len(runes) <= 4 {
+			add(p) // 短词整词(如「降准」)
+		}
+		for n := 2; n <= 3 && n <= len(runes); n++ {
+			for i := 0; i+n <= len(runes); i++ {
+				add(string(runes[i : i+n]))
+			}
+		}
+	}
+	return out
+}
+
+// scoreEvents 按命中 gram 加权打分:命中分 = 词权重 × (title 命中 2 / body 命中 1),再按时间新近。
+func scoreEvents(cands []model.Event, grams []weightedGram, limit int) []model.Event {
 	type scored struct {
 		e model.Event
-		s int
+		s float64
 	}
 	out := make([]scored, 0, len(cands))
 	for _, e := range cands {
-		sc := 0
+		sc := 0.0
 		title := strings.ToLower(e.Title)
 		body := strings.ToLower(joinStr(e.Summary) + " " + string(e.Facts))
 		for _, g := range grams {
-			if strings.Contains(title, g) {
-				sc += 2
-			} else if strings.Contains(body, g) {
-				sc++
+			if strings.Contains(title, g.term) {
+				sc += 2 * g.weight
+			} else if strings.Contains(body, g.term) {
+				sc += g.weight
 			}
 		}
 		if sc > 0 {
@@ -165,21 +241,21 @@ func scoreEvents(cands []model.Event, grams []string, limit int) []model.Event {
 	return res
 }
 
-func scoreEntities(cands []model.Entity, grams []string, limit int) []model.Entity {
+func scoreEntities(cands []model.Entity, grams []weightedGram, limit int) []model.Entity {
 	type scored struct {
 		e model.Entity
-		s int
+		s float64
 	}
 	out := make([]scored, 0, len(cands))
 	for _, en := range cands {
-		sc := 0
+		sc := 0.0
 		name := strings.ToLower(en.Name)
 		body := strings.ToLower(string(en.Aliases) + " " + joinStr(en.Description))
 		for _, g := range grams {
-			if strings.Contains(name, g) {
-				sc += 2
-			} else if strings.Contains(body, g) {
-				sc++
+			if strings.Contains(name, g.term) {
+				sc += 2 * g.weight
+			} else if strings.Contains(body, g.term) {
+				sc += g.weight
 			}
 		}
 		if sc > 0 {

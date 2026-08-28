@@ -28,6 +28,8 @@ type WeeklyPage struct {
 	Snaps      []WeeklySnap
 	Events     []WeeklyEvent
 	Notes      []WeeklyNote
+	Trades     []WeeklyTrade // 本周交易(交易闭环,design trade-loop.md)
+	Positions  []WeeklyPosition // 本周持仓(周末前最近快照)
 	Summary    *store.WeeklySummary // 非空=已生成(展示);nil=空态占位
 	SummaryNote string              // 降级/未配置/预算/失败提示(如实)
 }
@@ -48,6 +50,21 @@ type WeeklyEvent struct {
 
 type WeeklyNote struct {
 	ID, Title, Type, TypeLabel, Updated string
+}
+
+// WeeklyTrade 本周一笔交易(页面渲染与综述上下文同源)。
+type WeeklyTrade struct {
+	Date, Name, Code string
+	Side, SideLabel  string
+	Qty              int
+	Price, Amount    float64
+}
+
+// WeeklyPosition 本周末最近快照的一只持仓。
+type WeeklyPosition struct {
+	Date, Code, Name  string
+	Qty               int
+	Cost, Price, MV, PL string
 }
 
 var cnWeekday = [7]string{"一", "二", "三", "四", "五", "六", "日"}
@@ -87,12 +104,13 @@ func (s *Server) handleWeekly(w http.ResponseWriter, r *http.Request) {
 		Week:       week, Range: rng, Offset: offset,
 		PrevOffset: offset + 1, NextOffset: offset - 1,
 	}
-	snaps, events, notes, err := s.aggregateWeek(ctx, start, end)
+	snaps, events, notes, trades, poss, err := s.aggregateWeek(ctx, start, end)
 	if err != nil {
 		s.fail(w, "weekly", &page.Common, err)
 		return
 	}
 	page.Snaps, page.Events, page.Notes = snaps, events, notes
+	page.Trades, page.Positions = trades, poss
 
 	// 综述缓存(同周已生成 → 直接展示;无 → 空态占位)。
 	sum, err := s.store.GetWeeklySummary(ctx, week)
@@ -126,11 +144,11 @@ func genNote(g string) string {
 	return ""
 }
 
-// aggregateWeek 聚合当周行情/事件/沉淀(与页面同源,渲染与综述上下文共用)。
-func (s *Server) aggregateWeek(ctx context.Context, start, end time.Time) ([]WeeklySnap, []WeeklyEvent, []WeeklyNote, error) {
+// aggregateWeek 聚合当周行情/事件/沉淀/交易/持仓(与页面同源,渲染与综述上下文共用)。
+func (s *Server) aggregateWeek(ctx context.Context, start, end time.Time) ([]WeeklySnap, []WeeklyEvent, []WeeklyNote, []WeeklyTrade, []WeeklyPosition, error) {
 	snaps, err := s.store.ListMarketSnapshots(ctx, 30)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 	var ss []WeeklySnap
 	for _, sn := range snaps {
@@ -160,7 +178,7 @@ func (s *Server) aggregateWeek(ctx context.Context, start, end time.Time) ([]Wee
 
 	evs, err := s.store.ListEventsBetween(ctx, start, end)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 	var ee []WeeklyEvent
 	for _, e := range evs {
@@ -173,7 +191,7 @@ func (s *Server) aggregateWeek(ctx context.Context, start, end time.Time) ([]Wee
 
 	notes, err := s.store.ListPersonalNotesBetween(ctx, start, end)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 	var nn []WeeklyNote
 	for _, n := range notes {
@@ -182,7 +200,47 @@ func (s *Server) aggregateWeek(ctx context.Context, start, end time.Time) ([]Wee
 			Type: n.Type, TypeLabel: noteTypeLabel[n.Type], Updated: fmtTime(n.UpdatedAt),
 		})
 	}
-	return ss, ee, nn, nil
+
+	// 本周交易(交易闭环):trade_date 在周内。
+	ts, err := s.store.ListTradesBetween(ctx, start, end)
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
+	var tt []WeeklyTrade
+	for _, t := range ts {
+		tt = append(tt, WeeklyTrade{
+			Date: t.TradeDate.Format("01-02"), Name: t.Name, Code: t.Code,
+			Side: t.Side, SideLabel: sideLabel(t.Side),
+			Qty: t.Qty, Price: t.Price, Amount: t.Amount,
+		})
+	}
+
+	// 本周持仓(周末前最近快照,防未来函数:不含周内之后快照)。
+	poss, err := s.store.LatestPositionsBefore(ctx, end)
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
+	var pp []WeeklyPosition
+	for _, p := range poss {
+		v := WeeklyPosition{
+			Date: p.SnapshotDate.Format("2006-01-02"), Code: p.Code, Name: p.Name, Qty: p.Qty,
+			Cost: "—", Price: "—", MV: "—", PL: "—",
+		}
+		if p.CostPrice != nil {
+			v.Cost = fmt.Sprintf("%.3f", *p.CostPrice)
+		}
+		if p.Price != nil {
+			v.Price = fmt.Sprintf("%.3f", *p.Price)
+		}
+		if p.MarketValue != nil {
+			v.MV = fmt.Sprintf("%.2f", *p.MarketValue)
+		}
+		if p.PL != nil {
+			v.PL = fmt.Sprintf("%+.2f", *p.PL)
+		}
+		pp = append(pp, v)
+	}
+	return ss, ee, nn, tt, pp, nil
 }
 
 // generateWeeklySummary 用高智档(reasoning,未配置回退 extract)生成当周综述并入库。
@@ -212,21 +270,22 @@ func (s *Server) generateWeeklySummary(ctx context.Context, week string, start, 
 		}
 	}
 
-	snaps, events, notes, err := s.aggregateWeek(ctx, start, end)
+	snaps, events, notes, trades, poss, err := s.aggregateWeek(ctx, start, end)
 	if err != nil {
 		return genFailed
 	}
-	if len(snaps) == 0 && len(events) == 0 && len(notes) == 0 {
+	if len(snaps) == 0 && len(events) == 0 && len(notes) == 0 && len(trades) == 0 && len(poss) == 0 {
 		return genNoData
 	}
 
 	system := `你是 PIKS 个人 A 股投资知识系统的周报综述助手。下方是本周已经整理好的数据。
 规则:
-- 用中文输出一段 ≤300 字的综述,概括本周市场情绪与事件脉络,并结合"本周沉淀"(个人笔记)提示值得复盘的点;
+- 用中文输出一段 ≤300 字的综述,概括本周市场情绪与事件脉络,并结合"本周沉淀"(个人笔记)与"本周交易/持仓"提示值得复盘的点(如:买入是否基于当周事件、持仓集中度、交易与笔记信念的印证/违背);
+- 复盘视角,禁止输出买卖建议或预测涨跌;
 - 严格只总结下方已列出的数据,禁止新增事实、数字或推断;
 - 若某方面无数据,如实说明"本周无该方面数据",不要编造;
 - 仅输出 JSON,结构为 {"summary":"..."}。`
-	user := buildWeekContext(week, snaps, events, notes)
+	user := buildWeekContext(week, snaps, events, notes, trades, poss)
 
 	runID, err := s.store.StartTaskRun(ctx, "weekly-summary")
 	if err != nil {
@@ -257,8 +316,8 @@ func (s *Server) generateWeeklySummary(ctx context.Context, week string, start, 
 	return genOK
 }
 
-// buildWeekContext 把当周聚合数据拼成综述 LLM 上下文(与页面同源,含星期标签)。
-func buildWeekContext(week string, snaps []WeeklySnap, events []WeeklyEvent, notes []WeeklyNote) string {
+// buildWeekContext 把当周聚合数据拼成综述 LLM 上下文(与页面同源,含星期标签 + 交易/持仓段)。
+func buildWeekContext(week string, snaps []WeeklySnap, events []WeeklyEvent, notes []WeeklyNote, trades []WeeklyTrade, poss []WeeklyPosition) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "周报 %s\n", week)
 	b.WriteString("== 本周行情 ==\n")
@@ -282,6 +341,22 @@ func buildWeekContext(week string, snaps []WeeklySnap, events []WeeklyEvent, not
 	}
 	for _, n := range notes {
 		fmt.Fprintf(&b, "[%s] %s\n", n.TypeLabel, n.Title)
+	}
+	b.WriteString("\n== 本周交易 ==\n")
+	if len(trades) == 0 {
+		b.WriteString("(无)\n")
+	}
+	for _, t := range trades {
+		fmt.Fprintf(&b, "%s %s(%s) %s %d股 @%.3f 金额%.2f\n",
+			t.Date, t.Name, t.Code, t.SideLabel, t.Qty, t.Price, t.Amount)
+	}
+	b.WriteString("\n== 本周持仓(截至最近快照)==\n")
+	if len(poss) == 0 {
+		b.WriteString("(无)\n")
+	}
+	for _, p := range poss {
+		fmt.Fprintf(&b, "%s(%s) %d股 成本%s 现价%s 市值%s 盈亏%s\n",
+			p.Name, p.Code, p.Qty, p.Cost, p.Price, p.MV, p.PL)
 	}
 	return b.String()
 }

@@ -1,7 +1,7 @@
 {{define "content"}}
 <div class="page-head">
   <h1>周报</h1>
-  <span class="sub">{{.Week}} · {{.Range}} · 本周行情 × 本周事件 × 本周沉淀</span>
+  <span class="sub">{{.Week}} · {{.Range}} · 本周行情 × 本周事件 × 本周沉淀 × 本周交易 × 本周持仓</span>
 </div>
 
 <div class="chips" style="margin-top:12px">
@@ -55,6 +55,51 @@
     {{end}}
   </ul>
   {{else}}<p class="empty">本周没有新的笔记。</p>{{end}}
+</section>
+
+<section class="sec">
+  <h2>本周交易</h2>
+  {{if .Trades}}
+  <table class="wtable">
+    <thead><tr><th>日期</th><th>名称</th><th>代码</th><th>方向</th><th>数量</th><th>价格</th><th>金额</th></tr></thead>
+    <tbody>
+      {{range .Trades}}
+      <tr>
+        <td class="nowrap">{{.Date}}</td>
+        <td>{{.Name}}</td>
+        <td>{{.Code}}</td>
+        <td style="color:{{if eq .Side "buy"}}#d33{{else}}#1a7f37{{end}};font-weight:700">{{.SideLabel}}</td>
+        <td class="num">{{.Qty}}</td>
+        <td class="num">{{printf "%.3f" .Price}}</td>
+        <td class="num">{{printf "%.2f" .Amount}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="empty">本周没有交易记录。</p>{{end}}
+</section>
+
+<section class="sec">
+  <h2>本周持仓(最近快照)</h2>
+  {{if .Positions}}
+  <table class="wtable">
+    <thead><tr><th>日期</th><th>代码</th><th>名称</th><th>数量</th><th>成本价</th><th>现价</th><th>市值</th><th>盈亏</th></tr></thead>
+    <tbody>
+      {{range .Positions}}
+      <tr>
+        <td class="nowrap">{{.Date}}</td>
+        <td>{{.Code}}</td>
+        <td>{{.Name}}</td>
+        <td class="num">{{.Qty}}</td>
+        <td class="num">{{.Cost}}</td>
+        <td class="num">{{.Price}}</td>
+        <td class="num">{{.MV}}</td>
+        <td class="num">{{.PL}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="empty">本周没有持仓快照。</p>{{end}}
 </section>
 
 <section class="sec">

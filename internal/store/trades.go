@@ -119,3 +119,32 @@ func (s *Store) LatestPositions(ctx context.Context) ([]model.Position, error) {
 	defer rows.Close()
 	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Position])
 }
+
+// LatestPositionsBefore 周末前最近快照日的持仓(防未来函数:仅用快照时点之前数据)。
+// before 为周结束时刻;取 snapshot_date < before 的最大日;无则空。
+func (s *Store) LatestPositionsBefore(ctx context.Context, before time.Time) ([]model.Position, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT `+positionCols+` FROM positions
+		WHERE snapshot_date = (
+		  SELECT max(snapshot_date) FROM positions WHERE snapshot_date < $1
+		)
+		ORDER BY created_at DESC`, before)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Position])
+}
+
+// ListTradesBetween 日期区间内的交易(周报聚合用),按 trade_date 升序。
+func (s *Store) ListTradesBetween(ctx context.Context, start, end time.Time) ([]model.Trade, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT `+tradeCols+` FROM trades
+		WHERE trade_date >= $1 AND trade_date < $2
+		ORDER BY trade_date ASC, created_at ASC`, start, end)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Trade])
+}

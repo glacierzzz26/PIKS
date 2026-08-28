@@ -9,6 +9,13 @@
 | [trades.md](./trades.md) | ✅ 已定稿冻结 | 2026-08-28 | 用户新需求:每日自交易入知识库并由库解读、库缺则补数据;录入=同花顺今日交易/持仓截图 → vision 抽取 → 预览确认入库(migration 0010 trades+positions)+ 手动兜底;`StructuredOutput` 加 Image(探针验证);实体自动补全(已有复用);解读带引用 + 防未来函数;mistake 用户确认存笔记;**只做 dev 验证不部署 lab** |
 | [../stages/trades.md](../stages/trades.md) | ✅ 已归档 | 2026-08-28 | 验收 design §4 十三项全过(含降级/记账/防未来函数实测);修 2 bug(positions 反序列化丢 cost/mv、mistake 表单嵌套 range 模板崩溃) |
 
+## 交易闭环 — 持仓 AI 诊断 + 交易进周报 ✅ 已定稿冻结(2026-08-28)
+
+| 文档 | 状态 | 定稿日期 | 备注 |
+|---|---|---|---|
+| [trade-loop.md](./trade-loop.md) | ✅ 已定稿冻结 | 2026-08-28 | 承接交易功能补闭环:持仓 AI 诊断(`position_reviews` 按 snapshot_date 缓存,Go 算数字 + KB 带引用 + 防未来函数 + risks 单向 harvest 存笔记幂等,复用 tradeReview 全管线零新 AI 能力)+ 本周交易/持仓进周报(页面 + 综述上下文,nodata 扩五类);**只做 dev 验证不部署 lab** |
+| [../stages/trade-loop.md](../stages/trade-loop.md) | ✅ 已归档 | 2026-08-28 | 验收 design §4 十一项全过(缓存 + GET 零调用/数字 Go 算/白名单/防未来实测/risks 幂等/周报引用/nodata/降级三式/记账/prod 未动);修 1 真 bug(集中度占比恒 0,AI 如实指出)+ 1 质量缺口(flash 不填 refs,prompt 强化) |
+
 ## 周报 AI 综述 — Web 适配 iter4 D26 ✅ 已定稿冻结(2026-08-28)
 
 | 文档 | 状态 | 定稿日期 | 备注 |
@@ -69,3 +76,5 @@
 - [x] 聚类质量实现与验收 + 归档 `../stages/cluster-quality.md`(dev-only 验证不部署 lab)
 - [x] 周报 AI 综述定稿门确认(Web 适配 D26,2026-08-28;缓存表 + 手动触发 + 预算护栏)
 - [x] 周报 AI 综述实现与验收 + 归档 `../stages/weekly-ai-summary.md`(dev-only 验证不部署 lab)
+- [x] 交易闭环定稿门确认(2026-08-28;持仓 AI 诊断 + 交易进周报,D-L1~L7)
+- [x] 交易闭环实现与验收 + 归档 `../stages/trade-loop.md`(dev-only 验证不部署 lab;修集中度占比恒 0 bug)

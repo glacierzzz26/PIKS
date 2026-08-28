@@ -155,6 +155,39 @@
       {{end}}
     </tbody>
   </table>
+  <h3 class="sub" style="margin:14px 0 6px">AI 诊断(截至 {{.PosDate}} 快照)</h3>
+  {{if .PosReview}}
+  <div class="card-soft" style="padding:10px 12px">
+    <p style="margin:0;white-space:pre-wrap">{{.PosReview.Text}}</p>
+    <p class="sub" style="margin:8px 0 0">诊断 · {{.PosReview.Model}} · {{.PosReview.Tokens}} tokens · {{.PosReview.GenAt}}</p>
+    {{if or .PosReview.RefEvents .PosReview.RefEntities .PosReview.RefNotes}}
+    <div class="chips" style="margin-top:6px">
+      {{range .PosReview.RefEvents}}<a class="chip" href="/events/{{.ID}}">事件:{{.Title}}</a>{{end}}
+      {{range .PosReview.RefEntities}}<a class="chip" href="/entities/{{.ID}}">实体:{{.Title}}</a>{{end}}
+      {{range .PosReview.RefNotes}}<a class="chip" href="/notes/{{.ID}}">笔记:{{.Title}}</a>{{end}}
+    </div>
+    {{end}}
+    {{if .PosReview.Risks}}
+    <div style="margin-top:8px">
+      <p class="sub" style="margin:0 0 4px">风险候选(确认后才存为笔记):</p>
+      {{range $i, $m := .PosReview.Risks}}
+      <form method="post" action="/trades/positions/save-risk/{{$i}}" style="display:flex;gap:8px;align-items:center;margin-bottom:4px">
+        <span style="flex:1">{{$m.Title}}</span>
+        <button type="submit" class="btn">存为笔记</button>
+      </form>
+      {{end}}
+    </div>
+    {{end}}
+    <form method="post" action="/trades/positions/review" style="margin-top:10px">
+      <button type="submit" class="btn">重新诊断</button>
+    </form>
+  </div>
+  {{else}}
+  <form method="post" action="/trades/positions/review" class="card" style="padding:10px 12px">
+    <p class="sub" style="margin:0 0 8px">暂无 AI 诊断。点按生成组合诊断(组合盈亏/仓位集中度/近期交易联动/知识库引用,仅存当日缓存)。</p>
+    <button type="submit" class="btn">AI 诊断</button>
+  </form>
+  {{end}}
   {{else}}<p class="empty">暂无持仓快照。上传同花顺持仓截图导入。</p>{{end}}
 </section>
 {{end}}

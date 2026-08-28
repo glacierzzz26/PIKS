@@ -19,6 +19,7 @@ import (
 func main() {
 	limit := flag.Int("limit", 100, "max unclustered events per run")
 	batch := flag.Int("batch", 20, "LLM pairs per prompt")
+	reexamine := flag.Bool("reexamine", true, "run cross-cluster reexamination pass after normal clustering")
 	flag.Parse()
 
 	cfg := config.Load()
@@ -80,14 +81,40 @@ func main() {
 	}
 
 	meta := map[string]any{
-		"events":        len(events),
-		"auto_groups":   len(cand.Auto),
-		"llm_pairs":     len(cand.LLM),
-		"llm_batches":   (len(cand.LLM) + *batch - 1) / *batch,
-		"clusters":      len(comps),
-		"merged":        merged,
-		"ai_tokens":     tokens,
+		"events":         len(events),
+		"auto_groups":    len(cand.Auto),
+		"llm_pairs":      len(cand.LLM),
+		"llm_batches":    (len(cand.LLM) + *batch - 1) / *batch,
+		"clusters":       len(comps),
+		"merged":         merged,
+		"ai_tokens":      tokens,
 		"budget_checked": cfg.AIDailyTokenBudget > 0,
+	}
+
+	// 重审视 Pass(design cluster-quality):既有 canonical 跨簇互检 + 新事件↔既有簇。
+	// 预算沿用本命令剩余额度;预算耗尽则跳过并如实记 meta,不报错。
+	reexamPairs, reexamMerged, reexamTokens := 0, 0, int64(0)
+	if *reexamine {
+		remaining := int64(0) // maxTokens==0(未配预算)→ 0 == 不限(与 ConfirmPairs 语义一致)
+		if maxTokens > 0 {
+			remaining = maxTokens - tokens
+			if remaining <= 0 {
+				fmt.Println("cluster: reexamine skipped (daily token budget exhausted)")
+				meta["reexam_skipped_budget"] = true
+				remaining = -1 // 跳过哨兵
+			}
+		}
+		if remaining >= 0 {
+			reexamMerged, reexamTokens, reexamPairs, err = cluster.ReexamineClusters(ctx, s, provider, *batch, remaining)
+			if err != nil {
+				finishFail(ctx, s, runID, err)
+			}
+			merged += reexamMerged
+			tokens += reexamTokens
+		}
+		meta["reexam_pairs"] = reexamPairs
+		meta["reexam_merged"] = reexamMerged
+		meta["reexam_tokens"] = reexamTokens
 	}
 	if err := s.FinishTaskRun(ctx, runID, "success", "", meta); err != nil {
 		fatal("finish task run:", err)

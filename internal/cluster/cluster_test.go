@@ -96,3 +96,47 @@ func TestNoCrossTypeCandidate(t *testing.T) {
 		t.Fatalf("cross-type events must not be LLM candidates, got %d", len(c.LLM))
 	}
 }
+
+// 聚类质量回归:跨簇重复(design cluster-quality)。两条近同标题 canonical 分属两簇,
+// 重审视候选池(既有 canonical ∪ 未聚类)会生成 LLM 对 → 触发确认并并簇。
+// 这正是不加重审视时因 ListUnclusteredEvents 只聚未聚类而永远漏掉的对。
+func TestCrossClusterCandidate(t *testing.T) {
+	now := time.Now()
+	events := []model.Event{
+		mkEvent("a", "央行宣布下调存款准备金率0.25个百分点", "policy", []string{"银行", "房地产"}, now, 0.9),
+		mkEvent("b", "央行宣布下调金融机构存款准备金率0.25个百分点", "policy", []string{"金融机构", "银行"}, now, 1.0),
+	}
+	c := GenCandidates(events)
+	if len(c.Auto) != 0 {
+		t.Fatalf("different titles should not auto-merge: %v", c.Auto)
+	}
+	if len(c.LLM) != 1 {
+		t.Fatalf("cross-cluster duplicate titles must produce 1 LLM pair, got %d", len(c.LLM))
+	}
+}
+
+// pickSurvivorIndex:survivor 恒为既有簇代表;最早创建,同则高置信;无簇成员返回 -1。
+func TestPickSurvivorIndex(t *testing.T) {
+	now := time.Now()
+	pool := []model.Event{
+		mkEvent("a", "事件甲", "policy", []string{"银行"}, now.Add(-2*time.Hour), 0.8), // 簇 X(最早)
+		mkEvent("b", "事件乙", "policy", []string{"银行"}, now.Add(-1*time.Hour), 0.9), // 簇 Y(次早)
+		mkEvent("c", "事件丙", "policy", []string{"银行"}, now, 0.5),                   // 簇 Z(最晚)
+		mkEvent("d", "事件丁", "policy", []string{"银行"}, now.Add(1*time.Hour), 0.7),  // 未聚类(更早,不参与)
+		mkEvent("e", "事件戊", "policy", []string{"银行"}, now, 1.0),                   // 簇 W(与 c 同刻,更高置信)
+	}
+	clusterOf := []string{"X", "Y", "Z", "", "W"}
+
+	if got := pickSurvivorIndex(pool, clusterOf, []int{3}); got != -1 {
+		t.Fatalf("no cluster member should return -1, got %d", got)
+	}
+	if got := pickSurvivorIndex(pool, clusterOf, []int{3, 1}); got != 1 {
+		t.Fatalf("single cluster member should win, got %d", got)
+	}
+	if got := pickSurvivorIndex(pool, clusterOf, []int{0, 1, 2}); got != 0 {
+		t.Fatalf("earliest created should win, got %d", got)
+	}
+	if got := pickSurvivorIndex(pool, clusterOf, []int{2, 4}); got != 4 {
+		t.Fatalf("tie created_at should go to higher confidence, got %d", got)
+	}
+}

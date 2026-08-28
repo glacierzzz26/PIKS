@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -110,6 +111,44 @@ func (s *Store) ListEventsByCluster(ctx context.Context, clusterID string) ([]mo
 		return nil, err
 	}
 	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Event])
+}
+
+// ClusterRepresentative 活跃簇的代表事件:簇内对外展示的 canonical 卡(cluster_id + 事件本体)。
+type ClusterRepresentative struct {
+	ClusterID string
+	Event     model.Event
+}
+
+// ListActiveClusterRepresentatives 每个活跃簇返回一个代表事件,供聚类重审视 Pass
+// (跨簇重复检测,design cluster-quality)使用。
+// 代表 = 簇内 status IN ('extracted','verified','published') 的最早创建成员(同则更高置信),
+// 即 ApplyClusters 选取的 canonical;event_clusters.status='merged' 的簇不再返回。
+func (s *Store) ListActiveClusterRepresentatives(ctx context.Context) ([]ClusterRepresentative, error) {
+	// eventCols 含 cluster_id 且与 event_clusters 同名列(id/title/status/created_at/updated_at)冲突,
+	// JOIN 场景必须逐列加 e. 前缀。
+	qualified := "e." + strings.ReplaceAll(eventCols, ",", ",e.")
+	rows, err := s.Pool.Query(ctx,
+		`SELECT DISTINCT ON (e.cluster_id) `+qualified+`
+		 FROM events e
+		 JOIN event_clusters c ON c.id=e.cluster_id
+		 WHERE c.status='active'
+		   AND e.status IN ('extracted','verified','published')
+		 ORDER BY e.cluster_id, e.created_at, e.confidence DESC`)
+	if err != nil {
+		return nil, err
+	}
+	evs, err := pgx.CollectRows(rows, pgx.RowToStructByName[model.Event])
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ClusterRepresentative, 0, len(evs))
+	for _, ev := range evs {
+		if ev.ClusterID == nil {
+			continue
+		}
+		out = append(out, ClusterRepresentative{ClusterID: *ev.ClusterID, Event: ev})
+	}
+	return out, nil
 }
 
 // SetEventCluster 把事件并入簇:设 cluster_id、可选改 status,并 bump updated_at(触发增量发布)。

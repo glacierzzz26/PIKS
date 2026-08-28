@@ -1,0 +1,160 @@
+{{define "content"}}
+<div class="page-head">
+  <h1>交易</h1>
+  <span class="sub">每日自交易 × 知识库解读 · 截图识别录入(预览确认)+ 手动兜底 + AI 带引用复盘</span>
+</div>
+
+{{if .Note}}<p class="note">{{.Note}}</p>{{end}}
+
+<section class="sec" style="margin-top:20px">
+  <h2>导入截图</h2>
+  {{if .Preview}}
+  <form method="post" action="/trades" class="card" style="padding:14px 16px">
+    <input type="hidden" name="action" value="confirm">
+    <input type="hidden" name="kind" value="{{.Preview.Kind}}">
+    <input type="hidden" name="attachment_id" value="{{.Preview.AttachmentID}}">
+    {{if eq .Preview.Kind "position"}}
+    <p class="sub">持仓识别预览 —— 核对/编辑后勾选导入(名称/代码可改):</p>
+    <table class="wtable">
+      <thead><tr><th>勾选</th><th>代码</th><th>名称</th><th>数量</th><th>成本价</th><th>现价</th><th>市值</th><th>盈亏</th></tr></thead>
+      <tbody>
+        {{range $i, $p := .Preview.Positions}}
+        <tr>
+          <td><input type="checkbox" name="p_inc" value="{{$i}}" {{if $p.Include}}checked{{end}}></td>
+          <td><input type="text" name="p_code" value="{{$p.Code}}" size="6"></td>
+          <td><input type="text" name="p_name" value="{{$p.Name}}"></td>
+          <td><input type="text" name="p_qty" value="{{$p.Qty}}" size="6"></td>
+          <td><input type="text" name="p_cost" value="{{$p.CostPrice}}" size="8"></td>
+          <td><input type="text" name="p_price" value="{{$p.Price}}" size="8"></td>
+          <td><input type="text" name="p_mv" value="{{$p.MarketValue}}" size="9"></td>
+          <td><input type="text" name="p_pl" value="{{$p.PL}}" size="9"></td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="sub">今日交易识别预览 —— 核对/编辑后勾选导入(名称/代码/价格可改):</p>
+    <table class="wtable">
+      <thead><tr><th>勾选</th><th>日期</th><th>代码</th><th>名称</th><th>方向</th><th>价格</th><th>数量</th><th>金额</th></tr></thead>
+      <tbody>
+        {{range $i, $t := .Preview.Trades}}
+        <tr>
+          <td><input type="checkbox" name="t_inc" value="{{$i}}" {{if $t.Include}}checked{{end}}>{{if $t.Exists}}<span class="sub">已存在</span>{{end}}</td>
+          <td><input type="text" name="t_date" value="{{$t.Date}}" size="10"></td>
+          <td><input type="text" name="t_code" value="{{$t.Code}}" size="6"></td>
+          <td><input type="text" name="t_name" value="{{$t.Name}}"></td>
+          <td><select name="t_side"><option value="buy" {{if eq $t.Side "buy"}}selected{{end}}>买入</option><option value="sell" {{if eq $t.Side "sell"}}selected{{end}}>卖出</option></select></td>
+          <td><input type="text" name="t_price" value="{{$t.Price}}" size="8"></td>
+          <td><input type="text" name="t_qty" value="{{$t.Qty}}" size="6"></td>
+          <td><input type="text" name="t_amount" value="{{$t.Amount}}" size="9" disabled></td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{end}}
+    <div style="margin-top:10px">
+      <button type="submit" class="btn">导入勾选项</button>
+      <a class="btn" href="/trades">取消</a>
+    </div>
+  </form>
+  {{else}}
+  <form method="post" action="/trades" enctype="multipart/form-data" class="card" style="padding:14px 16px">
+    <input type="hidden" name="action" value="import">
+    <label class="sub">截图类型:
+      <select name="type">
+        <option value="trade">今日交易</option>
+        <option value="position">持仓</option>
+      </select>
+    </label>
+    <input type="file" name="file" accept="image/png,image/jpeg,image/webp,image/gif" required style="margin-left:8px">
+    <button type="submit" class="btn" style="margin-left:8px">识别并预览</button>
+    <p class="sub" style="margin:8px 0 0">同花顺 App 截图;识别后需人工核对确认才入库(防误识别)。视觉模型未配置时可用下方手动录入。</p>
+  </form>
+  {{end}}
+</section>
+
+<section class="sec">
+  <h2>手动录入(兜底)</h2>
+  <form method="post" action="/trades" class="card" style="padding:12px 16px">
+    <input type="hidden" name="action" value="add">
+    <input type="text" name="trade_date" placeholder="日期(默认今天,YYYY-MM-DD)" size="14">
+    <input type="text" name="code" placeholder="代码(如 600519)" size="8" required>
+    <input type="text" name="name" placeholder="名称(如 贵州茅台)" required>
+    <select name="side"><option value="buy">买入</option><option value="sell">卖出</option></select>
+    <input type="text" name="price" placeholder="价格" size="8" required>
+    <input type="text" name="qty" placeholder="数量(股)" size="7" required>
+    <input type="text" name="note" placeholder="自评理由(可选)" size="20">
+    <button type="submit" class="btn">录入</button>
+  </form>
+</section>
+
+<section class="sec">
+  <h2>交易记录</h2>
+  {{if .Trades}}
+  {{range .Trades}}
+  {{$trade := .}}
+  <div class="card" style="padding:12px 16px;margin-bottom:10px">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <strong>{{.Name}}</strong>
+      <span class="sub">{{.Code}} · {{.Date}}</span>
+      <span style="color:{{if eq .Side "buy"}}#d33{{else}}#1a7f37{{end}};font-weight:700">{{.SideLabel}}</span>
+      <span class="sub">{{.Qty}}股 @ {{printf "%.3f" .Price}} · 金额 {{printf "%.2f" .Amount}}</span>
+      {{if eq .Source "screenshot"}}<span class="chip">截图</span>{{else}}<span class="chip">手动</span>{{end}}
+    </div>
+    {{if .Note}}<p class="sub" style="margin:6px 0 0">自评:{{.Note}}</p>{{end}}
+    {{if .Review}}
+    <div class="card-soft" style="margin-top:10px;padding:10px 12px">
+      <p style="margin:0;white-space:pre-wrap">{{.Review.Text}}</p>
+      <p class="sub" style="margin:8px 0 0">复盘 · {{.Review.Model}} · {{.Review.Tokens}} tokens · {{.Review.GenAt}}</p>
+      {{if or .Review.RefEvents .Review.RefEntities .Review.RefNotes}}
+      <div class="chips" style="margin-top:6px">
+        {{range .Review.RefEvents}}<a class="chip" href="/events/{{.ID}}">事件:{{.Title}}</a>{{end}}
+        {{range .Review.RefEntities}}<a class="chip" href="/entities/{{.ID}}">实体:{{.Title}}</a>{{end}}
+        {{range .Review.RefNotes}}<a class="chip" href="/notes/{{.ID}}">笔记:{{.Title}}</a>{{end}}
+      </div>
+      {{end}}
+      {{if .Review.Mistakes}}
+      <div style="margin-top:8px">
+        <p class="sub" style="margin:0 0 4px">可复盘点候选(确认后才存为笔记):</p>
+        {{range $i, $m := .Review.Mistakes}}
+        <form method="post" action="/trades/{{$trade.ID}}/save-mistake/{{$i}}" style="display:flex;gap:8px;align-items:center;margin-bottom:4px">
+          <span style="flex:1">{{$m.Title}}</span>
+          <button type="submit" class="btn">存为笔记</button>
+        </form>
+        {{end}}
+      </div>
+      {{end}}
+    </div>
+    {{else}}
+    <form method="post" action="/trades/{{.ID}}/review" style="margin-top:10px">
+      <button type="submit" class="btn">AI 解读</button>
+    </form>
+    {{end}}
+  </div>
+  {{end}}
+  {{else}}<p class="empty">暂无交易记录。用上方截图导入或手动录入。</p>{{end}}
+</section>
+
+<section class="sec">
+  <h2>持仓快照(最近)</h2>
+  {{if .Positions}}
+  <table class="wtable">
+    <thead><tr><th>日期</th><th>代码</th><th>名称</th><th>数量</th><th>成本价</th><th>现价</th><th>市值</th><th>盈亏</th></tr></thead>
+    <tbody>
+      {{range .Positions}}
+      <tr>
+        <td class="nowrap">{{.Date}}</td>
+        <td>{{.Code}}</td>
+        <td>{{.Name}}</td>
+        <td class="num">{{.Qty}}</td>
+        <td class="num">{{.CostPrice}}</td>
+        <td class="num">{{.Price}}</td>
+        <td class="num">{{.MarketValue}}</td>
+        <td class="num">{{.PL}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="empty">暂无持仓快照。上传同花顺持仓截图导入。</p>{{end}}
+</section>
+{{end}}

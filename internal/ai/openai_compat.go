@@ -190,11 +190,21 @@ func (p *OpenAICompat) StructuredOutput(ctx context.Context, req StructuredReque
 	if len(req.Schema) > 0 {
 		system += "\n\n输出 JSON Schema:\n" + string(req.Schema)
 	}
+	// Image 非空 → user content 变 [text, image_url] 数组(与 Chat 一致,探针实测 vision+json_object 兼容)。
+	var userContent any = req.User
+	if req.Image != nil {
+		userContent = []map[string]any{
+			{"type": "text", "text": req.User},
+			{"type": "image_url", "image_url": map[string]string{
+				"url": "data:" + req.Image.MIME + ";base64," + base64.StdEncoding.EncodeToString(req.Image.Data),
+			}},
+		}
+	}
 	payload := map[string]any{
 		"model": p.model,
-		"messages": []map[string]string{
+		"messages": []map[string]any{
 			{"role": "system", "content": system},
-			{"role": "user", "content": req.User},
+			{"role": "user", "content": userContent},
 		},
 		"temperature":     0,
 		"response_format": map[string]any{"type": "json_object"},

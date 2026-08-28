@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -87,6 +88,26 @@ func (s *Store) ListPersonalNotes(ctx context.Context, noteType string) ([]model
 	}
 	q += ` ORDER BY (status='archived'), updated_at DESC`
 	rows, err := s.Pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[model.PersonalNote])
+}
+
+// ListPersonalNotesByText 按文本匹配 title/content 的笔记(交易解读引用,design trades.md §2.4)。
+// 非 archived 优先、按 updated_at 倒序。q 为空返回空列表。
+func (s *Store) ListPersonalNotesByText(ctx context.Context, q string, limit int) ([]model.PersonalNote, error) {
+	q = strings.TrimSpace(q)
+	if q == "" || limit <= 0 {
+		return nil, nil
+	}
+	pat := "%" + q + "%"
+	rows, err := s.Pool.Query(ctx, `
+		SELECT `+noteCols+` FROM personal_notes
+		WHERE (COALESCE(title,'') ILIKE $1 OR COALESCE(content,'') ILIKE $1)
+		ORDER BY (status='archived'), updated_at DESC
+		LIMIT $2`, pat, limit)
 	if err != nil {
 		return nil, err
 	}

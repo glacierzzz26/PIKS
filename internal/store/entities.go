@@ -14,6 +14,32 @@ import (
 
 const entityCols = `id,type,name,aliases,description,detail,status,created_at,updated_at`
 
+// EnsureCompanyEntity 交易股票实体补全(design trades.md §2.3):按 name 或 detail->>code
+// 查 type='company';缺则建(detail={code,source:'trade-import'} 标注来源,不编造描述)。返回实体 id。
+func (s *Store) EnsureCompanyEntity(ctx context.Context, code, name string) (string, error) {
+	var id string
+	// 先按 name(规范名),再按 detail 里的代码(同名不同代码防撞)。
+	for _, q := range []string{
+		`SELECT id FROM entities WHERE type='company' AND name=$1`,
+		`SELECT id FROM entities WHERE type='company' AND detail->>'code'=$1`,
+	} {
+		err := s.Pool.QueryRow(ctx, q, name).Scan(&id)
+		if err == nil {
+			return id, nil
+		}
+		if err != pgx.ErrNoRows {
+			return "", err
+		}
+	}
+	// 缺 → 建(名称/代码来自截图/录入,来源可审计)。
+	detail, _ := json.Marshal(map[string]string{"code": code, "source": "trade-import"})
+	err := s.Pool.QueryRow(ctx, `
+		INSERT INTO entities (type, name, aliases, description, detail, status)
+		VALUES ('company', $1, '[]'::jsonb, NULL, $2, 'active') RETURNING id`,
+		name, detail).Scan(&id)
+	return id, err
+}
+
 // UpsertEntity 按 (type,name) upsert(设计 §2.1 UNIQUE)。aliases/detail 用新值覆盖。
 // 严格幂等:已存在且字段全同 → 不写库(零变更,重跑零 churn)。返回 (id, created bool, err)。
 func (s *Store) UpsertEntity(ctx context.Context, e *model.Entity) (string, bool, error) {

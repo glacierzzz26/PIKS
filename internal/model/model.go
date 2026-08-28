@@ -191,3 +191,38 @@ type Attachment struct {
 	Path      string    `db:"path"`
 	CreatedAt time.Time `db:"created_at"`
 }
+
+// Trade 交易记录(交易功能,design trades.md;迁移 0010)。
+// review = AI 带引用复盘 {review,refs,model,tokens,generated_at}。
+type Trade struct {
+	ID           string          `db:"id"`
+	TradeDate    time.Time       `db:"trade_date"`
+	Code         string          `db:"code"`
+	Name         string          `db:"name"`
+	Side         string          `db:"side"` // buy / sell
+	Price        float64         `db:"price"`
+	Qty          int             `db:"qty"`
+	Amount       float64         `db:"amount"`
+	Source       string          `db:"source"` // manual / screenshot
+	AttachmentID *string         `db:"attachment_id"`
+	Note         *string         `db:"note"`
+	Review       json.RawMessage `db:"review"`
+	CreatedAt    time.Time       `db:"created_at"`
+	UpdatedAt    time.Time       `db:"updated_at"`
+}
+
+// Position 持仓快照(同花顺持仓截图;只存只展示,V1 不调 AI)。
+type Position struct {
+	ID           string    `db:"id"`
+	SnapshotDate time.Time `db:"snapshot_date"`
+	Code         string    `db:"code"`
+	Name         string    `db:"name"`
+	Qty          int       `db:"qty"`
+	CostPrice    *float64  `db:"cost_price"`
+	Price        *float64  `db:"price"`
+	MarketValue  *float64  `db:"market_value"`
+	PL           *float64  `db:"pl"`
+	Source       string    `db:"source"`
+	AttachmentID *string   `db:"attachment_id"`
+	CreatedAt    time.Time `db:"created_at"`
+}

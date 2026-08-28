@@ -100,6 +100,7 @@ func NewServer(s *store.Store, cfg config.Config) (*Server, error) {
 		{"note_form", "templates/note_form.html"},
 		{"note", "templates/note.html"},
 		{"weekly", "templates/weekly.html"},
+		{"trades", "templates/trades.html"},
 		{"settings", "templates/settings.html"},
 		{"chat", "templates/chat.html"},
 	}
@@ -133,6 +134,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/notes/new", s.handleNoteNew)
 	mux.HandleFunc("/notes/", s.handleNote)
 	mux.HandleFunc("/weekly", s.handleWeekly)
+	mux.HandleFunc("/trades", s.handleTrades)
+	mux.HandleFunc("/trades/", s.handleTrade)
 	mux.HandleFunc("/settings", s.handleSettings)
 	mux.HandleFunc("/chat", s.handleChat)
 

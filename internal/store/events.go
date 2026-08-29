@@ -81,6 +81,38 @@ func (s *Store) ListEventsForPublishWithSource(ctx context.Context) ([]EventForP
 	return pgx.CollectRows(rows, pgx.RowToStructByName[EventForPublish])
 }
 
+// EventForAPI 前端事件流只读投影(api_v1):事件本体 + 来源名 + raw URL。
+type EventForAPI struct {
+	ID         string          `db:"id"`
+	Title      string          `db:"title"`
+	EventType  string          `db:"event_type"`
+	Summary    *string         `db:"summary"`
+	Facts      json.RawMessage `db:"facts"`
+	Affected   json.RawMessage `db:"affected"`
+	OccurredAt *time.Time      `db:"occurred_at"`
+	CreatedAt  time.Time       `db:"created_at"`
+	Confidence float64         `db:"confidence"`
+	Status     string          `db:"status"`
+	SourceName string          `db:"source_name"`
+	SourceURL  *string         `db:"source_url"`
+}
+
+// ListEventsForAPI 全部有效事件(extracted/verified/published)+ 来源名 + raw url。
+func (s *Store) ListEventsForAPI(ctx context.Context) ([]EventForAPI, error) {
+	rows, err := s.Pool.Query(ctx,
+		`SELECT e.id,e.title,e.event_type,e.summary,e.facts,e.affected,e.occurred_at,e.created_at,
+		        e.confidence,e.status, s.name AS source_name, rd.url AS source_url
+		 FROM events e
+		 JOIN sources s ON s.id=e.source_id
+		 LEFT JOIN raw_documents rd ON rd.id=e.raw_document_id
+		 WHERE e.status IN ('extracted','verified','published')
+		 ORDER BY e.occurred_at NULLS LAST, e.created_at`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByName[EventForAPI])
+}
+
 // MarkEventPublished 标记事件已发布:只设 published_at,不改 status。
 // status 恒表示知识状态(extracted/verified/merged),发布生命周期由 published_at 承载(设计 §3.4)。
 // 好处:卡片 front matter 稳定,已发布事件即使 updated_at 被触碰,内容未变时渲染逐字节相同 → hash 跳过 → git 零提交。

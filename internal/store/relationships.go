@@ -56,6 +56,18 @@ func (s *Store) ListRelationshipsFromTo(ctx context.Context, fromType, toType, r
 	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Relationship])
 }
 
+// ListAllRelationships 全部关系(前端关系图谱投影,api_v1)。
+// 端点类型(event→entity / entity→entity)由前端按节点 id 集合自行过滤。
+func (s *Store) ListAllRelationships(ctx context.Context) ([]model.Relationship, error) {
+	rows, err := s.Pool.Query(ctx,
+		`SELECT `+relCols+` FROM relationships ORDER BY from_id, to_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Relationship])
+}
+
 // ListAffectedTermEvents affected 词 → 事件 id 映射(实体构建用)。
 func (s *Store) ListAffectedTermEvents(ctx context.Context) (map[string][]string, error) {
 	rows, err := s.Pool.Query(ctx, `

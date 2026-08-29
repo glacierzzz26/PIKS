@@ -36,6 +36,22 @@ func (s *Store) GetTaskRunByID(ctx context.Context, id int64) (model.TaskRun, er
 	return pgx.CollectOneRow(rows, pgx.RowToStructByName[model.TaskRun])
 }
 
+// ListTaskRuns 最近任务执行,按开始时间倒序(React 看板管线状态投影)。
+func (s *Store) ListTaskRuns(ctx context.Context, limit int) ([]model.TaskRun, error) {
+	q := `SELECT id,command,status,started_at,ended_at,error,meta,created_at FROM task_runs ORDER BY started_at DESC`
+	args := []any{}
+	if limit > 0 {
+		q += ` LIMIT $1`
+		args = append(args, limit)
+	}
+	rows, err := s.Pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[model.TaskRun])
+}
+
 // TokensSince 统计 since 以来 task_runs 累计 AI token(预算护栏用)。
 func (s *Store) TokensSince(ctx context.Context, since time.Time) (int64, error) {
 	var n int64

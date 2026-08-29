@@ -30,3 +30,11 @@ func (s *Store) Counts(ctx context.Context) (Counts, error) {
 	defer rows.Close()
 	return pgx.CollectOneRow(rows, pgx.RowToStructByName[Counts])
 }
+
+// NoteTradeCounts 笔记与交易计数(React 看板统计项用)。
+func (s *Store) NoteTradeCounts(ctx context.Context) (notes, trades int, err error) {
+	err = s.Pool.QueryRow(ctx, `
+		SELECT (SELECT count(*) FROM personal_notes),
+		       (SELECT count(*) FROM trades)`).Scan(&notes, &trades)
+	return notes, trades, err
+}

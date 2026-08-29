@@ -1,10 +1,10 @@
 package web
 
-// /api/v1 只读投影层 —— Go 后端只读 REST(只读 PG 投影)。
+// /api/v1 只读投影层 —— React 前端(frontend/)数据源。
 //
-// 只读、复用 store 查询、字段对齐前端契约 types.ts;
+// 只读、复用 store 查询、字段对齐 frontend/src/lib/types.ts;
 // 未产出的字段如实给零值/省略(数据诚实),不做猜测映射。
-// 列表端点返回全量,分页由客户端完成(page/size 只在 URL)。
+// 列表端点返回全量,分页由前端客户端完成(page/size 只在 URL)。
 
 import (
 	"encoding/json"

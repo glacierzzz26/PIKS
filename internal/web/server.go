@@ -145,7 +145,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/entities/", s.handleEntityAPI)
 	mux.HandleFunc("/api/attachments/", s.handleAttachmentAPI)
 
-	// /api/v1 只读投影(只读 REST,字段对齐前端契约 types.ts)
+	// /api/v1 只读投影(React 前端数据源,字段对齐 frontend/src/lib/types.ts)
 	mux.HandleFunc("/api/v1/events", s.handleAPIEvents)
 	mux.HandleFunc("/api/v1/entities", s.handleAPIEntities)
 	mux.HandleFunc("/api/v1/relationships", s.handleAPIRelationships)
@@ -164,7 +164,7 @@ func (s *Server) Routes() http.Handler {
 	return s.cors(mux)
 }
 
-// cors 为 /api/v1 只读投影添加浏览器跨域头(允许前端跨域消费)。
+// cors 为 /api/v1 只读投影添加浏览器跨域头(React 前端 :3100 → Go :8090)。
 // 无鉴权的个人系统,允许任意 Origin;GET 简单请求无需预检,OPTIONS 一并兜底。
 func (s *Server) cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

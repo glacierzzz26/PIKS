@@ -23,13 +23,13 @@ services:
     restart: unless-stopped
     networks: [piks]
 
-  # 迭代5 Web 平台:PostgreSQL 直接渲染 HTML(只读)。图谱/点选面板走 /api JSON。
-  # 不依赖 Markdown/vault;仅经 postgres 读数据,故不需 tools 的 vault 挂载。
+  # Web 网关(nginx :80,发布 :8090):React SPA 只读页 + 反代 /api/* 与 Go HTML 交互页。
+  # Go web 与 nginx 同容器,Go 只监听 127.0.0.1:8090(不直接暴露局域网),编辑页经 nginx。
   web:
     image: piks-tools:latest
     container_name: piks-web
     ports:
-      - "0.0.0.0:8090:8090"            # 对 lab 局域网暴露,浏览器访问 http://192.168.0.202:8090
+      - "0.0.0.0:8090:80"              # 对外只留 nginx 网关;浏览器访问 http://192.168.0.202:8090
     env_file: [".env"]                 # 仅 DB 变量;AI 配置走 app_config 表(/settings 编辑)
     environment:
       - TZ=Asia/Shanghai
@@ -42,7 +42,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     networks: [piks]
-    command: ["./bin/web"]
+    command: ["sh", "-c", "./bin/web -listen 127.0.0.1:8090 & sleep 1; exec nginx -g 'daemon off;'"]
 
   tools:
     image: piks-tools:latest

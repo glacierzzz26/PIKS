@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
-import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { useSearchParams } from "react-router-dom";
 
 /**
  * 把筛选状态持久化到 URL query（规范第 7 条：可分享）。
@@ -11,22 +11,20 @@ export function useUrlState(): [
   Record<string, string>,
   (key: string, value: string) => void
 ] {
-  const sp = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const setParam = useCallback(
     (key: string, value: string) => {
-      const next = new URLSearchParams(sp.toString());
+      const next = new URLSearchParams(searchParams.toString());
       if (value) next.set(key, value);
       else next.delete(key);
-      router.replace(`${pathname}?${next.toString()}`, { scroll: false });
+      setSearchParams(next, { replace: true });
     },
-    [sp, router, pathname]
+    [searchParams, setSearchParams]
   );
 
   const query: Record<string, string> = {};
-  sp.forEach((v, k) => {
+  searchParams.forEach((v, k) => {
     query[k] = v;
   });
   return [query, setParam];

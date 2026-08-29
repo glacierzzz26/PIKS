@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PIKS · 投资知识系统</title>
+    <meta name="description" content="A 股投资知识系统：事件、实体、涨停梯队与知识沉淀" />
+    <script>
+      /* 主题初始化：读取 localStorage，避免暗色模式闪烁 */
+      try {
+        var t = localStorage.getItem("piks-theme");
+        if (t) document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+  </head>
+  <body class="font-sans">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

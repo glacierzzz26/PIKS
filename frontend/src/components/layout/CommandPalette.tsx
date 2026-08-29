@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useNavigate } from "react-router-dom";
 import { Search, CornerDownLeft, RefreshCw } from "lucide-react";
 import { MOCK_ENTITIES } from "@/lib/mock/entities";
 import { NAV_ITEMS } from "./navItems";
@@ -15,7 +15,7 @@ type Item = {
 
 /** 全局 ⌘K 命令面板：跳转页面 / 跳转实体 / 刷新数据（规范第 8 条） */
 export default function CommandPalette({ onClose }: { onClose: () => void }) {
-  const router = useRouter();
+  const navigate = useNavigate();
   const [input, setInput] = useState("");
   const [cursor, setCursor] = useState(0);
 
@@ -23,25 +23,26 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
     const pages: Item[] = NAV_ITEMS.map((n) => ({
       key: `page:${n.href}`,
       label: n.label,
-      hint: "页面",
-      run: () => router.push(n.href),
+      hint: n.external ? "页面(Go)" : "页面",
+      run: () =>
+        n.external ? window.location.assign(n.href) : navigate(n.href),
     }));
     const entities: Item[] = MOCK_ENTITIES.slice(0, 12).map((e) => ({
       key: `ent:${e.id}`,
       label: e.name,
       hint: "实体",
-      run: () => router.push(`/entities?id=${e.id}`),
+      run: () => navigate(`/entities?id=${e.id}`),
     }));
     const cmd: Item[] = [
       {
         key: "cmd:refresh",
         label: "刷新数据",
         hint: "命令",
-        run: () => router.refresh(),
+        run: () => window.location.reload(),
       },
     ];
     return [...pages, ...entities, ...cmd];
-  }, [router]);
+  }, [navigate]);
 
   const filtered = useMemo(() => {
     const q = input.trim().toLowerCase();

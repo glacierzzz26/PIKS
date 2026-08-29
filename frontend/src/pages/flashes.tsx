@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense } from "react";
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import { useData } from "@/hooks/useData";
 import { usePagedQuery } from "@/hooks/usePagedQuery";
 import { getFlashes } from "@/lib/mockService";
@@ -89,7 +89,7 @@ function FlashesInner() {
                       {f.content}
                       {f.event_id && (
                         <Link
-                          href={`/events?q=${encodeURIComponent(f.content.slice(0, 8))}`}
+                          to={`/events?q=${encodeURIComponent(f.content.slice(0, 8))}`}
                           className="ml-2 inline-flex items-center gap-1 text-accent no-underline hover:underline"
                         >
                           关联事件

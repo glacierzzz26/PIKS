@@ -5,13 +5,16 @@ PIKS 是 A 股投资知识系统：快讯/涨停池 → 结构化事件与实体
 前端只读 PostgreSQL 投影数据，不直接写业务逻辑。
 
 ## 技术栈（如已确定）
-- 框架：Next.js（App Router）+ React 18 + TypeScript
+- 构建：Vite 5 + React 18 + TypeScript（纯客户端 SPA，静态产物 `frontend/dist/`）
+- 路由：React Router v6（客户端路由；筛选状态写 URL query）
+- 服务：nginx（生产网关，单入口 :8090）—— 服务 SPA 静态文件 + 反代 `/api/*` 与 Go HTML 交互页
+- 后端：Go web 只监听 `127.0.0.1:8090`（与 nginx 同容器），不直接暴露局域网
 - 样式：Tailwind CSS
 - 图表：ECharts 6
 - 关系图谱：React Flow
 - 表格：TanStack Table
 - 动画：Framer Motion
-- 数据获取：REST API，base URL 通过环境变量配置
+- 数据获取：REST API，base URL 默认相对 `/api/v1`（生产同源走 nginx、开发经 vite proxy），可用 `VITE_API_BASE_URL` 覆盖
 
 ## 设计令牌（Design Tokens）
 ### 配色
@@ -46,14 +49,11 @@ PIKS 是 A 股投资知识系统：快讯/涨停池 → 结构化事件与实体
 9. 所有异步操作必须处理 loading / error / empty 三态
 10. 禁止紫粉渐变、禁止 playful 字体、禁止 AI 套话文案
 
-## 页面模块
-重构按以下顺序推进，每完成一个模块提交一次：
-1. 全局布局 + 左侧导航 + 顶部筛选栏
-2. 事件流页面（核心）
-3. 实体库页面（含关系图谱）
-4. 涨停梯队页面
-5. 快讯流页面
-6. Markdown 文档阅读页
+## 页面模块（2026-08-29 起：SPA 只读页 + Go 交互页并存，nginx 分流）
+- **SPA 只读页（`frontend/src/pages/`，React Router 注册 8 页）**：看板 / 事件流 / 实体库 / 图谱 / 涨停梯队 / 快讯流 / 对账 / 复盘
+- **Go 交互页（经 nginx 反代，不在 SPA 路由）**：笔记(编辑) / 周报(AI 综述) / 交易(截图导入) / AI 对话 / 设置 —— 写操作仍在 Go HTML，React 只读版同名页被遮蔽
+- 导航与 ⌘K：SPA 页用 React Router `Link`，交互页用原生 `<a>`（全量跳转经 nginx 落 Go）
+- 分流规则见 `configs/nginx.conf`（生产）与 `frontend/vite.config.ts`（dev proxy 复刻）
 
 ## 禁用清单
 - 禁止直接改 PostgreSQL schema（前端重构不涉及）

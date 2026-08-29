@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -61,4 +62,42 @@ func (s *Store) recon(ctx context.Context, query string) ([]ReconIssue, error) {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, pgx.RowToStructByName[ReconIssue])
+}
+
+// ReconDaily 每日对账行(前端 /recon 投影)。
+type ReconDaily struct {
+	Date      time.Time `db:"date"`
+	Flashes   int       `db:"flashes"`
+	Events    int       `db:"events"`
+	Anomalies int       `db:"anomalies"`
+}
+
+// ListReconDaily 活跃数据日期范围的每日对账,按日倒序。
+// anomalies = 当日抽取失败的快讯数(failed_raw);范围取 raw_documents/events/snapshots 的交并。
+func (s *Store) ListReconDaily(ctx context.Context) ([]ReconDaily, error) {
+	rows, err := s.Pool.Query(ctx, `
+		WITH ds AS (
+			SELECT date_trunc('day', COALESCE(published_at, retrieved_at))::date AS d FROM raw_documents
+			UNION
+			SELECT date_trunc('day', COALESCE(occurred_at, created_at))::date AS d FROM events
+			UNION
+			SELECT trade_date FROM market_snapshots
+		),
+		days AS (
+			SELECT generate_series(min(d), max(d), interval '1 day')::date AS d FROM ds
+		)
+		SELECT d AS date,
+			(SELECT count(*) FROM raw_documents r
+			 WHERE COALESCE(r.published_at, r.retrieved_at)::date = d) AS flashes,
+			(SELECT count(*) FROM events e
+			 WHERE e.status <> 'merged'
+			   AND COALESCE(e.occurred_at, e.created_at)::date = d) AS events,
+			(SELECT count(*) FROM raw_documents r
+			 WHERE r.status = 'failed' AND COALESCE(r.published_at, r.retrieved_at)::date = d) AS anomalies
+		FROM days ORDER BY d DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[ReconDaily])
 }

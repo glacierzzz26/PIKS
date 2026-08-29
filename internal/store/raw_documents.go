@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -69,4 +70,36 @@ func (s *Store) GetRawDocumentByID(ctx context.Context, id string) (model.RawDoc
 		return model.RawDocument{}, err
 	}
 	return pgx.CollectOneRow(rows, pgx.RowToStructByName[model.RawDocument])
+}
+
+// RawDocWithSource 快讯流只读投影(api_v1):raw_documents + 来源名 + 关联事件 id。
+type RawDocWithSource struct {
+	ID      string    `db:"id"`
+	FlashAt time.Time `db:"flash_at"`
+	Title   string    `db:"title"`
+	Source  string    `db:"source"`
+	EventID *string   `db:"event_id"`
+}
+
+// ListRawDocumentsWithSource 全部快讯(按发生时间倒序);被抽取成事件的行链上 event_id。
+// 一文档多事件时取最早事件;published_at 缺失时回退 retrieved_at/created_at。
+func (s *Store) ListRawDocumentsWithSource(ctx context.Context) ([]RawDocWithSource, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT id, flash_at, title, source, event_id FROM (
+			SELECT DISTINCT ON (rd.id)
+				rd.id,
+				COALESCE(rd.published_at, rd.retrieved_at, rd.created_at) AS flash_at,
+				rd.title,
+				s.name AS source,
+				ev.id AS event_id
+			FROM raw_documents rd
+			JOIN sources s ON s.id=rd.source_id
+			LEFT JOIN events ev ON ev.raw_document_id=rd.id
+			ORDER BY rd.id, ev.created_at
+		) t ORDER BY flash_at DESC NULLS LAST`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[RawDocWithSource])
 }

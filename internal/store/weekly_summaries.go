@@ -36,6 +36,31 @@ func (s *Store) GetWeeklySummary(ctx context.Context, week string) (*WeeklySumma
 	return &w, err
 }
 
+// ListWeeklySummaries 全部周综述,按周倒序(React 周报页投影)。
+func (s *Store) ListWeeklySummaries(ctx context.Context) ([]WeeklySummary, error) {
+	rows, err := s.Pool.Query(ctx,
+		`SELECT id,week,summary,model,tokens,created_at,updated_at FROM weekly_summaries ORDER BY week DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[WeeklySummary])
+}
+
+// GetWeeklySummaryByID 按 id 取周综述;无则 nil(React 周报阅读页经 /notes/:id 回退)。
+func (s *Store) GetWeeklySummaryByID(ctx context.Context, id string) (*WeeklySummary, error) {
+	rows, err := s.Pool.Query(ctx,
+		`SELECT id,week,summary,model,tokens,created_at,updated_at FROM weekly_summaries WHERE id=$1`, id)
+	if err != nil {
+		return nil, err
+	}
+	w, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[WeeklySummary])
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return &w, err
+}
+
 // UpsertWeeklySummary 写/覆盖某周综述(week UNIQUE,重新生成覆盖不新增行)。
 func (s *Store) UpsertWeeklySummary(ctx context.Context, week, summary, model string, tokens int64) error {
 	_, err := s.Pool.Exec(ctx,

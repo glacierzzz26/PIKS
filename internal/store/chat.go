@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/jackc/pgx/v5"
 
@@ -35,6 +36,17 @@ func (s *Store) GetOrCreateChatSession(ctx context.Context) (string, error) {
 	}
 	err = s.Pool.QueryRow(ctx,
 		`INSERT INTO chat_sessions(title) VALUES('默认对话') RETURNING id`).Scan(&id)
+	return id, err
+}
+
+// LatestChatSessionID 最近一个会话 id(只读,无会话返回 "");React 对话页投影用。
+func (s *Store) LatestChatSessionID(ctx context.Context) (string, error) {
+	var id string
+	err := s.Pool.QueryRow(ctx,
+		`SELECT id FROM chat_sessions ORDER BY created_at LIMIT 1`).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
 	return id, err
 }
 

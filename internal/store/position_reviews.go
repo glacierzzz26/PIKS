@@ -38,6 +38,22 @@ func (s *Store) GetPositionReview(ctx context.Context, snapshotDate time.Time) (
 	return &p, err
 }
 
+// ListPositionReviews 全部持仓诊断,按快照日倒序(React 复盘页投影)。
+func (s *Store) ListPositionReviews(ctx context.Context, limit int) ([]PositionReview, error) {
+	q := `SELECT id,snapshot_date,review,model,tokens,created_at,updated_at FROM position_reviews ORDER BY snapshot_date DESC`
+	args := []any{}
+	if limit > 0 {
+		q += ` LIMIT $1`
+		args = append(args, limit)
+	}
+	rows, err := s.Pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[PositionReview])
+}
+
 // UpsertPositionReview 写/覆盖某快照日诊断(snapshot_date UNIQUE,重新诊断覆盖不新增行)。
 func (s *Store) UpsertPositionReview(ctx context.Context, snapshotDate time.Time, review json.RawMessage, model string, tokens int64) error {
 	if len(review) == 0 {

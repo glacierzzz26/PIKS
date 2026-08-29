@@ -145,5 +145,38 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/entities/", s.handleEntityAPI)
 	mux.HandleFunc("/api/attachments/", s.handleAttachmentAPI)
 
-	return mux
+	// /api/v1 只读投影(React 前端数据源,字段对齐 frontend/src/lib/types.ts)
+	mux.HandleFunc("/api/v1/events", s.handleAPIEvents)
+	mux.HandleFunc("/api/v1/entities", s.handleAPIEntities)
+	mux.HandleFunc("/api/v1/relationships", s.handleAPIRelationships)
+	mux.HandleFunc("/api/v1/market/snapshot", s.handleAPIMarketSnapshot)
+	mux.HandleFunc("/api/v1/flashes", s.handleAPIFlashes)
+	mux.HandleFunc("/api/v1/notes", s.handleAPINotes)
+	mux.HandleFunc("/api/v1/notes/", s.handleAPINote)
+	mux.HandleFunc("/api/v1/dashboard", s.handleAPIDashboard)
+	mux.HandleFunc("/api/v1/recon", s.handleAPIRecon)
+	mux.HandleFunc("/api/v1/reviews", s.handleAPIReviews)
+	mux.HandleFunc("/api/v1/trades", s.handleAPITrades)
+	mux.HandleFunc("/api/v1/chat", s.handleAPIChat)
+	mux.HandleFunc("/api/v1/settings", s.handleAPISettings)
+	mux.HandleFunc("/api/v1/weekly", s.handleAPIWeekly)
+
+	return s.cors(mux)
+}
+
+// cors 为 /api/v1 只读投影添加浏览器跨域头(React 前端 :3100 → Go :8090)。
+// 无鉴权的个人系统,允许任意 Origin;GET 简单请求无需预检,OPTIONS 一并兜底。
+func (s *Server) cors(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/v1/") {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept")
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }

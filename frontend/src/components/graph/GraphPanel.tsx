@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import { ENTITY_TYPE_LABEL } from "@/lib/format";
 import { Chip } from "@/components/ui/Num";
@@ -69,7 +69,7 @@ export default function GraphPanel({
       })}
 
       <Link
-        href={`/entities?id=${entity.id}`}
+        to={`/entities?id=${entity.id}`}
         className="mt-2 block text-[13px] text-accent no-underline hover:underline"
       >
         打开完整实体卡 →

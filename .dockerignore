@@ -15,6 +15,9 @@ build/
 *.test
 vendor-verify/
 
+# 前端依赖与产物(node 阶段 npm ci 重新生成,不进上下文/镜像)
+frontend/node_modules/
+
 # 文档与样本(镜像不需要)
 docs/
 sample/

@@ -1,6 +1,8 @@
 /**
  * REST 数据层：前端只读 PostgreSQL 投影 API，不直接写业务。
- * base URL 通过 NEXT_PUBLIC_API_BASE_URL 配置；请求失败自动降级为演示数据。
+ * base URL 默认相对路径 /api/v1：生产经 nginx 反代到 Go(:8090 同源)，
+ * 开发经 vite proxy(configs/nginx.conf 复刻)。可用 VITE_API_BASE_URL 覆盖。
+ * 请求失败自动降级为演示数据。
  */
 
 export type FetchState<T> = {
@@ -11,8 +13,7 @@ export type FetchState<T> = {
   demo: boolean;
 };
 
-export const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8090/api/v1";
+export const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api/v1";
 
 /** API 端点约定（供后端 cmd/web 增加只读投影接口时对齐） */
 export const ENDPOINTS = {

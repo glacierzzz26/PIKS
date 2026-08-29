@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { Link, useLocation } from "react-router-dom";
 import { useEffect, useState, useCallback } from "react";
 import { Search, Sun, Moon, FlaskConical } from "lucide-react";
 import { NAV_ITEMS } from "./navItems";
@@ -9,7 +8,7 @@ import { anyDemo, onDemoChange } from "@/lib/demoSignal";
 
 /** 顶部导航条：品牌 + 横向导航 + 演示数据徽章 + 主题切换 + ⌘K（对齐 base.css .topbar） */
 export default function TopNav({ onOpenPalette }: { onOpenPalette: () => void }) {
-  const pathname = usePathname();
+  const { pathname } = useLocation();
   const [dark, setDark] = useState(false);
   const [demo, setDemo] = useState(anyDemo());
 
@@ -38,7 +37,7 @@ export default function TopNav({ onOpenPalette }: { onOpenPalette: () => void })
   return (
     <header className="topbar-glass fixed inset-x-0 top-0 z-40 border-b border-line">
       <div className="mx-auto flex h-[58px] max-w-[1400px] items-center gap-7 px-5">
-        <Link href="/" className="flex items-baseline gap-2 no-underline">
+        <Link to="/" className="flex items-baseline gap-2 no-underline">
           <span className="text-lg font-extrabold tracking-wide text-accent">
             PIKS
           </span>
@@ -48,19 +47,33 @@ export default function TopNav({ onOpenPalette }: { onOpenPalette: () => void })
         </Link>
 
         <nav className="flex flex-1 gap-1 overflow-x-auto">
-          {NAV_ITEMS.map(({ href, label }) => (
-            <Link
-              key={href}
-              href={href}
-              className={`whitespace-nowrap rounded-sm px-3.5 py-1.5 text-[13.5px] font-medium transition-colors no-underline ${
-                isActive(href)
-                  ? "bg-accent-soft text-accent"
-                  : "text-muted hover:bg-bg-soft hover:text-ink"
-              }`}
-            >
-              {label}
-            </Link>
-          ))}
+          {NAV_ITEMS.map(({ href, label, external }) =>
+            external ? (
+              <a
+                key={href}
+                href={href}
+                className={`whitespace-nowrap rounded-sm px-3.5 py-1.5 text-[13.5px] font-medium transition-colors no-underline ${
+                  isActive(href)
+                    ? "bg-accent-soft text-accent"
+                    : "text-muted hover:bg-bg-soft hover:text-ink"
+                }`}
+              >
+                {label}
+              </a>
+            ) : (
+              <Link
+                key={href}
+                to={href}
+                className={`whitespace-nowrap rounded-sm px-3.5 py-1.5 text-[13.5px] font-medium transition-colors no-underline ${
+                  isActive(href)
+                    ? "bg-accent-soft text-accent"
+                    : "text-muted hover:bg-bg-soft hover:text-ink"
+                }`}
+              >
+                {label}
+              </Link>
+            )
+          )}
         </nav>
 
         {demo && (

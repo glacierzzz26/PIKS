@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import { Num } from "@/components/ui/Num";
 import { Chip } from "@/components/ui/Num";
 import type { SnapRow } from "@/lib/mock/activity";
@@ -93,7 +93,7 @@ export function EventRank({
       {items.map((e, i) => (
         <Link
           key={e.id}
-          href={`/events?q=${encodeURIComponent(e.title.slice(0, 8))}`}
+          to={`/events?q=${encodeURIComponent(e.title.slice(0, 8))}`}
           className="group flex items-baseline gap-2.5 border-b border-dashed border-line py-2 text-sm last:border-0"
         >
           <span className="w-4 shrink-0 text-xs text-muted">{i + 1}</span>

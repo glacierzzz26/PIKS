@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense } from "react";
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import { useData } from "@/hooks/useData";
 import { ENDPOINTS } from "@/lib/api";
 import { getDocs } from "@/lib/mockService";
@@ -82,7 +82,7 @@ function NotesInner() {
             {paged.map((d) => (
               <Link
                 key={d.id}
-                href={`/notes/${d.id}`}
+                to={`/notes/${d.id}`}
                 className="block rounded border border-line bg-card p-4 shadow-card no-underline hover:border-accent"
               >
                 <div className="flex items-center gap-2.5">

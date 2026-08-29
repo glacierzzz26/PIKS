@@ -16,6 +16,16 @@
 
 ---
 
+> ### 现状偏差(2026-08-29 更新)
+> 本文档为 v1.0 权威蓝图(已定稿,冻结不改),以下为落地演进与现状,细节见 `docs/项目详解.md` 与 `docs/进度总表.md`:
+> - **知识界面**:Obsidian → **Web 平台(PG 直渲)**。迭代 5 建成 `cmd/web`(看板/事件/实体/图谱/复盘/对账/笔记/周报/交易/AI 对话);5-2 下线 vault/GitHub 界面层,`PIKS-Vault/` 仅存档。设计见 `docs/phase2/design/web-app.md`。
+> - **大模型配置**:环境变量 → **`app_config` 库表**(权威源,`/settings` 页面可编辑,密钥只存库)。`Markdown = Knowledge Projection` 一章所指投影层已随 vault 下线。
+> - **新增个人交易闭环**(2026-08-28,dev-only 未部署 lab):每日自交易截图识别录入 + AI 带引用解读 + 持仓 AI 诊断 + 交易/持仓进周报。设计见 `docs/phase2/design/trades.md`、`docs/phase2/design/trade-loop.md`。
+> - **周报 AI 综述**(2026-08-28,dev-only):Web 手动触发 + `weekly_summaries` 按 ISO 周缓存(GET 零 LLM)。设计见 `docs/phase2/design/weekly-ai-summary.md`。
+> - 数据层 schema 已演进至 11 个前向迁移(`migrations/0001~0011`,含 app_config/personal_notes/chat_sessions/weekly_summaries/trades/positions/position_reviews)。
+
+---
+
 ## 目录
 
 1. [项目背景](#1-项目背景)

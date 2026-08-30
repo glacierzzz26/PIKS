@@ -8,8 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,43 +19,6 @@ import (
 )
 
 const tradeMaxUpload = 5 << 20 // 5MB
-
-type TradesPage struct {
-	Common
-	Trades    []TradeView
-	Positions []PositionView
-	Note      string
-	Preview   *ImportPreview // 非空 = 导入预览态(待确认)
-	PosReview *PositionDiagnosisView // 非空 = 持仓 AI 诊断(缓存命中展示)
-	PosDate   string                 // 诊断对应快照日(YYYY-MM-DD)
-}
-
-type TradeView struct {
-	ID, Code, Name string
-	Side, SideLabel string
-	Date           string
-	Price, Amount  float64
-	Qty            int
-	Note           string
-	Source         string
-	Review         *TradeReviewView
-}
-
-type PositionView struct {
-	Date, Code, Name                       string
-	Qty                                    int
-	CostPrice, Price, MarketValue, PL      string
-}
-
-// TradeReviewView 复盘渲染视图(解包 review JSONB)。
-type TradeReviewView struct {
-	Text     string
-	Model    string
-	Tokens   int64
-	GenAt    string
-	RefEvents, RefEntities, RefNotes []store.ChatRef
-	Mistakes []tradeMistake
-}
 
 // ImportPreview 截图抽取预览(确认前不落库)。
 type ImportPreview struct {
@@ -100,77 +61,6 @@ type tradeMistake struct {
 	Content string `json:"content"`
 }
 
-func (s *Server) handleTrades(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodPost {
-		switch r.FormValue("action") {
-		case "add":
-			s.tradeAdd(w, r)
-		case "import":
-			s.tradeImport(w, r)
-		case "confirm":
-			s.tradeConfirm(w, r)
-		default:
-			http.Redirect(w, r, "/trades", http.StatusSeeOther)
-		}
-		return
-	}
-	s.tradesShow(w, r, nil, "")
-}
-
-// tradesShow 渲染交易页。preview 非空 = 导入预览态。
-func (s *Server) tradesShow(w http.ResponseWriter, r *http.Request, preview *ImportPreview, note string) {
-	ctx := r.Context()
-	if note == "" {
-		note = tradeNote(r.URL.Query().Get("g"))
-	}
-	page := TradesPage{
-		Common: Common{Title: "交易 · PIKS", Active: "trades"},
-		Note:   note,
-		Preview: preview,
-	}
-	ts, err := s.store.ListTrades(ctx, 200)
-	if err != nil {
-		s.fail(w, "trades", &page.Common, err)
-		return
-	}
-	ps, err := s.store.LatestPositions(ctx)
-	if err != nil {
-		s.fail(w, "trades", &page.Common, err)
-		return
-	}
-	page.Trades = toTradeViews(ts)
-	page.Positions = toPositionViews(ps)
-	// 持仓诊断缓存:最近快照日有诊断 → 展示(GET 永不调 LLM)。
-	if len(ps) > 0 {
-		snap := ps[0].SnapshotDate
-		page.PosDate = snap.Format("2006-01-02")
-		if pr, err := s.store.GetPositionReview(ctx, snap); err == nil && pr != nil {
-			page.PosReview = parsePositionReview(pr.Review)
-		}
-	}
-	s.render(w, "trades", page)
-}
-
-func toTradeViews(ts []model.Trade) []TradeView {
-	out := make([]TradeView, 0, len(ts))
-	for _, t := range ts {
-		v := TradeView{
-			ID: t.ID, Code: t.Code, Name: t.Name,
-			Side: t.Side, SideLabel: sideLabel(t.Side),
-			Date: t.TradeDate.Format("01-02"), Price: t.Price,
-			Amount: t.Amount, Qty: t.Qty, Source: t.Source,
-		}
-		if t.Note != nil {
-			v.Note = *t.Note
-		}
-		if len(t.Review) > 0 && string(t.Review) != "{}" {
-			v.Review = parseTradeReview(t.Review)
-		}
-		out = append(out, v)
-	}
-	return out
-}
-
 func sideLabel(side string) string {
 	switch side {
 	case "buy":
@@ -181,180 +71,13 @@ func sideLabel(side string) string {
 	return side
 }
 
-func toPositionViews(ps []model.Position) []PositionView {
-	out := make([]PositionView, 0, len(ps))
-	for _, p := range ps {
-		v := PositionView{
-			Date: p.SnapshotDate.Format("2006-01-02"), Code: p.Code, Name: p.Name, Qty: p.Qty,
-		}
-		if p.CostPrice != nil {
-			v.CostPrice = fmt.Sprintf("%.3f", *p.CostPrice)
-		} else {
-			v.CostPrice = "—"
-		}
-		if p.Price != nil {
-			v.Price = fmt.Sprintf("%.3f", *p.Price)
-		} else {
-			v.Price = "—"
-		}
-		if p.MarketValue != nil {
-			v.MarketValue = fmt.Sprintf("%.2f", *p.MarketValue)
-		} else {
-			v.MarketValue = "—"
-		}
-		if p.PL != nil {
-			v.PL = fmt.Sprintf("%+.2f", *p.PL)
-		} else {
-			v.PL = "—"
-		}
-		out = append(out, v)
-	}
-	return out
-}
-
-func parseTradeReview(raw json.RawMessage) *TradeReviewView {
+// parseTradeReview 解包交易复盘 JSONB(空 → nil)。
+func parseTradeReview(raw json.RawMessage) *tradeReview {
 	var rv tradeReview
 	if err := json.Unmarshal(raw, &rv); err != nil || rv.Review == "" {
 		return nil
 	}
-	v := &TradeReviewView{
-		Text: rv.Review, Model: rv.Model, Tokens: rv.Tokens, GenAt: rv.GenAt,
-		RefEvents: rv.Refs.Events, RefEntities: rv.Refs.Entities, RefNotes: rv.Refs.Notes,
-		Mistakes: rv.Mistakes,
-	}
-	return v
-}
-
-// tradeAdd 手动录入兜底。
-func (s *Server) tradeAdd(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	name := strings.TrimSpace(r.FormValue("name"))
-	code := strings.TrimSpace(r.FormValue("code"))
-	side := strings.TrimSpace(r.FormValue("side"))
-	if name == "" || code == "" || (side != "buy" && side != "sell") {
-		s.tradesShow(w, r, nil, "⚠️ 请填写证券名称、代码与买卖方向。")
-		return
-	}
-	price, err1 := strconv.ParseFloat(r.FormValue("price"), 64)
-	qty, err2 := strconv.Atoi(r.FormValue("qty"))
-	if err1 != nil || err2 != nil || qty <= 0 || price < 0 {
-		s.tradesShow(w, r, nil, "⚠️ 价格/数量格式不正确。")
-		return
-	}
-	var date time.Time
-	if d := r.FormValue("trade_date"); d != "" {
-		parsed, perr := time.ParseInLocation("2006-01-02", d, cst)
-		if perr != nil {
-			s.tradesShow(w, r, nil, "⚠️ 交易日期格式不正确(应为 YYYY-MM-DD)。")
-			return
-		}
-		date = parsed
-	} else {
-		date = time.Now().In(cst)
-	}
-	var note *string
-	if n := strings.TrimSpace(r.FormValue("note")); n != "" {
-		note = &n
-	}
-	if err := s.store.InsertTrades(ctx, []model.Trade{{
-		TradeDate: date, Code: code, Name: name, Side: side,
-		Price: price, Qty: qty, Amount: price * float64(qty), Source: "manual", Note: note,
-	}}); err != nil {
-		s.tradesShow(w, r, nil, "⚠️ 入库失败: "+err.Error())
-		return
-	}
-	if _, err := s.store.EnsureCompanyEntity(ctx, code, name); err != nil {
-		s.tradesShow(w, r, nil, "⚠️ 交易已入库,但实体补全失败: "+err.Error())
-		return
-	}
-	http.Redirect(w, r, "/trades?g=added", http.StatusSeeOther)
-}
-
-// tradeImport 截图导入:视觉抽取 → 预览态(不落库)。
-func (s *Server) tradeImport(w http.ResponseWriter, r *http.Request) {
-	kind := r.FormValue("type")
-	if kind != "trade" && kind != "position" {
-		s.tradesShow(w, r, nil, "⚠️ 请选择截图类型(今日交易 / 持仓)。")
-		return
-	}
-	if err := r.ParseMultipartForm(tradeMaxUpload + 1<<20); err != nil {
-		s.tradesShow(w, r, nil, "⚠️ 表单解析失败(文件超 5MB?): "+err.Error())
-		return
-	}
-	file, fh, err := r.FormFile("file")
-	if err != nil {
-		s.tradesShow(w, r, nil, "⚠️ 未收到截图文件。")
-		return
-	}
-	defer file.Close()
-	if !allowedImageType(fh.Header.Get("Content-Type")) {
-		s.tradesShow(w, r, nil, "⚠️ 仅支持图片(png/jpeg/webp/gif)。")
-		return
-	}
-	data, rerr := io.ReadAll(io.LimitReader(file, tradeMaxUpload+1))
-	if rerr != nil {
-		s.tradesShow(w, r, nil, "⚠️ 读文件失败: "+rerr.Error())
-		return
-	}
-	if len(data) > tradeMaxUpload {
-		s.tradesShow(w, r, nil, "⚠️ 图片超过 5MB 上限。")
-		return
-	}
-
-	ctx := r.Context()
-	cfgMap, err := s.store.ListAppConfig(ctx)
-	if err != nil {
-		s.tradesShow(w, r, nil, "⚠️ 读 AI 配置失败: "+err.Error())
-		return
-	}
-	base, key := cfgMap["ai_service_base_url"], cfgMap["ai_api_key"]
-	vision := cfgMap["ai_model_vision"]
-	if base == "" || key == "" || vision == "" {
-		s.tradesShow(w, r, nil, "⚠️ AI 未配置或视觉模型未配置(请到 /settings 配置 `ai_model_vision`),可用手动录入兜底。")
-		return
-	}
-	// 预算护栏(全局日账本)。
-	if budget, _ := strconv.ParseInt(cfgMap["ai_daily_token_budget"], 10, 64); budget > 0 {
-		if today, err := s.store.TokensSince(ctx, time.Now().Truncate(24*time.Hour)); err == nil && today >= budget {
-			s.tradesShow(w, r, nil, "⚠️ 今日 AI 预算已用尽,导入暂缓(预算恢复后重试)。")
-			return
-		}
-	}
-
-	attID, err := s.saveUpload(ctx, fh.Filename, fh.Header.Get("Content-Type"), data)
-	if err != nil {
-		s.tradesShow(w, r, nil, "⚠️ 保存截图失败: "+err.Error())
-		return
-	}
-
-	runID, err := s.store.StartTaskRun(ctx, "trade-import")
-	if err != nil {
-		s.tradesShow(w, r, nil, "⚠️ 记账失败: "+err.Error())
-		return
-	}
-	c := ai.NewOpenAICompat(base, key, vision)
-	system, user, schema := importPrompt(kind)
-	resp, err := c.StructuredOutput(ctx, ai.StructuredRequest{
-		System: system, User: user, Schema: json.RawMessage(schema),
-		Image: &ai.ImagePart{Data: data, MIME: fh.Header.Get("Content-Type")},
-	})
-	if err != nil {
-		_ = s.store.FinishTaskRun(ctx, runID, "failed", err.Error(), map[string]any{"kind": kind})
-		s.tradesShow(w, r, nil, "⚠️ 截图识别失败: "+err.Error())
-		return
-	}
-	_ = s.store.FinishTaskRun(ctx, runID, "success", "", map[string]any{"kind": kind, "model": vision, "ai_tokens": resp.Usage.Total()})
-
-	preview, perr := buildImportPreview(ctx, s.store, kind, attID, resp.Data)
-	if perr != nil {
-		s.tradesShow(w, r, nil, "⚠️ 识别结果解析失败: "+perr.Error())
-		return
-	}
-	if preview == nil || (len(preview.Trades) == 0 && len(preview.Positions) == 0) {
-		s.tradesShow(w, r, nil, "⚠️ 未识别到交易/持仓,请检查截图是否为同花顺今日交易/持仓页,或手动录入。")
-		return
-	}
-	s.tradesShow(w, r, preview, "✅ 已识别 "+fmt.Sprintf("%d", len(preview.Trades)+len(preview.Positions))+" 条,请核对后「导入勾选项」(名称/代码/价格可编辑)。")
+	return &rv
 }
 
 // importPrompt 返回截图抽取的 system/user/schema(与 design trades.md §2.2 一致)。
@@ -479,132 +202,6 @@ func trimF(v float64) string {
 	return strconv.FormatFloat(v, 'f', -1, 64)
 }
 
-// tradeConfirm 预览确认:批量入库 + 实体补全。
-func (s *Server) tradeConfirm(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	kind := r.FormValue("kind")
-	attID := r.FormValue("attachment_id")
-	if kind == "position" {
-		var ps []model.Position
-		codes := r.Form["p_code"]
-		names := r.Form["p_name"]
-		qtys := r.Form["p_qty"]
-		incs := r.Form["p_inc"]
-		incSet := map[int]bool{}
-		for _, v := range incs {
-			if i, err := strconv.Atoi(v); err == nil {
-				incSet[i] = true
-			}
-		}
-		for i, name := range names {
-			if !incSet[i] || strings.TrimSpace(name) == "" {
-				continue
-			}
-			code := formAt(codes, i)
-			if code == "" {
-				code = name
-			}
-			qty, _ := strconv.Atoi(formAt(qtys, i))
-			if qty <= 0 {
-				continue
-			}
-			ps = append(ps, model.Position{
-				SnapshotDate: time.Now().In(cst), Code: code, Name: name, Qty: qty,
-				CostPrice:   parseF(formAt(r.Form["p_cost"], i)),
-				Price:       parseF(formAt(r.Form["p_price"], i)),
-				MarketValue: parseF(formAt(r.Form["p_mv"], i)),
-				PL:          parseF(formAt(r.Form["p_pl"], i)),
-				Source:      "screenshot", AttachmentID: optStr(attID),
-			})
-			if _, err := s.store.EnsureCompanyEntity(ctx, code, name); err != nil {
-				s.tradesShow(w, r, nil, "⚠️ 实体补全失败: "+err.Error())
-				return
-			}
-		}
-		if len(ps) == 0 {
-			s.tradesShow(w, r, nil, "⚠️ 没有勾选任何持仓行。")
-			return
-		}
-		if err := s.store.InsertPositions(ctx, ps); err != nil {
-			s.tradesShow(w, r, nil, "⚠️ 持仓入库失败: "+err.Error())
-			return
-		}
-		http.Redirect(w, r, "/trades?g=positions_imported", http.StatusSeeOther)
-		return
-	}
-
-	var ts []model.Trade
-	names := r.Form["t_name"]
-	incs := r.Form["t_inc"]
-	incSet := map[int]bool{}
-	for _, v := range incs {
-		if i, err := strconv.Atoi(v); err == nil {
-			incSet[i] = true
-		}
-	}
-	for i, name := range names {
-		if !incSet[i] || strings.TrimSpace(name) == "" {
-			continue
-		}
-		code := formAt(r.Form["t_code"], i)
-		if code == "" {
-			code = name
-		}
-		side := formAt(r.Form["t_side"], i)
-		if side != "buy" && side != "sell" {
-			continue
-		}
-		price := parseF(formAt(r.Form["t_price"], i))
-		qty, _ := strconv.Atoi(formAt(r.Form["t_qty"], i))
-		if price == nil || *price < 0 || qty <= 0 {
-			continue
-		}
-		date, err := time.ParseInLocation("2006-01-02", formAt(r.Form["t_date"], i), cst)
-		if err != nil {
-			date = time.Now().In(cst)
-		}
-		ts = append(ts, model.Trade{
-			TradeDate: date, Code: code, Name: name, Side: side,
-			Price: *price, Qty: qty, Amount: *price * float64(qty),
-			Source: "screenshot", AttachmentID: optStr(attID),
-		})
-		if _, err := s.store.EnsureCompanyEntity(ctx, code, name); err != nil {
-			s.tradesShow(w, r, nil, "⚠️ 实体补全失败: "+err.Error())
-			return
-		}
-	}
-	if len(ts) == 0 {
-		s.tradesShow(w, r, nil, "⚠️ 没有勾选任何交易行。")
-		return
-	}
-	if err := s.store.InsertTrades(ctx, ts); err != nil {
-		s.tradesShow(w, r, nil, "⚠️ 交易入库失败: "+err.Error())
-		return
-	}
-	http.Redirect(w, r, "/trades?g=imported", http.StatusSeeOther)
-}
-
-// tradeNote 把 ?g= 状态映射为页面如实提示。
-func tradeNote(g string) string {
-	switch g {
-	case "added":
-		return "✅ 手动录入已入库(实体已补全)。"
-	case "imported":
-		return "✅ 交易已导入(实体已补全)。"
-	case "positions_imported":
-		return "✅ 持仓快照已导入。"
-	case "reviewed":
-		return "✅ 复盘已生成(带引用,可点跳转)。"
-	case "mistake_saved":
-		return "✅ 已存为个人笔记(type=mistake,状态 hypothesis,可在 /notes 查看)。"
-	case "position_reviewed":
-		return "✅ 持仓诊断已生成(带引用,可点跳转)。"
-	case "risk_saved":
-		return "✅ 风险候选已存为个人笔记(type=mistake,状态 hypothesis,可在 /notes 查看)。"
-	}
-	return ""
-}
-
 // formAt 取重复表单字段第 i 个值,越界返回 ""(防索引 panic)。
 func formAt(vals []string, i int) string {
 	if i < 0 || i >= len(vals) {
@@ -632,49 +229,17 @@ func optStr(v string) *string {
 	return &v
 }
 
-// handleTrade /trades/{id}/review(POST 解读)、/trades/{id}/save-mistake/{n}(存复盘点为笔记),
-// 与持仓诊断 /trades/positions/review(POST 生成)和 /trades/positions/save-risk/{n}(存风险候选为笔记)。
-func (s *Server) handleTrade(w http.ResponseWriter, r *http.Request) {
-	rest := strings.TrimPrefix(r.URL.Path, "/trades/")
-	if r.Method != http.MethodPost {
-		http.Redirect(w, r, "/trades", http.StatusSeeOther)
-		return
-	}
-	if rest == "positions/review" {
-		s.positionDiagnose(w, r)
-		return
-	}
-	if idx := strings.LastIndex(rest, "/save-risk/"); idx > 0 {
-		n, _ := strconv.Atoi(rest[idx+len("/save-risk/"):])
-		s.positionSaveRisk(w, r, n)
-		return
-	}
-	if strings.HasSuffix(rest, "/review") {
-		s.tradeReview(w, r, strings.TrimSuffix(rest, "/review"))
-		return
-	}
-	if idx := strings.LastIndex(rest, "/save-mistake/"); idx > 0 {
-		id := rest[:idx]
-		n, _ := strconv.Atoi(rest[idx+len("/save-mistake/"):])
-		s.tradeSaveMistake(w, r, id, n)
-		return
-	}
-	http.Redirect(w, r, "/trades", http.StatusSeeOther)
-}
-
-// tradeSaveMistake 把复盘候选 mistake 存为个人笔记(type=mistake, status=hypothesis)。
+// tradeSaveMistakeCore 把复盘候选 mistake 存为个人笔记(type=mistake, status=hypothesis)。
 // iter4 单向 harvest 语义:AI 提议、用户确认才入库;已存过(同 slug)如实提示不重复建。
-func (s *Server) tradeSaveMistake(w http.ResponseWriter, r *http.Request, id string, n int) {
-	ctx := r.Context()
+// 返回 (成功与否, 用户可见消息);JSON 与 HTML 两条路径共用。
+func (s *Server) tradeSaveMistakeCore(ctx context.Context, id string, n int) (bool, string) {
 	t, err := s.store.GetTrade(ctx, id)
 	if err != nil {
-		s.tradesShow(w, r, nil, "⚠️ 交易不存在: "+err.Error())
-		return
+		return false, "⚠️ 交易不存在: " + err.Error()
 	}
 	rv := parseTradeReview(t.Review)
 	if rv == nil || n < 0 || n >= len(rv.Mistakes) {
-		s.tradesShow(w, r, nil, "⚠️ 复盘点不存在(复盘可能已更新,请重新解读)。")
-		return
+		return false, "⚠️ 复盘点不存在(复盘可能已更新,请重新解读)。"
 	}
 	m := rv.Mistakes[n]
 	title := m.Title
@@ -683,34 +248,29 @@ func (s *Server) tradeSaveMistake(w http.ResponseWriter, r *http.Request, id str
 	}
 	slug := fmt.Sprintf("trade-%s-%d", id, n)
 	if existing, err := s.store.GetPersonalNoteBySlug(ctx, "mistake", slug); err == nil && existing != nil {
-		s.tradesShow(w, r, nil, "✅ 该复盘点已存为笔记,未重复创建。")
-		return
+		return true, "✅ 该复盘点已存为笔记,未重复创建。"
 	} else if err != nil {
-		s.tradesShow(w, r, nil, "⚠️ 查重失败: "+err.Error())
-		return
+		return false, "⚠️ 查重失败: " + err.Error()
 	}
 	if _, err := s.store.CreatePersonalNote(ctx, &model.PersonalNote{
 		Type: "mistake", Slug: slug, Title: &title,
 		Status: "hypothesis", Content: &m.Content,
 	}); err != nil {
-		s.tradesShow(w, r, nil, "⚠️ 存为笔记失败: "+err.Error())
-		return
+		return false, "⚠️ 存为笔记失败: " + err.Error()
 	}
-	http.Redirect(w, r, "/trades?g=mistake_saved", http.StatusSeeOther)
+	return true, "✅ 已存为个人笔记。"
 }
 
-// tradeReview 交易 AI 复盘(带引用,手动触发)。
-func (s *Server) tradeReview(w http.ResponseWriter, r *http.Request, id string) {
-	ctx := r.Context()
+// tradeReviewCore 交易 AI 复盘并入库(带引用,手动触发)。
+// 返回用户可见错误文案;空串 = 成功。JSON 与 HTML 两条路径共用。
+func (s *Server) tradeReviewCore(ctx context.Context, id string) string {
 	t, err := s.store.GetTrade(ctx, id)
 	if err != nil {
-		s.tradesShow(w, r, nil, "⚠️ 交易不存在: "+err.Error())
-		return
+		return "⚠️ 交易不存在: " + err.Error()
 	}
 	cfgMap, err := s.store.ListAppConfig(ctx)
 	if err != nil {
-		s.tradesShow(w, r, nil, "⚠️ 读 AI 配置失败: "+err.Error())
-		return
+		return "⚠️ 读 AI 配置失败: " + err.Error()
 	}
 	base, key := cfgMap["ai_service_base_url"], cfgMap["ai_api_key"]
 	model := cfgMap["ai_model_reasoning"]
@@ -718,13 +278,11 @@ func (s *Server) tradeReview(w http.ResponseWriter, r *http.Request, id string) 
 		model = cfgMap["ai_model_extract"]
 	}
 	if base == "" || key == "" || model == "" {
-		s.tradesShow(w, r, nil, "⚠️ AI 未配置,复盘暂缺(请到 /settings 配置)。")
-		return
+		return "⚠️ AI 未配置,复盘暂缺(请到设置页配置)。"
 	}
 	if budget, _ := strconv.ParseInt(cfgMap["ai_daily_token_budget"], 10, 64); budget > 0 {
 		if today, err := s.store.TokensSince(ctx, time.Now().Truncate(24*time.Hour)); err == nil && today >= budget {
-			s.tradesShow(w, r, nil, "⚠️ 今日 AI 预算已用尽,复盘暂缺(预算恢复后重试)。")
-			return
+			return "⚠️ 今日 AI 预算已用尽,复盘暂缺(预算恢复后重试)。"
 		}
 	}
 
@@ -736,8 +294,7 @@ func (s *Server) tradeReview(w http.ResponseWriter, r *http.Request, id string) 
 	extra, _ := s.expandQuery(ctx, cfgMap, q)
 	events, entities, err := s.store.SearchKnowledgeExpanded(ctx, q, extra, 8, 8)
 	if err != nil {
-		s.tradesShow(w, r, nil, "⚠️ 检索知识库失败: "+err.Error())
-		return
+		return "⚠️ 检索知识库失败: " + err.Error()
 	}
 	// 防未来函数:历史交易只含 trade_date 及之前的语境。
 	cutoff := t.TradeDate.AddDate(0, 0, 1)
@@ -750,36 +307,31 @@ func (s *Server) tradeReview(w http.ResponseWriter, r *http.Request, id string) 
 	events = kept
 	notes, err := s.store.ListPersonalNotesByText(ctx, t.Name, 8)
 	if err != nil {
-		s.tradesShow(w, r, nil, "⚠️ 检索个人笔记失败: "+err.Error())
-		return
+		return "⚠️ 检索个人笔记失败: " + err.Error()
 	}
 
 	runID, err := s.store.StartTaskRun(ctx, "trade-review")
 	if err != nil {
-		s.tradesShow(w, r, nil, "⚠️ 记账失败: "+err.Error())
-		return
+		return "⚠️ 记账失败: " + err.Error()
 	}
 	system, user := reviewPrompt(t, events, entities, notes)
 	c := ai.NewOpenAICompat(base, key, model)
 	resp, err := c.StructuredOutput(ctx, ai.StructuredRequest{System: system, User: user})
 	if err != nil {
 		_ = s.store.FinishTaskRun(ctx, runID, "failed", err.Error(), map[string]any{"trade_id": id})
-		s.tradesShow(w, r, nil, "⚠️ 复盘生成失败: "+err.Error())
-		return
+		return "⚠️ 复盘生成失败: " + err.Error()
 	}
 	rv, verr := validateTradeReview(resp.Data, events, entities, notes, model, resp.Usage.Total())
 	if verr != nil {
 		_ = s.store.FinishTaskRun(ctx, runID, "failed", verr.Error(), map[string]any{"trade_id": id})
-		s.tradesShow(w, r, nil, "⚠️ 复盘解析失败: "+verr.Error())
-		return
+		return "⚠️ 复盘解析失败: " + verr.Error()
 	}
 	_ = s.store.FinishTaskRun(ctx, runID, "success", "", map[string]any{"trade_id": id, "model": model, "ai_tokens": resp.Usage.Total()})
 	raw, _ := json.Marshal(rv)
 	if err := s.store.SetTradeReview(ctx, id, raw); err != nil {
-		s.tradesShow(w, r, nil, "⚠️ 复盘入库失败: "+err.Error())
-		return
+		return "⚠️ 复盘入库失败: " + err.Error()
 	}
-	http.Redirect(w, r, "/trades?g=reviewed", http.StatusSeeOther)
+	return ""
 }
 
 // evWithin 事件是否发生在截止时间(含)之前(防未来函数)。
@@ -885,16 +437,6 @@ func filterReviewRefs(refs *tradeRefs, events []model.Event, entities []model.En
 
 // ==== 持仓 AI 诊断(交易闭环,design trade-loop.md)====
 
-// PositionDiagnosisView 持仓诊断渲染视图(解包 position_reviews.review)。
-type PositionDiagnosisView struct {
-	Text                            string
-	Model                           string
-	Tokens                          int64
-	GenAt                           string
-	RefEvents, RefEntities, RefNotes []store.ChatRef
-	Risks                           []tradeMistake
-}
-
 // positionReview 持仓诊断 JSONB 结构(risks 语义 = AI 提议的可复盘点候选,用户确认才入库)。
 type positionReview struct {
 	Review string         `json:"review"`
@@ -905,16 +447,12 @@ type positionReview struct {
 	GenAt  string         `json:"generated_at"`
 }
 
-func parsePositionReview(raw json.RawMessage) *PositionDiagnosisView {
+func parsePositionReview(raw json.RawMessage) *positionReview {
 	var rv positionReview
 	if err := json.Unmarshal(raw, &rv); err != nil || strings.TrimSpace(rv.Review) == "" {
 		return nil
 	}
-	return &PositionDiagnosisView{
-		Text: rv.Review, Model: rv.Model, Tokens: rv.Tokens, GenAt: rv.GenAt,
-		RefEvents: rv.Refs.Events, RefEntities: rv.Refs.Entities, RefNotes: rv.Refs.Notes,
-		Risks: rv.Risks,
-	}
+	return &rv
 }
 
 // validatePositionReview 解析 + 白名单过滤(与 tradeReview 同逻辑,仅字段名 risks)。
@@ -1087,24 +625,21 @@ func positionReviewPrompt(agg PositionAgg, events []model.Event, entities []mode
 	return system, b.String()
 }
 
-// positionDiagnose 生成最近快照的持仓诊断并缓存(POST /trades/positions/review)。
+// positionDiagnoseCore 生成最近快照的持仓诊断并缓存(POST /trades/positions/review)。
 // 与 tradeReview 同纪律:预算护栏 + 防未来函数 + 引用白名单 + task_runs 记账;GET 不触发。
-func (s *Server) positionDiagnose(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+// 返回用户可见错误文案;空串 = 成功。JSON 与 HTML 两条路径共用。
+func (s *Server) positionDiagnoseCore(ctx context.Context) string {
 	ps, err := s.store.LatestPositions(ctx)
 	if err != nil {
-		s.tradesShow(w, r, nil, "⚠️ 读持仓失败: "+err.Error())
-		return
+		return "⚠️ 读持仓失败: " + err.Error()
 	}
 	if len(ps) == 0 {
-		s.tradesShow(w, r, nil, "⚠️ 暂无持仓快照,先导入持仓再诊断。")
-		return
+		return "⚠️ 暂无持仓快照,先导入持仓再诊断。"
 	}
 	snapshot := ps[0].SnapshotDate
 	cfgMap, err := s.store.ListAppConfig(ctx)
 	if err != nil {
-		s.tradesShow(w, r, nil, "⚠️ 读 AI 配置失败: "+err.Error())
-		return
+		return "⚠️ 读 AI 配置失败: " + err.Error()
 	}
 	base, key := cfgMap["ai_service_base_url"], cfgMap["ai_api_key"]
 	mname := cfgMap["ai_model_reasoning"]
@@ -1112,13 +647,11 @@ func (s *Server) positionDiagnose(w http.ResponseWriter, r *http.Request) {
 		mname = cfgMap["ai_model_extract"]
 	}
 	if base == "" || key == "" || mname == "" {
-		s.tradesShow(w, r, nil, "⚠️ AI 未配置,诊断暂缺(请到 /settings 配置)。")
-		return
+		return "⚠️ AI 未配置,诊断暂缺(请到设置页配置)。"
 	}
 	if budget, _ := strconv.ParseInt(cfgMap["ai_daily_token_budget"], 10, 64); budget > 0 {
 		if today, err := s.store.TokensSince(ctx, time.Now().Truncate(24*time.Hour)); err == nil && today >= budget {
-			s.tradesShow(w, r, nil, "⚠️ 今日 AI 预算已用尽,诊断暂缺(预算恢复后重试)。")
-			return
+			return "⚠️ 今日 AI 预算已用尽,诊断暂缺(预算恢复后重试)。"
 		}
 	}
 
@@ -1126,8 +659,7 @@ func (s *Server) positionDiagnose(w http.ResponseWriter, r *http.Request) {
 	cutoff := snapshot.AddDate(0, 0, 1)
 	recent, err := s.store.ListTradesBetween(ctx, snapshot.AddDate(0, 0, -14), cutoff)
 	if err != nil {
-		s.tradesShow(w, r, nil, "⚠️ 读交易联动失败: "+err.Error())
-		return
+		return "⚠️ 读交易联动失败: " + err.Error()
 	}
 	agg := aggPositions(ps, recent)
 
@@ -1140,8 +672,7 @@ func (s *Server) positionDiagnose(w http.ResponseWriter, r *http.Request) {
 	extra, _ := s.expandQuery(ctx, cfgMap, q)
 	events, entities, err := s.store.SearchKnowledgeExpanded(ctx, q, extra, 10, 10)
 	if err != nil {
-		s.tradesShow(w, r, nil, "⚠️ 检索知识库失败: "+err.Error())
-		return
+		return "⚠️ 检索知识库失败: " + err.Error()
 	}
 	kept := events[:0]
 	for _, e := range events {
@@ -1170,51 +701,44 @@ func (s *Server) positionDiagnose(w http.ResponseWriter, r *http.Request) {
 
 	runID, err := s.store.StartTaskRun(ctx, "position-review")
 	if err != nil {
-		s.tradesShow(w, r, nil, "⚠️ 记账失败: "+err.Error())
-		return
+		return "⚠️ 记账失败: " + err.Error()
 	}
 	system, user := positionReviewPrompt(agg, events, entities, notes)
 	c := ai.NewOpenAICompat(base, key, mname)
 	resp, err := c.StructuredOutput(ctx, ai.StructuredRequest{System: system, User: user})
 	if err != nil {
 		_ = s.store.FinishTaskRun(ctx, runID, "failed", err.Error(), map[string]any{"snapshot": agg.SnapshotDate})
-		s.tradesShow(w, r, nil, "⚠️ 诊断生成失败: "+err.Error())
-		return
+		return "⚠️ 诊断生成失败: " + err.Error()
 	}
 	rv, verr := validatePositionReview(resp.Data, events, entities, notes, mname, resp.Usage.Total())
 	if verr != nil {
 		_ = s.store.FinishTaskRun(ctx, runID, "failed", verr.Error(), map[string]any{"snapshot": agg.SnapshotDate})
-		s.tradesShow(w, r, nil, "⚠️ 诊断解析失败: "+verr.Error())
-		return
+		return "⚠️ 诊断解析失败: " + verr.Error()
 	}
 	_ = s.store.FinishTaskRun(ctx, runID, "success", "", map[string]any{"snapshot": agg.SnapshotDate, "model": mname, "ai_tokens": resp.Usage.Total()})
 	raw, _ := json.Marshal(rv)
 	if err := s.store.UpsertPositionReview(ctx, snapshot, raw, mname, resp.Usage.Total()); err != nil {
-		s.tradesShow(w, r, nil, "⚠️ 诊断入库失败: "+err.Error())
-		return
+		return "⚠️ 诊断入库失败: " + err.Error()
 	}
-	http.Redirect(w, r, "/trades?g=position_reviewed", http.StatusSeeOther)
+	return ""
 }
 
-// positionSaveRisk 把诊断候选 risk 存为个人笔记(type=mistake, status=hypothesis)。
+// positionSaveRiskCore 把诊断候选 risk 存为个人笔记(type=mistake, status=hypothesis)。
 // iter4 单向 harvest 语义:AI 提议、用户确认;已存过(同 slug)如实提示不重复建。
-func (s *Server) positionSaveRisk(w http.ResponseWriter, r *http.Request, n int) {
-	ctx := r.Context()
+// 返回 (成功与否, 用户可见消息);JSON 与 HTML 两条路径共用。
+func (s *Server) positionSaveRiskCore(ctx context.Context, n int) (bool, string) {
 	ps, err := s.store.LatestPositions(ctx)
 	if err != nil || len(ps) == 0 {
-		s.tradesShow(w, r, nil, "⚠️ 暂无持仓快照。")
-		return
+		return false, "⚠️ 暂无持仓快照。"
 	}
 	snapshot := ps[0].SnapshotDate
 	pr, err := s.store.GetPositionReview(ctx, snapshot)
 	if err != nil || pr == nil {
-		s.tradesShow(w, r, nil, "⚠️ 诊断不存在(请先生成持仓诊断)。")
-		return
+		return false, "⚠️ 诊断不存在(请先生成持仓诊断)。"
 	}
 	rv := parsePositionReview(pr.Review)
 	if rv == nil || n < 0 || n >= len(rv.Risks) {
-		s.tradesShow(w, r, nil, "⚠️ 风险候选不存在(诊断可能已更新,请重新诊断)。")
-		return
+		return false, "⚠️ 风险候选不存在(诊断可能已更新,请重新诊断)。"
 	}
 	m := rv.Risks[n]
 	title := m.Title
@@ -1223,18 +747,16 @@ func (s *Server) positionSaveRisk(w http.ResponseWriter, r *http.Request, n int)
 	}
 	slug := fmt.Sprintf("posrev-%s-%d", snapshot.Format("20060102"), n)
 	if existing, err := s.store.GetPersonalNoteBySlug(ctx, "mistake", slug); err == nil && existing != nil {
-		s.tradesShow(w, r, nil, "✅ 该风险候选已存为笔记,未重复创建。")
-		return
+		return true, "✅ 该风险候选已存为笔记,未重复创建。"
 	} else if err != nil {
-		s.tradesShow(w, r, nil, "⚠️ 查重失败: "+err.Error())
-		return
+		return false, "⚠️ 查重失败: " + err.Error()
 	}
 	if _, err := s.store.CreatePersonalNote(ctx, &model.PersonalNote{
 		Type: "mistake", Slug: slug, Title: &title,
 		Status: "hypothesis", Content: &m.Content,
 	}); err != nil {
-		s.tradesShow(w, r, nil, "⚠️ 存为笔记失败: "+err.Error())
-		return
+		return false, "⚠️ 存为笔记失败: " + err.Error()
 	}
-	http.Redirect(w, r, "/trades?g=risk_saved", http.StatusSeeOther)
+	return true, "✅ 已存为个人笔记。"
 }
+

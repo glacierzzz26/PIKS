@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, CornerDownLeft, RefreshCw } from "lucide-react";
-import { MOCK_ENTITIES } from "@/lib/mock/entities";
+import { apiGet } from "@/lib/api";
+import type { Entity } from "@/lib/types";
 import { NAV_ITEMS } from "./navItems";
 
 type Item = {
@@ -13,26 +14,45 @@ type Item = {
   run: () => void;
 };
 
-/** 全局 ⌘K 命令面板：跳转页面 / 跳转实体 / 刷新数据（规范第 8 条） */
+/** 全局 ⌘K 命令面板：跳转页面 / 跳转实体（真实数据）/ 刷新数据（规范第 8 条） */
 export default function CommandPalette({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const [input, setInput] = useState("");
   const [cursor, setCursor] = useState(0);
+  const [entities, setEntities] = useState<Entity[]>([]);
+
+  // 实体跳转用真实数据：打开面板即拉取全量实体，输入即时过滤（不依赖 mock）。
+  useEffect(() => {
+    const ac = new AbortController();
+    apiGet<Entity[]>("/entities", undefined, ac.signal)
+      .then((list) => setEntities(list))
+      .catch(() => setEntities([])); // 拉取失败：仅无实体项，页面跳转仍可用
+    return () => ac.abort();
+  }, []);
 
   const items = useMemo<Item[]>(() => {
     const pages: Item[] = NAV_ITEMS.map((n) => ({
       key: `page:${n.href}`,
       label: n.label,
-      hint: n.external ? "页面(Go)" : "页面",
-      run: () =>
-        n.external ? window.location.assign(n.href) : navigate(n.href),
+      hint: "页面",
+      run: () => navigate(n.href),
     }));
-    const entities: Item[] = MOCK_ENTITIES.slice(0, 12).map((e) => ({
-      key: `ent:${e.id}`,
-      label: e.name,
-      hint: "实体",
-      run: () => navigate(`/entities?id=${e.id}`),
-    }));
+    const q = input.trim().toLowerCase();
+    const ents: Item[] = entities
+      .filter(
+        (e) =>
+          !q ||
+          e.name.toLowerCase().includes(q) ||
+          e.aliases.some((a) => a.toLowerCase().includes(q)) ||
+          e.description.toLowerCase().includes(q)
+      )
+      .slice(0, 12)
+      .map((e) => ({
+        key: `ent:${e.id}`,
+        label: e.name,
+        hint: "实体",
+        run: () => navigate(`/entities?id=${e.id}`),
+      }));
     const cmd: Item[] = [
       {
         key: "cmd:refresh",
@@ -41,8 +61,8 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
         run: () => window.location.reload(),
       },
     ];
-    return [...pages, ...entities, ...cmd];
-  }, [navigate]);
+    return [...pages, ...ents, ...cmd];
+  }, [navigate, input, entities]);
 
   const filtered = useMemo(() => {
     const q = input.trim().toLowerCase();
@@ -116,7 +136,7 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
               ) : (
                 <span className="w-1.5" />
               )}
-              <span className="flex-1">{item.label}</span>
+              <span className="flex-1 truncate">{item.label}</span>
               <span className="text-2xs text-muted">{item.hint}</span>
               {i === cursor && (
                 <CornerDownLeft size={12} className="text-muted" />

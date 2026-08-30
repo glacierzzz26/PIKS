@@ -118,6 +118,20 @@ type apiDoc struct {
 	Content   string `json:"content"`
 }
 
+// apiNoteDetail 笔记详情(GET /api/v1/notes/:id):含状态/置信度/关联,供编辑表单回填。
+type apiNoteDetail struct {
+	ID          string   `json:"id"`
+	Type        string   `json:"type"`
+	Slug        string   `json:"slug"`
+	Title       string   `json:"title"`
+	Status      string   `json:"status"`
+	Confidence  *float64 `json:"confidence,omitempty"`
+	Content     string   `json:"content"`
+	UpdatedAt   string   `json:"updated_at"`
+	SelEvents   []string `json:"sel_events"`
+	SelEntities []string `json:"sel_entities"`
+}
+
 // ---- handlers ----
 
 // GET /api/v1/events?type&status&q —— 结构化事件流。
@@ -263,7 +277,17 @@ func (s *Server) handleAPIFlashes(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/v1/notes?type —— 笔记列表(personal_notes 投影)。
 // 类型过滤按后端实际 type 值(note/belief/case/mistake);daily-review/weekly 无对应存储,如实为空。
+// GET/POST /api/v1/notes —— 列表 / 新建。
 func (s *Server) handleAPINotes(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		s.createNoteAPI(w, r)
+		return
+	case http.MethodGet:
+	default:
+		apiErrJSON(w, http.StatusMethodNotAllowed, "仅支持 GET/POST")
+		return
+	}
 	ctx := r.Context()
 	notes, err := s.store.ListPersonalNotes(ctx, r.URL.Query().Get("type"))
 	if err != nil {
@@ -277,11 +301,23 @@ func (s *Server) handleAPINotes(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, out)
 }
 
-// GET /api/v1/notes/:id —— 单篇笔记。
+// GET/PUT/DELETE /api/v1/notes/:id —— 单篇笔记(读/改/归档)。
 func (s *Server) handleAPINote(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/api/v1/notes/")
 	if id == "" || strings.Contains(id, "/") {
 		http.NotFound(w, r)
+		return
+	}
+	switch r.Method {
+	case http.MethodPut:
+		s.updateNoteAPI(w, r, id)
+		return
+	case http.MethodDelete:
+		s.archiveNoteAPI(w, r, id)
+		return
+	case http.MethodGet:
+	default:
+		apiErrJSON(w, http.StatusMethodNotAllowed, "仅支持 GET/PUT/DELETE")
 		return
 	}
 	n, err := s.store.GetPersonalNote(r.Context(), id)
@@ -298,7 +334,30 @@ func (s *Server) handleAPINote(w http.ResponseWriter, r *http.Request) {
 		s.apiErr(w, "note", err)
 		return
 	}
-	s.writeJSON(w, toDoc(*n))
+	// 笔记详情含状态/置信度/关联(编辑表单回填);周报回退保持 apiDoc 形状。
+	refs, rerr := s.store.ListNoteRefs(r.Context(), id)
+	if rerr != nil {
+		s.apiErr(w, "note", rerr)
+		return
+	}
+	out := apiNoteDetail{
+		ID: n.ID, Type: n.Type, Slug: n.Slug,
+		Title: orStr(n.Title, ""), Status: n.Status,
+		Content: orStr(n.Content, ""), UpdatedAt: fmtRFC3339(n.UpdatedAt),
+		SelEvents: []string{}, SelEntities: []string{},
+	}
+	if n.Confidence != nil {
+		out.Confidence = n.Confidence
+	}
+	for _, ref := range refs {
+		switch ref.ToType {
+		case "event":
+			out.SelEvents = append(out.SelEvents, ref.ToID)
+		case "entity":
+			out.SelEntities = append(out.SelEntities, ref.ToID)
+		}
+	}
+	s.writeJSON(w, out)
 }
 
 // ---- 类型映射 ----
@@ -742,11 +801,12 @@ func (s *Server) handleAPIRecon(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/v1/reviews —— 持仓 AI 诊断列表。
 type apiReview struct {
-	Date    string `json:"date"`
-	Scope   string `json:"scope"`
-	Summary string `json:"summary"`
-	Refs    int    `json:"refs"`
-	State   string `json:"state"`
+	Date    string           `json:"date"`
+	Scope   string           `json:"scope"`
+	Summary string           `json:"summary"`
+	Refs    int              `json:"refs"`
+	State   string           `json:"state"`
+	Risks   []apiReviewPoint `json:"risks,omitempty"`
 }
 
 type posReviewJSON struct {
@@ -784,28 +844,41 @@ func (s *Server) handleAPIReviews(w http.ResponseWriter, r *http.Request) {
 		case nrisk >= 2:
 			state = "negative"
 		}
+		risks := make([]apiReviewPoint, 0, len(rj.Risks))
+		for _, r := range rj.Risks {
+			risks = append(risks, apiReviewPoint{Title: r.Title, Content: r.Content})
+		}
 		out = append(out, apiReview{
 			Date:    p.SnapshotDate.In(cst).Format("2006-01-02"),
 			Scope:   "组合持仓诊断",
 			Summary: rj.Review,
 			Refs:    len(rj.Refs.Events) + len(rj.Refs.Entities) + len(rj.Refs.Notes),
 			State:   state,
+			Risks:   risks,
 		})
 	}
 	s.writeJSON(w, out)
 }
 
 // GET /api/v1/trades —— 成交记录 + 持仓快照。
+type apiReviewPoint struct {
+	Title   string `json:"title"`
+	Content string `json:"content"`
+}
+
 type apiTrade struct {
-	Date   string  `json:"date"`
-	Code   string  `json:"code"`
-	Name   string  `json:"name"`
-	Side   string  `json:"side"`
-	Price  float64 `json:"price"`
-	Qty    int     `json:"qty"`
-	Amount float64 `json:"amount"`
-	Source string  `json:"source"`
-	Note   string  `json:"note,omitempty"`
+	ID       string           `json:"id"`
+	Date     string           `json:"date"`
+	Code     string           `json:"code"`
+	Name     string           `json:"name"`
+	Side     string           `json:"side"`
+	Price    float64          `json:"price"`
+	Qty      int              `json:"qty"`
+	Amount   float64          `json:"amount"`
+	Source   string           `json:"source"`
+	Note     string           `json:"note,omitempty"`
+	Review   string           `json:"review,omitempty"`
+	Mistakes []apiReviewPoint `json:"mistakes,omitempty"`
 }
 
 type apiPosition struct {
@@ -822,7 +895,17 @@ type apiTrades struct {
 	Positions []apiPosition `json:"positions"`
 }
 
+// GET/POST /api/v1/trades —— 成交+持仓 / 手动录入。
 func (s *Server) handleAPITrades(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		s.tradeAddAPI(w, r)
+		return
+	case http.MethodGet:
+	default:
+		apiErrJSON(w, http.StatusMethodNotAllowed, "仅支持 GET/POST")
+		return
+	}
 	ctx := r.Context()
 	ts, err := s.store.ListTrades(ctx, 0)
 	if err != nil {
@@ -836,7 +919,8 @@ func (s *Server) handleAPITrades(w http.ResponseWriter, r *http.Request) {
 	}
 	out := apiTrades{Trades: []apiTrade{}, Positions: []apiPosition{}}
 	for _, t := range ts {
-		out.Trades = append(out.Trades, apiTrade{
+		tr := apiTrade{
+			ID:     t.ID,
 			Date:   t.TradeDate.In(cst).Format("2006-01-02"),
 			Code:   t.Code,
 			Name:   t.Name,
@@ -846,7 +930,15 @@ func (s *Server) handleAPITrades(w http.ResponseWriter, r *http.Request) {
 			Amount: t.Amount,
 			Source: t.Source,
 			Note:   orStr(t.Note, ""),
-		})
+		}
+		if rv := parseTradeReview(t.Review); rv != nil {
+			tr.Review = rv.Review
+			tr.Mistakes = make([]apiReviewPoint, 0, len(rv.Mistakes))
+			for _, m := range rv.Mistakes {
+				tr.Mistakes = append(tr.Mistakes, apiReviewPoint{Title: m.Title, Content: m.Content})
+			}
+		}
+		out.Trades = append(out.Trades, tr)
 	}
 	for _, p := range ps {
 		cost := fPtrVal(p.CostPrice)
@@ -875,7 +967,17 @@ type apiChatMsg struct {
 	Refs    []string `json:"refs,omitempty"`
 }
 
+// GET/POST /api/v1/chat —— 历史对话 / 发送消息。
 func (s *Server) handleAPIChat(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		s.chatPostAPI(w, r)
+		return
+	case http.MethodGet:
+	default:
+		apiErrJSON(w, http.StatusMethodNotAllowed, "仅支持 GET/POST")
+		return
+	}
 	ctx := r.Context()
 	sid, err := s.store.LatestChatSessionID(ctx)
 	if err != nil {
@@ -921,7 +1023,17 @@ type apiSettingSection struct {
 	Rows  [][2]string `json:"rows"`
 }
 
+// GET/POST /api/v1/settings —— 配置展示 / 保存。
 func (s *Server) handleAPISettings(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		s.settingsSaveAPI(w, r)
+		return
+	case http.MethodGet:
+	default:
+		apiErrJSON(w, http.StatusMethodNotAllowed, "仅支持 GET/POST")
+		return
+	}
 	m, err := s.store.ListAppConfig(r.Context())
 	if err != nil {
 		s.apiErr(w, "settings", err)

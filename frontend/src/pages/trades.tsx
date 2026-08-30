@@ -1,17 +1,23 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
+import { Plus, Upload } from "lucide-react";
 import { useData } from "@/hooks/useData";
 import { ENDPOINTS } from "@/lib/api";
-import type { TradeRow, PositionRow } from "@/lib/mock/trading";
-import { TRADES, POSITIONS } from "@/lib/mock/trading";
+import type { TradeRow, PositionRow } from "@/lib/types";
 import Pagination from "@/components/ui/Pagination";
+import { LoadingBlock, EmptyState, ErrorState } from "@/components/ui/States";
 import { Chip, Num } from "@/components/ui/Num";
 import { usePagedQuery } from "@/hooks/usePagedQuery";
+import TradeTable from "@/components/trades/TradeTable";
+import PositionTable from "@/components/trades/PositionTable";
+import TradeAddForm from "@/components/trades/TradeAddForm";
+import ImportFlow from "@/components/trades/ImportFlow";
+import PosReview from "@/components/trades/PosReview";
 
 type TradesData = { trades: TradeRow[]; positions: PositionRow[] };
 
-/** 交易（只读）：方向筛选 + 分页成交记录 + 持仓快照；录入/AI 解读留在 Go 端 */
+/** 交易（交互）：成交/持仓表 + 手动录入 + 截图导入 + AI 解读 */
 export default function Page() {
   return (
     <Suspense fallback={<div className="mt-6 h-40 animate-pulse rounded bg-card" />}>
@@ -24,11 +30,9 @@ function TradesInner() {
   const { query, setFilter, page, size, setPage, setSize, paginate } =
     usePagedQuery();
   const side = query.side ?? "";
+  const [panel, setPanel] = useState<"" | "add" | "import">("");
 
-  const tr = useData<TradesData>({
-    path: ENDPOINTS.trades,
-    fallback: () => ({ trades: TRADES, positions: POSITIONS }),
-  });
+  const tr = useData<TradesData>({ path: ENDPOINTS.trades });
   const records = tr.data?.trades ?? [];
   const positions = tr.data?.positions ?? [];
 
@@ -45,8 +49,24 @@ function TradesInner() {
         <div className="flex items-baseline gap-3">
           <h1 className="mb-0 text-2xl font-bold tracking-wide">交易</h1>
           <span className="text-[13px] text-muted">
-            成交记录与持仓快照 · 录入与 AI 解读在 Go 端 /trades
+            成交记录与持仓快照 · 手动录入 / 截图导入 / AI 解读
           </span>
+          <div className="ml-auto flex items-center gap-1.5">
+            <button
+              onClick={() => setPanel(panel === "add" ? "" : "add")}
+              className={`inline-flex h-8 items-center gap-1.5 rounded-sm border px-3 text-xs ${panel === "add" ? "border-accent bg-accent-soft text-accent" : "border-line bg-card text-muted hover:text-accent"}`}
+            >
+              <Plus size={13} />
+              手动录入
+            </button>
+            <button
+              onClick={() => setPanel(panel === "import" ? "" : "import")}
+              className={`inline-flex h-8 items-center gap-1.5 rounded-sm border px-3 text-xs ${panel === "import" ? "border-accent bg-accent-soft text-accent" : "border-line bg-card text-muted hover:text-accent"}`}
+            >
+              <Upload size={13} />
+              截图导入
+            </button>
+          </div>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <Chip tone="up">买入 {buys.length} 笔</Chip>
@@ -60,121 +80,69 @@ function TradesInner() {
         </div>
       </div>
 
-      <div className="mt-4 rounded border border-line bg-card shadow-card">
-        <div className="flex h-12 items-center gap-1.5 border-b border-line px-4">
-          <h2 className="card-title mb-0">成交记录</h2>
-          <span className="mx-2 h-4 w-px bg-line" />
-          {[
-            { k: "", label: "全部" },
-            { k: "buy", label: "买入" },
-            { k: "sell", label: "卖出" },
-          ].map((o) => (
-            <button
-              key={o.k}
-              onClick={() => setFilter("side", o.k)}
-              className={`chip ${side === o.k ? "chip-accent" : "chip-dim"}`}
-            >
-              {o.label}
-            </button>
-          ))}
+      {panel === "add" && (
+        <div className="mt-3.5">
+          <TradeAddForm onDone={() => tr.refresh()} />
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-[13.5px]">
-            <thead>
-              <tr className="border-b border-line-strong text-xs font-semibold text-muted">
-                <th className="px-4 py-2.5 text-left">日期</th>
-                <th className="px-4 py-2.5 text-left">标的</th>
-                <th className="px-4 py-2.5 text-left">方向</th>
-                <th className="px-4 py-2.5 text-right">价格</th>
-                <th className="px-4 py-2.5 text-right">数量</th>
-                <th className="px-4 py-2.5 text-right">金额</th>
-                <th className="px-4 py-2.5 text-left">来源</th>
-                <th className="px-4 py-2.5 text-left">备注</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((t, i) => (
-                <tr
-                  key={i}
-                  className="h-[46px] border-b border-line last:border-0"
-                >
-                  <td className="num px-4">{t.date}</td>
-                  <td className="px-4">
-                    <span className="num chip-dim rounded px-1.5 py-0.5 text-xs text-muted">
-                      {t.code}
-                    </span>
-                    <span className="ml-2 font-semibold">{t.name}</span>
-                  </td>
-                  <td className="px-4">
-                    <Chip tone={t.side === "buy" ? "up" : "down"}>
-                      {t.side === "buy" ? "买入" : "卖出"}
-                    </Chip>
-                  </td>
-                  <td className="num px-4">{t.price.toFixed(2)}</td>
-                  <td className="num px-4">{t.qty}</td>
-                  <td className="num px-4">{t.amount.toLocaleString()}</td>
-                  <td className="px-4 text-muted">
-                    {t.source === "screenshot" ? "截图识别" : "手动"}
-                  </td>
-                  <td className="max-w-[180px] truncate px-4 text-muted">
-                    {t.note ?? "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      )}
+      {panel === "import" && (
+        <div className="mt-3.5">
+          <ImportFlow onDone={() => tr.refresh()} />
         </div>
-        <Pagination
-          page={page}
-          pageSize={size}
-          total={all.length}
-          onPage={setPage}
-          onPageSize={setSize}
-        />
-      </div>
+      )}
 
-      <div className="mt-3.5 rounded border border-line bg-card shadow-card">
-        <div className="flex h-12 items-center border-b border-line px-4">
-          <h2 className="card-title mb-0">当前持仓</h2>
+      {tr.loading ? (
+        <div className="mt-4 rounded border border-line bg-card shadow-card">
+          <LoadingBlock rows={6} />
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-[13.5px]">
-            <thead>
-              <tr className="border-b border-line-strong text-xs font-semibold text-muted">
-                <th className="px-4 py-2.5 text-left">标的</th>
-                <th className="px-4 py-2.5 text-right">数量</th>
-                <th className="px-4 py-2.5 text-right">成本</th>
-                <th className="px-4 py-2.5 text-right">现价</th>
-                <th className="px-4 py-2.5 text-right">盈亏</th>
-              </tr>
-            </thead>
-            <tbody>
-              {positions.map((p) => (
-                <tr
-                  key={p.code}
-                  className="h-[46px] border-b border-line last:border-0"
+      ) : tr.error ? (
+        <div className="mt-4 rounded border border-line bg-card shadow-card">
+          <ErrorState msg={tr.error} />
+        </div>
+      ) : records.length === 0 && positions.length === 0 ? (
+        <div className="mt-4 rounded border border-line bg-card shadow-card">
+          <EmptyState tip="暂无成交记录与持仓，可用「截图导入」或「手动录入」补充" />
+        </div>
+      ) : (
+        <>
+          <div className="mt-4 rounded border border-line bg-card shadow-card">
+            <div className="flex h-12 items-center gap-1.5 border-b border-line px-4">
+              <h2 className="card-title mb-0">成交记录</h2>
+              <span className="mx-2 h-4 w-px bg-line" />
+              {[
+                { k: "", label: "全部" },
+                { k: "buy", label: "买入" },
+                { k: "sell", label: "卖出" },
+              ].map((o) => (
+                <button
+                  key={o.k}
+                  onClick={() => setFilter("side", o.k)}
+                  className={`chip ${side === o.k ? "chip-accent" : "chip-dim"}`}
                 >
-                  <td className="px-4">
-                    <span className="num chip-dim rounded px-1.5 py-0.5 text-xs text-muted">
-                      {p.code}
-                    </span>
-                    <span className="ml-2 font-semibold">{p.name}</span>
-                  </td>
-                  <td className="num px-4">{p.qty}</td>
-                  <td className="num px-4">{p.cost.toFixed(2)}</td>
-                  <td className="num px-4">{p.last.toFixed(2)}</td>
-                  <td className="num px-4 font-bold">
-                    <span className={p.pnl_pct >= 0 ? "text-up" : "text-down"}>
-                      {p.pnl_pct >= 0 ? "+" : ""}
-                      {p.pnl_pct.toFixed(2)}%
-                    </span>
-                  </td>
-                </tr>
+                  {o.label}
+                </button>
               ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+            </div>
+            <TradeTable rows={rows} refresh={tr.refresh} />
+            <Pagination
+              page={page}
+              pageSize={size}
+              total={all.length}
+              onPage={setPage}
+              onPageSize={setSize}
+            />
+          </div>
+
+          <div className="mt-3.5 rounded border border-line bg-card shadow-card">
+            <div className="flex h-12 items-center border-b border-line px-4">
+              <h2 className="card-title mb-0">当前持仓</h2>
+            </div>
+            <PositionTable positions={positions} />
+          </div>
+
+          <PosReview />
+        </>
+      )}
     </div>
   );
 }

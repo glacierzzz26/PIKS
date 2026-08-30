@@ -39,32 +39,6 @@ type GraphData struct {
 	Focus string `json:"focus,omitempty"`
 }
 
-// GraphPage 图谱页数据(JS 拉 /api/graph 渲染)。
-type GraphPage struct {
-	Common
-	TotalEvents   int
-	TotalEntities int
-}
-
-func (s *Server) handleGraph(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	ents, err := s.store.ListAllEntities(ctx)
-	if err != nil {
-		s.fail(w, "graph", &Common{Title: "关系图谱 · PIKS", Active: "graph"}, err)
-		return
-	}
-	evs, err := s.store.ListEventsForPublishWithSource(ctx)
-	if err != nil {
-		s.fail(w, "graph", &Common{Title: "关系图谱 · PIKS", Active: "graph"}, err)
-		return
-	}
-	s.render(w, "graph", GraphPage{
-		Common:        Common{Title: "关系图谱 · PIKS", Active: "graph", Scripts: "graph.js"},
-		TotalEvents:   len(evs),
-		TotalEntities: len(ents),
-	})
-}
-
 func (s *Server) handleGraphAPI(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	focus := q.Get("focus")

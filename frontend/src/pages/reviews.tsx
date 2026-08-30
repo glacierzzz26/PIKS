@@ -2,10 +2,9 @@
 
 import { useData } from "@/hooks/useData";
 import { ENDPOINTS } from "@/lib/api";
-import type { ReviewRow } from "@/lib/mock/trading";
-import { REVIEWS } from "@/lib/mock/trading";
+import type { ReviewRow } from "@/lib/types";
 import { Chip } from "@/components/ui/Num";
-import { EmptyState } from "@/components/ui/States";
+import { LoadingBlock, EmptyState, ErrorState } from "@/components/ui/States";
 
 const STATE: Record<string, { tone: "down" | "up" | "amber"; label: string }> = {
   positive: { tone: "down", label: "逻辑自洽" },
@@ -13,11 +12,10 @@ const STATE: Record<string, { tone: "down" | "up" | "amber"; label: string }> = 
   neutral: { tone: "amber", label: "中性" },
 };
 
-/** 持仓复盘（只读；对齐 dev /reviews）：AI 带引用诊断结果展示 */
+/** 持仓复盘（只读）：AI 带引用诊断结果展示（诊断触发在交易页「组合诊断」） */
 export default function Page() {
   const reviews = useData<ReviewRow[]>({
     path: ENDPOINTS.reviews,
-    fallback: () => REVIEWS,
   });
   const rows = reviews.data ?? [];
 
@@ -27,12 +25,20 @@ export default function Page() {
         <div className="flex items-baseline gap-3">
           <h1 className="mb-0 text-2xl font-bold tracking-wide">复盘</h1>
           <span className="text-[13px] text-muted">
-            AI 持仓诊断 · 带知识库引用 · 触发诊断在 Go 端 /reviews
+            AI 持仓诊断 · 带知识库引用 · 诊断在交易页触发
           </span>
         </div>
       </div>
 
-      {rows.length === 0 ? (
+      {reviews.loading ? (
+        <div className="mt-4 rounded border border-line bg-card shadow-card">
+          <LoadingBlock rows={5} />
+        </div>
+      ) : reviews.error ? (
+        <div className="mt-4 rounded border border-line bg-card shadow-card">
+          <ErrorState msg={reviews.error} />
+        </div>
+      ) : rows.length === 0 ? (
         <div className="mt-4 rounded border border-line bg-card shadow-card">
           <EmptyState tip="暂无复盘记录" />
         </div>

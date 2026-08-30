@@ -4,12 +4,11 @@ import { Suspense } from "react";
 import { Link } from "react-router-dom";
 import { useData } from "@/hooks/useData";
 import { usePagedQuery } from "@/hooks/usePagedQuery";
-import { getFlashes } from "@/lib/mockService";
-import { FLASH_SOURCES } from "@/lib/mock/flashes";
+import { FLASH_SOURCES } from "@/lib/constants";
 import { ENDPOINTS } from "@/lib/api";
 import Pagination from "@/components/ui/Pagination";
 import { Chip } from "@/components/ui/Num";
-import { EmptyState } from "@/components/ui/States";
+import { LoadingBlock, EmptyState, ErrorState } from "@/components/ui/States";
 import type { Flash } from "@/lib/types";
 
 /** 快讯流：来源筛选 + 分页（默认 20/页，URL 驱动），重要快讯高亮 */
@@ -24,10 +23,9 @@ export default function Page() {
 function FlashesInner() {
   const { query, setFilter, page, size, setPage, setSize, paginate } =
     usePagedQuery();
-  const flashes = useData({
+  const flashes = useData<Flash[]>({
     path: ENDPOINTS.flashes,
     params: { q: query.q, source: query.source },
-    fallback: () => getFlashes({ q: query.q, source: query.source }),
   });
   const data = flashes.data ?? [];
   const paged = paginate(data);
@@ -60,7 +58,15 @@ function FlashesInner() {
         </div>
       </div>
 
-      {data.length === 0 ? (
+      {flashes.loading ? (
+        <div className="mt-4 rounded border border-line bg-card shadow-card">
+          <LoadingBlock rows={8} />
+        </div>
+      ) : flashes.error ? (
+        <div className="mt-4 rounded border border-line bg-card shadow-card">
+          <ErrorState msg={flashes.error} />
+        </div>
+      ) : data.length === 0 ? (
         <div className="mt-4 rounded border border-line bg-card shadow-card">
           <EmptyState tip="没有匹配的快讯" />
         </div>

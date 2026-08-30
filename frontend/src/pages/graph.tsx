@@ -2,19 +2,19 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useData } from "@/hooks/useData";
-import { getEntities, getRelationships } from "@/lib/mockService";
-import { ENTITY_TYPES } from "@/lib/mock/entities";
+import { ENTITY_TYPES } from "@/lib/constants";
 import { ENDPOINTS } from "@/lib/api";
 import { ENTITY_TYPE_LABEL } from "@/lib/format";
+import type { Entity, Relationship } from "@/lib/types";
 import ForceGraph, { NODE_COLOR } from "@/components/graph/ForceGraph";
 import GraphPanel, { GraphActions } from "@/components/graph/GraphPanel";
 import { Chip } from "@/components/ui/Num";
-import { EmptyState } from "@/components/ui/States";
+import { EmptyState, ErrorState } from "@/components/ui/States";
 
 /** 图谱页（对齐 Go 版 /graph）：原生 SVG 力导向图 + 搜索 + 类型筛选 + 详情面板 */
 export default function Page() {
-  const entities = useData({ path: ENDPOINTS.entities, fallback: () => getEntities({}) });
-  const rels = useData({ path: ENDPOINTS.relationships, fallback: getRelationships });
+  const entities = useData<Entity[]>({ path: ENDPOINTS.entities });
+  const rels = useData<Relationship[]>({ path: ENDPOINTS.relationships });
 
   const [type, setType] = useState("");
   const [focusId, setFocusId] = useState<string | undefined>();
@@ -79,7 +79,9 @@ export default function Page() {
       </div>
 
       <div className="relative mt-3 h-[calc(100vh-240px)] min-h-[440px] overflow-hidden rounded border border-line bg-card p-0 shadow-card">
-        {entities.data && rels.data ? (
+        {entities.error || rels.error ? (
+          <ErrorState msg={entities.error ?? rels.error ?? ""} />
+        ) : entities.data && rels.data ? (
           <ForceGraph
             entities={nodes}
             relationships={edges}

@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize2, Minimize2, RotateCcw } from "lucide-react";
 import { ENTITY_TYPE_LABEL } from "@/lib/format";
 import { Chip } from "@/components/ui/Num";
 import type { Entity, Relationship } from "@/lib/types";
@@ -78,29 +78,53 @@ export default function GraphPanel({
   );
 }
 
-/** 图谱工具栏右侧按钮：缩放 / 重置 / 全屏 */
-export function GraphActions() {
+/** 图谱工具栏右侧按钮：缩放 / 重置 / 真全屏（请求浏览器全屏，而非仅重置视图） */
+export function GraphActions({
+  fullscreenRef,
+}: {
+  /** 要全屏的目标元素（图谱画布容器）；不传则按钮不可用 */
+  fullscreenRef?: React.RefObject<HTMLDivElement>;
+}) {
   const call = (fn: string, arg?: number) => {
     const g = (window as unknown as Record<string, { zoom?: (f: number) => void; reset?: () => void }>).__piksGraph;
     if (fn === "zoom") g?.zoom?.(arg!);
     if (fn === "reset") g?.reset?.();
   };
+  const [isFs, setIsFs] = useState(false);
+
+  // 跟随全屏状态切换图标/文案
+  useEffect(() => {
+    const onFs = () => setIsFs(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onFs);
+    return () => document.removeEventListener("fullscreenchange", onFs);
+  }, []);
+
+  const toggleFs = () => {
+    const el = fullscreenRef?.current;
+    if (!el) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else {
+      el.requestFullscreen?.().catch(() => {});
+    }
+  };
+
+  const btn =
+    "flex h-8 w-8 items-center justify-center rounded-sm border border-line bg-card text-muted hover:border-accent hover:text-accent";
   return (
     <div className="flex flex-col gap-1.5">
-      {[
-        { icon: ZoomIn, fn: () => call("zoom", 1.25), title: "放大" },
-        { icon: ZoomOut, fn: () => call("zoom", 0.8), title: "缩小" },
-        { icon: Maximize2, fn: () => call("reset"), title: "重置视图" },
-      ].map(({ icon: Icon, fn, title }, i) => (
-        <button
-          key={i}
-          title={title}
-          onClick={fn}
-          className="flex h-8 w-8 items-center justify-center rounded-sm border border-line bg-card text-muted hover:border-accent hover:text-accent"
-        >
-          <Icon size={14} />
-        </button>
-      ))}
+      <button title="放大" onClick={() => call("zoom", 1.25)} className={btn}>
+        <ZoomIn size={14} />
+      </button>
+      <button title="缩小" onClick={() => call("zoom", 0.8)} className={btn}>
+        <ZoomOut size={14} />
+      </button>
+      <button title="重置视图" onClick={() => call("reset")} className={btn}>
+        <RotateCcw size={14} />
+      </button>
+      <button title={isFs ? "退出全屏" : "全屏"} onClick={toggleFs} className={btn}>
+        {isFs ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+      </button>
     </div>
   );
 }

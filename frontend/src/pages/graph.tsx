@@ -20,6 +20,7 @@ export default function Page() {
   const [focusId, setFocusId] = useState<string | undefined>();
   const [kw, setKw] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const all = entities.data ?? [];
   const relsAll = rels.data ?? [];
@@ -78,7 +79,7 @@ export default function Page() {
         </form>
       </div>
 
-      <div className="relative mt-3 h-[calc(100vh-240px)] min-h-[440px] overflow-hidden rounded border border-line bg-card p-0 shadow-card">
+      <div ref={containerRef} className="graph-canvas relative mt-3 h-[calc(100vh-240px)] min-h-[440px] overflow-hidden rounded border border-line bg-card p-0 shadow-card">
         {entities.error || rels.error ? (
           <ErrorState msg={entities.error ?? rels.error ?? ""} />
         ) : entities.data && rels.data ? (
@@ -108,7 +109,7 @@ export default function Page() {
           拖拽平移 · 滚轮缩放 · 拖动节点 · 点击查看
         </span>
         <div className="absolute right-3 top-12">
-          <GraphActions />
+          <GraphActions fullscreenRef={containerRef} />
         </div>
 
         {focus && (

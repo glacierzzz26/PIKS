@@ -179,3 +179,12 @@ body {
   backdrop-filter: blur(12px) saturate(1.4);
   -webkit-backdrop-filter: blur(12px) saturate(1.4);
 }
+
+/* 图谱全屏:覆盖容器自身 calc 高度,占满视口 */
+.graph-canvas:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  border: none;
+  border-radius: 0;
+  background: var(--card);
+}

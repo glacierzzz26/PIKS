@@ -57,13 +57,18 @@ export function apiGet<T>(
   params?: Record<string, string | undefined>,
   signal?: AbortSignal
 ): Promise<T> {
-  const url = new URL(API_BASE + path);
+  // request() 内部已拼 API_BASE;这里只处理 query string。
+  // 注意:不能用 new URL(相对路径) —— 浏览器对相对 URL 构造会抛 Invalid URL。
+  let p = path;
   if (params) {
+    const qs = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) {
-      if (v !== undefined && v !== "") url.searchParams.set(k, v);
+      if (v !== undefined && v !== "") qs.set(k, v);
     }
+    const s = qs.toString();
+    if (s) p += `?${s}`;
   }
-  return request<T>(url.toString(), {
+  return request<T>(p, {
     signal,
     headers: { Accept: "application/json" },
   });

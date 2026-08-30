@@ -66,9 +66,10 @@ export default function ForceGraph({
       p.vx = Math.random() - 0.5;
       p.vy = Math.random() - 0.5;
     });
-    lineEls.current.clear();
-    nodeEls.current.clear();
-    labelEls.current.clear();
+    // 注意:不能再清空 lineEls/nodeEls/labelEls —— 它们由下方 ref 回调在
+    // React commit 阶段填充,effect 在 commit 之后执行,clear() 会把刚填好的
+    // Map 清空,导致 render() 遍历空 Map、节点永远停在 (0,0)(图谱不可点/不定位)。
+    // 数据变化时由 ref 回调的 null 分支同步增删,天然对齐当前实体集。
     s.scale = 1; s.tx = 0; s.ty = 0; s.sel = null;
     restart();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -254,20 +255,20 @@ export default function ForceGraph({
         {relationships.map((r) => (
           <line
             key={r.id}
-            ref={(el) => { if (el) lineEls.current.set(r.from_id + "->" + r.to_id, el); }}
+            ref={(el) => { if (el) lineEls.current.set(r.from_id + "->" + r.to_id, el); else lineEls.current.delete(r.from_id + "->" + r.to_id); }}
             className="g-edge"
           />
         ))}
         {entities.map((e) => (
           <g key={e.id}>
             <circle
-              ref={(el) => { if (el) nodeEls.current.set(e.id, el); }}
+              ref={(el) => { if (el) nodeEls.current.set(e.id, el); else nodeEls.current.delete(e.id); }}
               data-id={e.id}
               className="g-node cursor-pointer"
               style={{ fill: NODE_COLOR[e.type] ?? "var(--muted)", stroke: "var(--card)" }}
             />
             <text
-              ref={(el) => { if (el) labelEls.current.set(e.id, el); }}
+              ref={(el) => { if (el) labelEls.current.set(e.id, el); else labelEls.current.delete(e.id); }}
               className="pointer-events-none fill-[var(--muted)] text-[11.5px]"
             >
               {e.name.length > 16 ? e.name.slice(0, 15) + "…" : e.name}

@@ -2,53 +2,30 @@
 
 import { useData } from "@/hooks/useData";
 import { ENDPOINTS } from "@/lib/api";
-import { MOCK_MARKET } from "@/lib/mock/market";
-import { MOCK_EVENTS } from "@/lib/mock/events";
-import {
-  KB_STATS,
-  SNAP_HISTORY,
-  TASK_RUNS,
-  type SnapRow,
-  type TaskRun,
-} from "@/lib/mock/activity";
-import { LATEST_REVIEW_MD } from "@/lib/mock/review";
-import type { MarketSnapshot } from "@/lib/types";
+import type { DashboardData } from "@/lib/types";
 import { fmtYi } from "@/lib/format";
 import MarkdownBody from "@/components/md/MarkdownBody";
 import { SnapCard, StatCard, Bars, EventRank } from "@/components/dashboard/cards";
-
-type DashboardData = {
-  stats: { label: string; value: number }[];
-  market: MarketSnapshot;
-  snap_history: SnapRow[];
-  review: string;
-  top_events: { id: string; title: string; score: number }[];
-  task_runs: TaskRun[];
-};
-
-const MOCK_DASH: DashboardData = {
-  stats: KB_STATS,
-  market: MOCK_MARKET,
-  snap_history: SNAP_HISTORY,
-  review: LATEST_REVIEW_MD,
-  top_events: [...MOCK_EVENTS]
-    .sort((a, b) => b.confidence - a.confidence)
-    .slice(0, 6)
-    .map((e) => ({
-      id: e.id,
-      title: e.title,
-      score: Math.round(e.confidence * 100),
-    })),
-  task_runs: TASK_RUNS,
-};
+import { LoadingBlock, ErrorState } from "@/components/ui/States";
 
 /** 看板（首页）：知识库规模 + 最新市场快照 + 历史情绪 + 每日复盘 + 管线状态 + 热点事件 */
 export default function Page() {
   const dash = useData<DashboardData>({
     path: ENDPOINTS.dashboard,
-    fallback: () => MOCK_DASH,
   });
-  const data = dash.data ?? MOCK_DASH;
+
+  if (dash.loading) {
+    return <div className="mt-6"><LoadingBlock rows={8} /></div>;
+  }
+  if (dash.error || !dash.data) {
+    return (
+      <div className="mt-6 rounded border border-line bg-card shadow-card">
+        <ErrorState msg={dash.error ?? "暂无数据"} />
+
+      </div>
+    );
+  }
+  const data = dash.data;
   const market = data.market;
   const top = data.top_events;
 

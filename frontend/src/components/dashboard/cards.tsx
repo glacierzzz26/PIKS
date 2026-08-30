@@ -3,7 +3,7 @@
 import { Link } from "react-router-dom";
 import { Num } from "@/components/ui/Num";
 import { Chip } from "@/components/ui/Num";
-import type { SnapRow } from "@/lib/mock/activity";
+import type { SnapRow } from "@/lib/types";
 
 /** 历史情绪快照卡（对齐 base.css .snap） */
 export function SnapCard({

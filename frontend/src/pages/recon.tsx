@@ -2,9 +2,9 @@
 
 import { useData } from "@/hooks/useData";
 import { ENDPOINTS } from "@/lib/api";
-import type { ReconRow } from "@/lib/mock/activity";
-import { RECON_ROWS } from "@/lib/mock/activity";
+import type { ReconRow } from "@/lib/types";
 import { Chip, Num } from "@/components/ui/Num";
+import { LoadingBlock, EmptyState, ErrorState } from "@/components/ui/States";
 
 const STATUS: Record<string, { tone: "down" | "amber" | "up"; label: string }> = {
   ok: { tone: "down", label: "通过" },
@@ -16,7 +16,6 @@ const STATUS: Record<string, { tone: "down" | "amber" | "up"; label: string }> =
 export default function Page() {
   const recon = useData<ReconRow[]>({
     path: ENDPOINTS.recon,
-    fallback: () => RECON_ROWS,
   });
   const rows = recon.data ?? [];
 
@@ -31,6 +30,19 @@ export default function Page() {
         </div>
       </div>
 
+      {recon.loading ? (
+        <div className="mt-4 rounded border border-line bg-card shadow-card">
+          <LoadingBlock rows={5} />
+        </div>
+      ) : recon.error ? (
+        <div className="mt-4 rounded border border-line bg-card shadow-card">
+          <ErrorState msg={recon.error} />
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="mt-4 rounded border border-line bg-card shadow-card">
+          <EmptyState tip="暂无对账记录" />
+        </div>
+      ) : (
       <div className="mt-4 flex flex-col gap-2.5">
         {rows.map((r) => (
           <div
@@ -58,6 +70,7 @@ export default function Page() {
           </div>
         ))}
       </div>
+      )}
     </div>
   );
 }

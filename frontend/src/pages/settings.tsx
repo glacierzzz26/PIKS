@@ -1,63 +1,186 @@
 "use client";
 
-import { Lock } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Save } from "lucide-react";
 import { useData } from "@/hooks/useData";
-import { ENDPOINTS } from "@/lib/api";
-import { SETTINGS_CFG } from "@/lib/mock/trading";
-import { Chip } from "@/components/ui/Num";
+import { apiPost, ENDPOINTS } from "@/lib/api";
+import { LoadingBlock, ErrorState } from "@/components/ui/States";
+import type { SettingsForm } from "@/lib/types";
 
-type SettingSection = { group: string; rows: string[][] };
+const INPUT =
+  "h-9 w-full rounded-sm border border-line bg-card px-3 text-sm outline-none focus:border-accent";
 
-/** 设置（只读；对齐 dev /settings）：AI 模型分层配置展示，编辑留在 Go 端 */
+/** 表单项：标签 + 提示 + 控件 */
+function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-[13px] font-medium text-ink">{label}</label>
+      {children}
+      {hint && <p className="text-xs text-muted">{hint}</p>}
+    </div>
+  );
+}
+
+/** 设置（交互）：AI 分层配置编辑 —— 保存走 POST /api/v1/settings */
 export default function Page() {
-  const cfg = useData<SettingSection[]>({
-    path: ENDPOINTS.settings,
-    fallback: () => SETTINGS_CFG,
+  const form = useData<SettingsForm>({ path: ENDPOINTS.settingsForm });
+  const [vals, setVals] = useState({
+    base_url: "",
+    key: "",
+    model_extract: "",
+    model_reasoning: "",
+    model_vision: "",
+    budget: "0",
   });
-  const sections = cfg.data ?? [];
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    if (form.data) {
+      setVals({
+        base_url: form.data.base_url,
+        key: "",
+        model_extract: form.data.model_extract,
+        model_reasoning: form.data.model_reasoning,
+        model_vision: form.data.model_vision,
+        budget: form.data.budget || "0",
+      });
+    }
+  }, [form.data]);
+
+  const set =
+    (k: keyof typeof vals) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+      setVals((v) => ({ ...v, [k]: e.target.value }));
+
+  const save = async () => {
+    setSaving(true);
+    setMsg(null);
+    try {
+      await apiPost<{ ok: boolean }>(ENDPOINTS.settings, {
+        ai_service_base_url: vals.base_url.trim(),
+        ai_model_extract: vals.model_extract,
+        ai_model_reasoning: vals.model_reasoning,
+        ai_model_vision: vals.model_vision,
+        ai_daily_token_budget: vals.budget,
+        ai_api_key: vals.key,
+      });
+      setMsg({ ok: true, text: "已保存（密钥留空则保持原值不变）" });
+      form.refresh();
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const opts = form.data?.model_options ?? [];
 
   return (
-    <div>
+    <div className="mx-auto max-w-[680px]">
       <div className="mb-1 mt-5">
         <div className="flex items-baseline gap-3">
           <h1 className="mb-0 text-2xl font-bold tracking-wide">设置</h1>
-          <span className="text-[13px] text-muted">
-            大模型配置（存 app_config 表）
-          </span>
+          <span className="text-[13px] text-muted">大模型分层配置（存 app_config 表）</span>
         </div>
       </div>
 
-      <div className="mx-auto mt-2 flex max-w-[680px] items-center justify-center gap-1.5 rounded border border-dashed border-line bg-card-soft py-2.5 text-xs text-muted">
-        <Lock size={12} />
-        只读视图：修改配置请在 Go 端 /settings 操作
-      </div>
+      {form.loading ? (
+        <div className="mt-4 rounded border border-line bg-card shadow-card">
+          <LoadingBlock rows={4} />
+        </div>
+      ) : form.error ? (
+        <div className="mt-4 rounded border border-line bg-card shadow-card">
+          <ErrorState msg={form.error} />
+        </div>
+      ) : !form.data ? (
+        <div className="mt-4 rounded border border-line bg-card shadow-card">
+          <p className="px-4 py-6 text-[13px] text-muted">配置不可用</p>
+        </div>
+      ) : (
+        <div className="mt-4 flex flex-col gap-4 rounded border border-line bg-card p-5 shadow-card">
+          {msg && (
+            <p className={`text-xs ${msg.ok ? "text-down" : "text-up"}`}>{msg.text}</p>
+          )}
 
-      <div className="mx-auto mt-4 grid max-w-[680px] gap-3.5">
-        {sections.map((sec) => (
-          <div
-            key={sec.group}
-            className="rounded border border-line bg-card p-4 shadow-card"
+          <Field label="AI 服务地址" hint="OpenAI 兼容 base_url，如 https://api.xxx.com/v1">
+            <input
+              value={vals.base_url}
+              onChange={set("base_url")}
+              placeholder="https://…"
+              className={INPUT}
+            />
+          </Field>
+
+          <Field label="API Key" hint={form.data.key_masked ? `已配置：${form.data.key_masked}（留空则不改）` : "尚未配置"}>
+            <input
+              type="password"
+              value={vals.key}
+              onChange={set("key")}
+              placeholder={form.data.key_masked ? "留空保持原密钥" : "粘贴 API Key"}
+              className={INPUT}
+            />
+          </Field>
+
+          <Field label="抽取模型">
+            <select value={vals.model_extract} onChange={set("model_extract")} className={INPUT}>
+              <option value="">选择模型</option>
+              {opts.map((o) => (
+                <option key={o} value={o}>{o}</option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="深度推理模型" hint="用于周报综述 / 交易复盘 / AI 对话">
+            <select value={vals.model_reasoning} onChange={set("model_reasoning")} className={INPUT}>
+              <option value="">选择模型</option>
+              {opts.map((o) => (
+                <option key={o} value={o}>{o}</option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="视觉模型" hint="用于截图导入/截图提问；留空回退抽取模型">
+            <select value={vals.model_vision} onChange={set("model_vision")} className={INPUT}>
+              <option value="">回退抽取模型</option>
+              {opts.map((o) => (
+                <option key={o} value={o}>{o}</option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="日 token 预算" hint="0 = 关闭预算护栏">
+            <input
+              type="number"
+              min={0}
+              value={vals.budget}
+              onChange={set("budget")}
+              className={INPUT}
+            />
+          </Field>
+
+          {form.data.model_note && (
+            <p className="text-xs text-amber">{form.data.model_note}</p>
+          )}
+
+          <button
+            onClick={save}
+            disabled={saving}
+            className="inline-flex h-9 w-fit items-center gap-1.5 rounded-sm bg-accent px-5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
           >
-            <h2 className="card-title">{sec.group}</h2>
-            <table className="w-full border-collapse text-sm">
-              <tbody>
-                {sec.rows.map(([k, v]) => (
-                  <tr key={k} className="border-b border-line last:border-0">
-                    <td className="py-2 pr-3 text-[13px] text-muted">{k}</td>
-                    <td className="py-2 text-right">
-                      {k === "状态" ? (
-                        <Chip tone={v === "正常" ? "down" : "amber"}>{v}</Chip>
-                      ) : (
-                        <span className="num font-mono text-xs">{v}</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ))}
-      </div>
+            <Save size={13} />
+            {saving ? "保存中…" : "保存设置"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

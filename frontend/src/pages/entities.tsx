@@ -4,13 +4,13 @@ import { useMemo, Suspense, useState } from "react";
 import { Search } from "lucide-react";
 import { useData } from "@/hooks/useData";
 import { usePagedQuery } from "@/hooks/usePagedQuery";
-import { getEntities } from "@/lib/mockService";
-import { ENTITY_TYPES } from "@/lib/mock/entities";
+import { ENTITY_TYPES } from "@/lib/constants";
 import { ENDPOINTS } from "@/lib/api";
 import { ENTITY_TYPE_LABEL } from "@/lib/format";
 import Pagination from "@/components/ui/Pagination";
 import { Chip } from "@/components/ui/Num";
-import { LoadingBlock, EmptyState } from "@/components/ui/States";
+import { LoadingBlock, EmptyState, ErrorState } from "@/components/ui/States";
+import type { Entity } from "@/lib/types";
 
 const TYPE_TONE: Record<string, "accent" | "down" | "amber" | "up"> = {
   company: "accent",
@@ -34,10 +34,9 @@ function EntitiesInner() {
   const [kw, setKw] = useState(query.q ?? "");
   const selectedId = query.id ?? "";
 
-  const entities = useData({
+  const entities = useData<Entity[]>({
     path: ENDPOINTS.entities,
     params: { type: query.type, q: query.q },
-    fallback: () => getEntities({ type: query.type, q: query.q }),
   });
 
   const data = entities.data ?? [];
@@ -90,6 +89,8 @@ function EntitiesInner() {
         <div className="col-span-12 overflow-hidden rounded border border-line bg-card shadow-card lg:col-span-5">
           {entities.loading ? (
             <LoadingBlock rows={10} />
+          ) : entities.error ? (
+            <ErrorState msg={entities.error} />
           ) : data.length === 0 ? (
             <EmptyState tip="没有匹配的实体" />
           ) : (

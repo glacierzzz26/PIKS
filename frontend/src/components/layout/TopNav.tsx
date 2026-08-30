@@ -2,22 +2,17 @@
 
 import { Link, useLocation } from "react-router-dom";
 import { useEffect, useState, useCallback } from "react";
-import { Search, Sun, Moon, FlaskConical } from "lucide-react";
+import { Search, Sun, Moon } from "lucide-react";
 import { NAV_ITEMS } from "./navItems";
-import { anyDemo, onDemoChange } from "@/lib/demoSignal";
 
-/** 顶部导航条：品牌 + 横向导航 + 演示数据徽章 + 主题切换 + ⌘K（对齐 base.css .topbar） */
+/** 顶部导航条：品牌 + 横向导航 + 主题切换 + ⌘K（对齐 base.css .topbar） */
 export default function TopNav({ onOpenPalette }: { onOpenPalette: () => void }) {
   const { pathname } = useLocation();
   const [dark, setDark] = useState(false);
-  const [demo, setDemo] = useState(anyDemo());
 
   useEffect(() => {
     setDark(document.documentElement.getAttribute("data-theme") === "dark");
   }, []);
-
-  // 联调后：仅当某模块降级为演示数据时才显示徽章（诚实标注）。
-  useEffect(() => onDemoChange(() => setDemo(anyDemo())), []);
 
   const toggleTheme = useCallback(() => {
     const next = !dark;
@@ -47,41 +42,20 @@ export default function TopNav({ onOpenPalette }: { onOpenPalette: () => void })
         </Link>
 
         <nav className="flex flex-1 gap-1 overflow-x-auto">
-          {NAV_ITEMS.map(({ href, label, external }) =>
-            external ? (
-              <a
-                key={href}
-                href={href}
-                className={`whitespace-nowrap rounded-sm px-3.5 py-1.5 text-[13.5px] font-medium transition-colors no-underline ${
-                  isActive(href)
-                    ? "bg-accent-soft text-accent"
-                    : "text-muted hover:bg-bg-soft hover:text-ink"
-                }`}
-              >
-                {label}
-              </a>
-            ) : (
-              <Link
-                key={href}
-                to={href}
-                className={`whitespace-nowrap rounded-sm px-3.5 py-1.5 text-[13.5px] font-medium transition-colors no-underline ${
-                  isActive(href)
-                    ? "bg-accent-soft text-accent"
-                    : "text-muted hover:bg-bg-soft hover:text-ink"
-                }`}
-              >
-                {label}
-              </Link>
-            )
-          )}
+          {NAV_ITEMS.map(({ href, label }) => (
+            <Link
+              key={href}
+              to={href}
+              className={`whitespace-nowrap rounded-sm px-3.5 py-1.5 text-[13.5px] font-medium transition-colors no-underline ${
+                isActive(href)
+                  ? "bg-accent-soft text-accent"
+                  : "text-muted hover:bg-bg-soft hover:text-ink"
+              }`}
+            >
+              {label}
+            </Link>
+          ))}
         </nav>
-
-        {demo && (
-          <span className="hidden items-center gap-1 rounded-full bg-amber-soft px-2.5 py-1 text-xs text-amber lg:inline-flex">
-            <FlaskConical size={11} />
-            演示数据
-          </span>
-        )}
 
         <button
           onClick={onOpenPalette}

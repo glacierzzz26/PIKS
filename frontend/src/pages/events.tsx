@@ -4,14 +4,13 @@ import { useState, Suspense, useMemo } from "react";
 import { Search, X } from "lucide-react";
 import { useData } from "@/hooks/useData";
 import { usePagedQuery } from "@/hooks/usePagedQuery";
-import { getEvents } from "@/lib/mockService";
-import { EVENT_TYPES, EVENT_STATUS } from "@/lib/mock/events";
+import { EVENT_TYPES, EVENT_STATUS } from "@/lib/constants";
 import { ENDPOINTS } from "@/lib/api";
 import { EVENT_TYPE_LABEL } from "@/lib/format";
 import EventDetail from "@/components/events/EventDetail";
 import Pagination from "@/components/ui/Pagination";
 import { Chip } from "@/components/ui/Num";
-import { LoadingBlock, EmptyState } from "@/components/ui/States";
+import { LoadingBlock, EmptyState, ErrorState } from "@/components/ui/States";
 import type { EventItem } from "@/lib/types";
 
 /** 事件流（核心）：筛选 + 搜索 + 分页全部写入 URL query（规范第 7 条，默认 20/页） */
@@ -29,11 +28,9 @@ function EventsInner() {
   const [selected, setSelected] = useState<EventItem | null>(null);
   const [kw, setKw] = useState(query.q ?? "");
 
-  const events = useData({
+  const events = useData<EventItem[]>({
     path: ENDPOINTS.events,
     params: { type: query.type, status: query.status, q: query.q },
-    fallback: () =>
-      getEvents({ type: query.type, status: query.status, q: query.q }),
   });
 
   const data = events.data ?? [];
@@ -103,6 +100,10 @@ function EventsInner() {
 
       {events.loading ? (
         <LoadingBlock rows={8} />
+      ) : events.error ? (
+        <div className="rounded border border-line bg-card shadow-card">
+          <ErrorState msg={events.error} />
+        </div>
       ) : data.length === 0 ? (
         <div className="rounded border border-line bg-card shadow-card">
           <EmptyState tip="没有符合筛选条件的事件，试试放宽条件" />

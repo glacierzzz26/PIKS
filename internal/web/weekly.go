@@ -1,70 +1,70 @@
 package web
 
-// 周报聚合页(/weekly):本周行情快照 × 本周事件 × 本周个人笔记 + AI 综述(iter4 D26,Web 适配)。
+// 周报聚合(/weekly):本周行情快照 × 本周事件 × 本周个人笔记 + AI 综述(iter4 D26,Web 适配)。
 // 综述:高智档(reasoning)每周一次生成,落 weekly_summaries 表按 ISO 周缓存;
-// 手动按钮触发(POST action=generate),GET 永不调 LLM(缓存命中零成本)。
+// 手动按钮触发(POST /api/v1/weekly/generate),GET 永不调 LLM(缓存命中零成本)。
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"piks/internal/ai"
-	"piks/internal/store"
 )
 
-// WeeklyPage 周报页数据。
-type WeeklyPage struct {
-	Common
-	Week       string
-	Range      string
-	Offset     int
-	PrevOffset int
-	NextOffset int
-	Snaps      []WeeklySnap
-	Events     []WeeklyEvent
-	Notes      []WeeklyNote
-	Trades     []WeeklyTrade // 本周交易(交易闭环,design trade-loop.md)
-	Positions  []WeeklyPosition // 本周持仓(周末前最近快照)
-	Summary    *store.WeeklySummary // 非空=已生成(展示);nil=空态占位
-	SummaryNote string              // 降级/未配置/预算/失败提示(如实)
-}
-
+// WeeklySnap 周行情快照(HTML 模板与 JSON API 共用)。
 type WeeklySnap struct {
-	Date     string
-	Weekday  string
-	Emotion  string // 情绪(英文,模板 zh)
-	LimitUp  int
-	LimitDown int
-	Turnover string
-	Judgment string
+	Date      string `json:"date"`
+	Weekday   string `json:"weekday"`
+	Emotion   string `json:"emotion"`
+	LimitUp   int    `json:"limit_up"`
+	LimitDown int    `json:"limit_down"`
+	Turnover  string `json:"turnover"`
+	Judgment  string `json:"judgment"`
 }
 
+// WeeklyEvent 周内高置信事件。
 type WeeklyEvent struct {
-	ID, Title, Date, EventType string
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	Date      string `json:"date"`
+	EventType string `json:"event_type"`
 }
 
+// WeeklyNote 周内沉淀的个人笔记。
 type WeeklyNote struct {
-	ID, Title, Type, TypeLabel, Updated string
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	Type      string `json:"type"`
+	TypeLabel string `json:"type_label"`
+	Updated   string `json:"updated"`
 }
 
 // WeeklyTrade 本周一笔交易(页面渲染与综述上下文同源)。
 type WeeklyTrade struct {
-	Date, Name, Code string
-	Side, SideLabel  string
-	Qty              int
-	Price, Amount    float64
+	Date      string  `json:"date"`
+	Name      string  `json:"name"`
+	Code      string  `json:"code"`
+	Side      string  `json:"side"`
+	SideLabel string  `json:"side_label"`
+	Qty       int     `json:"qty"`
+	Price     float64 `json:"price"`
+	Amount    float64 `json:"amount"`
 }
 
 // WeeklyPosition 本周末最近快照的一只持仓。
 type WeeklyPosition struct {
-	Date, Code, Name  string
-	Qty               int
-	Cost, Price, MV, PL string
+	Date  string `json:"date"`
+	Code  string `json:"code"`
+	Name  string `json:"name"`
+	Qty   int    `json:"qty"`
+	Cost  string `json:"cost"`
+	Price string `json:"price"`
+	MV    string `json:"mv"`
+	PL    string `json:"pl"`
 }
 
 var cnWeekday = [7]string{"一", "二", "三", "四", "五", "六", "日"}
@@ -80,71 +80,7 @@ const (
 	genFailed  genStatus = "failed"   // LLM 调用/解析失败
 )
 
-func (s *Server) handleWeekly(w http.ResponseWriter, r *http.Request) {
-	offset := 0
-	if v := r.URL.Query().Get("offset"); v != "" {
-		offset, _ = strconv.Atoi(v)
-	}
-	ctx := r.Context()
-	start, end, week, rng := weekRange(time.Now().In(cst), offset)
-
-	// 生成综述(POST),成功后 302 回 GET 展示(避免刷新重复提交)。
-	if r.Method == http.MethodPost {
-		if r.FormValue("action") != "generate" {
-			http.Redirect(w, r, "/weekly?offset="+strconv.Itoa(offset), http.StatusSeeOther)
-			return
-		}
-		st := s.generateWeeklySummary(ctx, week, start, end)
-		http.Redirect(w, r, "/weekly?offset="+strconv.Itoa(offset)+"&g="+string(st), http.StatusSeeOther)
-		return
-	}
-
-	page := WeeklyPage{
-		Common:     Common{Title: "周报 · PIKS", Active: "weekly"},
-		Week:       week, Range: rng, Offset: offset,
-		PrevOffset: offset + 1, NextOffset: offset - 1,
-	}
-	snaps, events, notes, trades, poss, err := s.aggregateWeek(ctx, start, end)
-	if err != nil {
-		s.fail(w, "weekly", &page.Common, err)
-		return
-	}
-	page.Snaps, page.Events, page.Notes = snaps, events, notes
-	page.Trades, page.Positions = trades, poss
-
-	// 综述缓存(同周已生成 → 直接展示;无 → 空态占位)。
-	sum, err := s.store.GetWeeklySummary(ctx, week)
-	if err != nil {
-		s.fail(w, "weekly", &page.Common, err)
-		return
-	}
-	page.Summary = sum
-	page.SummaryNote = genNote(r.URL.Query().Get("g"))
-	if sum == nil && page.SummaryNote == "" {
-		page.SummaryNote = "本周暂无 AI 综述。"
-	}
-
-	s.render(w, "weekly", page)
-}
-
-// genNote 把 ?g= 状态映射为页面如实提示。
-func genNote(g string) string {
-	switch genStatus(g) {
-	case genOK:
-		return "✅ 综述已生成(高智档)。"
-	case genNoData:
-		return "本周暂无行情/事件/沉淀数据,暂无可综述。"
-	case genNoCfg:
-		return "⚠️ AI 未配置(请到 /settings 填写服务地址与密钥),综述暂缺。"
-	case genBudget:
-		return "⚠️ 今日 AI 预算已用尽,综述暂缺(预算恢复后重试)。"
-	case genFailed:
-		return "⚠️ 综述生成失败(暂缺),请稍后重试。"
-	}
-	return ""
-}
-
-// aggregateWeek 聚合当周行情/事件/沉淀/交易/持仓(与页面同源,渲染与综述上下文共用)。
+// aggregateWeek 聚合当周行情/事件/沉淀/交易/持仓(综述上下文与 JSON 展示同源)。
 func (s *Server) aggregateWeek(ctx context.Context, start, end time.Time) ([]WeeklySnap, []WeeklyEvent, []WeeklyNote, []WeeklyTrade, []WeeklyPosition, error) {
 	snaps, err := s.store.ListMarketSnapshots(ctx, 30)
 	if err != nil {

@@ -1,5 +1,5 @@
 // Package web 迭代 5 Web 平台(替换 Obsidian 界面层,设计 web-app.md)。
-// PostgreSQL 直读渲染 HTML;图谱/点选面板走 /api JSON。管线与 PG 存量零改动。
+// Go 侧只提供 JSON API(读投影 + 写接口 + 图谱/截图等旧 API),页面由 React SPA 渲染。
 package web
 
 import (
@@ -16,16 +16,8 @@ import (
 // cst 北京时区(复盘页/看板日期展示)。
 var cst = time.FixedZone("CST", 8*3600)
 
-// Common 所有页面共享的元数据(嵌入各页数据,base 模板读取 .Title/.Active/.Err)。
-type Common struct {
-	Title   string
-	Active  string
-	Err     string
-	Scripts string // 页面级 JS 文件名(如 "graph.js"),base 模板按需加载
-}
-
-// termIndex 受影响词 → 实体(事件"影响"节与事件列表的实体 chip)。
-// 与 publish.TermResolver 同语义,但这里返回实体 ID(供 web 链接),而非 wikilink 路径。
+// termIndex 受影响词 → 实体(事件详情 JSON /api/events/{id} 的实体链接)。
+// 与 publish.TermResolver 同语义,但这里返回实体 ID,而非 wikilink 路径。
 type termIndex struct {
 	byKey map[string]*model.Entity // key = type + "\x00" + (name|alias)
 }
@@ -63,31 +55,11 @@ func (t *termIndex) resolve(term string) (*model.Entity, bool) {
 	return nil, false
 }
 
-// render 渲染页面模板(页面名 → 已解析 base+page 集,执行 base)。
-func (s *Server) render(w http.ResponseWriter, page string, data any) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	t, ok := s.pages[page]
-	if !ok {
-		http.Error(w, "unknown page: "+page, http.StatusInternalServerError)
-		return
-	}
-	if err := t.ExecuteTemplate(w, "base", data); err != nil {
-		http.Error(w, "render: "+err.Error(), http.StatusInternalServerError)
-	}
-}
-
 func (s *Server) writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-}
-
-func (s *Server) fail(w http.ResponseWriter, page string, data any, err error) {
-	if d, ok := data.(*Common); ok {
-		d.Err = err.Error()
-	}
-	s.render(w, page, data)
 }
 
 func fmtDate(t interface{ Format(string) string }) string { return t.Format("2006-01-02") }

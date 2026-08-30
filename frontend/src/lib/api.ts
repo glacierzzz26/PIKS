@@ -1,16 +1,14 @@
 /**
- * REST 数据层：前端只读 PostgreSQL 投影 API，不直接写业务。
+ * REST 数据层：前端只读 PostgreSQL 投影 API + JSON 写 API。
  * base URL 默认相对路径 /api/v1：生产经 nginx 反代到 Go(:8090 同源)，
  * 开发经 vite proxy(configs/nginx.conf 复刻)。可用 VITE_API_BASE_URL 覆盖。
- * 请求失败自动降级为演示数据。
+ * 请求失败如实抛错（前端显 error 态），不做演示数据降级。
  */
 
 export type FetchState<T> = {
   data: T | null;
   loading: boolean;
   error: string | null;
-  /** true = 当前数据来自内置演示数据（后端不可达时的降级） */
-  demo: boolean;
 };
 
 export const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api/v1";
@@ -23,17 +21,38 @@ export const ENDPOINTS = {
   marketSnapshot: "/market/snapshot", // GET ?date=YYYY-MM-DD
   flashes: "/flashes", // GET ?q=&source=
   notes: "/notes", // GET
-  note: "/notes/:id", // GET
+  note: "/notes/:id", // GET/PUT/DELETE
   dashboard: "/dashboard", // GET
   recon: "/recon", // GET
   reviews: "/reviews", // GET
-  trades: "/trades", // GET
-  chat: "/chat", // GET
-  settings: "/settings", // GET
+  trades: "/trades", // GET/POST
+  chat: "/chat", // GET/POST
+  settings: "/settings", // GET/POST
   weekly: "/weekly", // GET
+  weeklyDetail: "/weekly/detail", // GET ?offset=
+  weeklyGenerate: "/weekly/generate", // POST ?offset=
+  tradesImport: "/trades/import", // POST multipart(type+file)
+  tradesConfirm: "/trades/confirm", // POST
+  settingsForm: "/settings/form", // GET
+  chatClear: "/chat/clear", // POST
 } as const;
 
-export async function apiGet<T>(
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(API_BASE + path, init);
+  if (!res.ok) {
+    let msg = `API ${res.status}: ${res.statusText}`;
+    try {
+      const body = await res.json();
+      if (body?.error) msg = body.error;
+    } catch {
+      /* 非 JSON 错误体，保留默认文案 */
+    }
+    throw new Error(msg);
+  }
+  return res.json() as Promise<T>;
+}
+
+export function apiGet<T>(
   path: string,
   params?: Record<string, string | undefined>,
   signal?: AbortSignal
@@ -44,10 +63,33 @@ export async function apiGet<T>(
       if (v !== undefined && v !== "") url.searchParams.set(k, v);
     }
   }
-  const res = await fetch(url.toString(), {
+  return request<T>(url.toString(), {
     signal,
     headers: { Accept: "application/json" },
   });
-  if (!res.ok) throw new Error(`API ${res.status}: ${res.statusText}`);
-  return res.json() as Promise<T>;
+}
+
+export function apiPost<T>(path: string, body?: unknown): Promise<T> {
+  return request<T>(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
+
+export function apiPut<T>(path: string, body?: unknown): Promise<T> {
+  return request<T>(path, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
+
+export function apiDelete<T>(path: string): Promise<T> {
+  return request<T>(path, { method: "DELETE" });
+}
+
+/** multipart 上传（截图导入 / AI 对话图片）。FormData 由调用方构造。 */
+export function apiUpload<T>(path: string, form: FormData): Promise<T> {
+  return request<T>(path, { method: "POST", body: form });
 }

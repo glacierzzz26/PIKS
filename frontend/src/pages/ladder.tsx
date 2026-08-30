@@ -2,22 +2,28 @@
 
 import { useMemo } from "react";
 import { useData } from "@/hooks/useData";
-import { getMarket } from "@/lib/mockService";
 import { ENDPOINTS } from "@/lib/api";
 import { fmtYi, fmtWan } from "@/lib/format";
 import EChart from "@/components/charts/EChart";
 import { Chip, Num } from "@/components/ui/Num";
-import { LoadingBlock, EmptyState } from "@/components/ui/States";
+import { LoadingBlock, EmptyState, ErrorState } from "@/components/ui/States";
 import type { MarketSnapshot } from "@/lib/types";
 import type { EChartsOption } from "echarts";
 
 /** 涨停梯队（对齐 dev market 视图）：最新快照 + 连板阶梯 + 行业分布 + 涨停池表 */
 export default function Page() {
-  const market = useData({ path: ENDPOINTS.marketSnapshot, fallback: getMarket });
+  const market = useData<MarketSnapshot>({ path: ENDPOINTS.marketSnapshot });
   const m = market.data;
 
   if (market.loading) {
     return <div className="mt-6"><LoadingBlock rows={8} /></div>;
+  }
+  if (market.error) {
+    return (
+      <div className="mt-6 rounded border border-line bg-card shadow-card">
+        <ErrorState msg={market.error} />
+      </div>
+    );
   }
   if (!m) {
     return (

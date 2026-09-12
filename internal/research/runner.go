@@ -16,6 +16,8 @@ const (
 	TimeoutGather = 180 * time.Second
 	TimeoutSynth  = 120 * time.Second
 	TimeoutVerify = 30 * time.Second
+	// TimeoutTotal 整轮编排的兜底上限(web 触发端用;步骤超时之和再加余量)。
+	TimeoutTotal = 6 * time.Minute
 )
 
 // runner 执行 research 的 Python CLI(D-6:os/exec,零胶水)。

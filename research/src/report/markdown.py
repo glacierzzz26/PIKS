@@ -1,6 +1,6 @@
 """Markdown 报告生成器"""
 from datetime import date
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from ..analysis.price import PriceMetrics
 from ..analysis.volume import VolumeMetrics

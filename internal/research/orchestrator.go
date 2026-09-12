@@ -81,7 +81,7 @@ func (o *Orchestrator) Run(ctx context.Context, opt Options) (*Result, error) {
 		opt.Profile = "complete-stock"
 	}
 
-	symbol := toFullCode(code)
+	symbol := ToFullCode(code)
 	asOf := time.Now()
 
 	// 运行身份(Identity)与产物目录绑定:续跑沿用同一 run_id + 同一目录,
@@ -112,7 +112,12 @@ func (o *Orchestrator) Run(ctx context.Context, opt Options) (*Result, error) {
 
 	dir := opt.OutDir
 	if dir == "" {
-		dir = filepath.Join(os.TempDir(), "piks-research", runID)
+		// 产物根可覆盖:容器里挂命名卷,否则 /tmp 易失 → 断点重跑无从复用。
+		root := os.Getenv("PIKS_RESEARCH_OUT_DIR")
+		if root == "" {
+			root = filepath.Join(os.TempDir(), "piks-research")
+		}
+		dir = filepath.Join(root, runID)
 	}
 	if opt.Force {
 		_ = os.RemoveAll(dir) // --force 才清空既有产物(续跑必须保留,否则无可复用)
@@ -345,8 +350,14 @@ func (o *Orchestrator) finishTask(ctx context.Context, id int64, status string, 
 	}
 }
 
-// toFullCode 6 位代码 → research full_code(与 src/models/symbol.py resolve_symbol 同规则)。
-func toFullCode(code string) string {
+// NewRunID 生成一次深研的 run_id(code+profile+时间戳)。
+// 触发端(web)先建 pending 行并立即返回它,后台 goroutine 再按同一 id 续跑 —— 见 §4.8。
+func NewRunID(code, profile string, t time.Time) string {
+	return fmt.Sprintf("%s_%s_%s", ToFullCode(code), profile, t.Format("20060102_150405"))
+}
+
+// ToFullCode 6 位代码 → research full_code(与 src/models/symbol.py resolve_symbol 同规则)。
+func ToFullCode(code string) string {
 	switch {
 	case hasPrefix(code, "600", "601", "603", "605", "688", "689"):
 		return "sh" + code
@@ -369,11 +380,13 @@ func hasPrefix(s string, ps ...string) bool {
 
 // lintFailed / gatePassed 读机检 JSON 的 passed 字段(缺字段按未过? 否——缺视为不可判定,
 // 如实返回 false,由前端展示问题清单)。
-func lintFailed(lint json.RawMessage) bool { return jsonPassed(lint) == false && len(lint) > 0 }
+func lintFailed(lint json.RawMessage) bool { return JSONPassed(lint) == false && len(lint) > 0 }
 
-func gatePassed(gate json.RawMessage) bool { return jsonPassed(gate) }
+func gatePassed(gate json.RawMessage) bool { return JSONPassed(gate) }
 
-func jsonPassed(raw json.RawMessage) bool {
+// JSONPassed 读机检产物({..._lint.json / {..._gate.json})的 passed 字段。
+// 导出供 web 列表页取机检徽标;缺失/不可解析 → false(不可判定不当通过)。
+func JSONPassed(raw json.RawMessage) bool {
 	if len(raw) == 0 {
 		return false
 	}

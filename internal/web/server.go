@@ -49,6 +49,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/weekly", s.handleAPIWeekly)
 	mux.HandleFunc("/api/v1/weekly/detail", s.weeklyDetailAPI)
 	mux.HandleFunc("/api/v1/weekly/generate", s.weeklyGenerateAPI)
+	// 个股深研(research 并入,design research-merge.md §4.8):
+	// 列表/触发 + 单份报告。触发即返回 run_id,实际编排在后台(D-10)。
+	mux.HandleFunc("/api/v1/research-runs", s.handleAPIResearchRuns)
+	mux.HandleFunc("/api/v1/research-runs/", s.handleAPIResearchRun)
 
 	return s.cors(mux)
 }

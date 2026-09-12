@@ -1,0 +1,8 @@
+# research 依赖(独立于 Go/前端;Dockerfile 的 research target 单独安装)
+# 版本下限为已验证可跑;不锁死上限以免 akshare 数据源修复被挡,但生产镜像构建时
+# 由 piks-research 镜像固化具体版本(镜像即锁定,见 docs/phase4/design/research-merge.md D-11 G3)。
+akshare>=1.18.0
+pandas>=2.0.0
+numpy>=1.24.0
+pydantic>=2.0.0
+python-dateutil>=2.8.0

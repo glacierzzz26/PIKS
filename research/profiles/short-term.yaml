@@ -1,0 +1,25 @@
+name: short-term
+version: "1.0.0"
+description: 短期关注（express 模式）
+
+mode: express
+
+period:
+  display:
+    price: 20d
+    volume: 20d
+    turnover: 20d
+    news: 7d
+    announcement: 7d
+  compute:
+    price: 60d
+    turnover: 260d
+
+sections:
+  - company
+  - market
+  - volume
+  - turnover
+  - events
+  - announcements
+  - conclusion

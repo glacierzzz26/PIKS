@@ -2,7 +2,7 @@
 
 > 子阶段:research 并入实现与验收(2026-09-12)
 > 前置:`docs/phase4/design/research-merge.md` 已定稿冻结(D-1~D-11)
-> 状态:✅ 已落地;**生产上线(单镜像化)进行中(2026-09-12)**
+> 状态:✅ 已落地并**已部署 lab(2026-09-12,单镜像)**
 
 ## 0.1 生产上线补记(2026-09-12,在 T1~T7 之后)
 
@@ -18,6 +18,11 @@ T1~T7 原为 dev-only(D-8)。首次上生产时(单镜像化)发现并修复一�
   (国内 pypi.org 15s 超时、deb.debian.org apt 挂 20+ 分钟实测)。
 - **验收**:本地隔离栈实测 UI 触发(`POST /api/v1/research-runs`→`done`,metrics/synthesis/lint 44/44/gate 齐全)
   + CLI(`./bin/research-run 000001`→done)双链路;migrate 12 个(含 0012);10 页面 + SPA + `/api/*` 全 200。
+- **lab 部署验收(master `0b0d11a`)**:13 页面 + 14 个 `/api/v1` 端点全 200;`piks-web` 内 python3 + research
+  依赖就位;migrate 应用 0012(`research_runs` 建表)。**UI 触发实测**:`POST /api/v1/research-runs`
+  → `gathering`(akshare 采集成功、4 产物落 `/data/research/`)**→ `synthesizing` 于真实 LLM `429`
+  (opencode.ai/zen 月度额度耗尽,`GoUsageLimitError`,约 2026-09-19 重置)如实 `failed`**:`synthesis={}`、
+  `markdown=""`,**无编造**;gather 产物保留,额度恢复后同 run 重试即复用采集、只补合成。
 - **镜像**:908MB(pip 300 + apt 114 + Go 136 + python 底座 179 + 其余);双镜像原为 970MB —— 单镜像总量略省。
 
 ## 0. 落地范围

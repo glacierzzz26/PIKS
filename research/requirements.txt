@@ -9,3 +9,5 @@ python-dateutil>=2.8.0
 # profiles/*.yaml 解析(workflow/profile.py 直接 import yaml);
 # 上游 requirements.txt 漏列,新 venv 必现 ModuleNotFoundError —— 并入时补上。
 PyYAML>=6.0
+# 测试(D-11 独立迭代:research/tests 可在本目录内独立跑,不依赖 PIKS 主程序)
+pytest>=8.0

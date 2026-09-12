@@ -20,7 +20,16 @@ const (
 	TimeoutTotal = 6 * time.Minute
 )
 
-// runner 执行 research 的 Python CLI(D-6:os/exec,零胶水)。
+// cliRunner 编排器依赖的 Python CLI 执行面(D-6:os/exec,零胶水)。
+// *runner 是生产实现;测试注入固定产物 fixture 的假实现,
+// 使「产物契约 + 状态机」可在无 Python 运行时下验证(§5.6 最小版本测试)。
+type cliRunner interface {
+	gather(ctx context.Context, code, profile string, days int, outDir, runID string) (string, error)
+	synthesize(ctx context.Context, dir, code, synthFile string) (string, error)
+	gate(ctx context.Context, dir, code string) (string, error)
+}
+
+// runner 执行 research 的 Python CLI。
 type runner struct {
 	pythonBin string // venv 解释器(PIKS_PYTHON_BIN 覆盖)
 	srcDir    string // research/ 根(含 src/),作为 cwd 让 `-m src.cli` 可解析

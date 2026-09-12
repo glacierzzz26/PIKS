@@ -42,7 +42,7 @@ type Options struct {
 type Orchestrator struct {
 	store    *store.Store
 	provider ai.Provider
-	runner   *runner
+	runner   cliRunner
 	// budget 日 token 上限(0 = 关);合成前查 task_runs 当日累计。
 	budget int64
 	logf   func(format string, args ...any)

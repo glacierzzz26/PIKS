@@ -38,16 +38,40 @@ migrate → collector(东财 7x24 快讯) → worker(AI 抽取 events) → clust
 ## 仓库布局
 
 ```
-cmd/           12 个可执行命令(9 个管线:migrate/collector/worker/cluster/quote-collector/
-              entity-build/market-state/daily-review/reconcile + web 常驻服务 + probe 探针 + publisher 遗留)
-internal/      业务包(collector/web/store/config/model/...)
-migrations/    SQL 迁移(前向,无 down;0001~0011)
+cmd/           13 个可执行命令(9 个管线:migrate/collector/worker/cluster/quote-collector/
+              entity-build/market-state/daily-review/reconcile + web 常驻服务 + probe 探针
+              + publisher 遗留 + research-run 深研编排)
+internal/      业务包(collector/web/store/config/model/research/...)
+research/      个股深研 Python agent(独立运行时,见下「深研并入」;不自带 SQLite,产物落 PG)
+migrations/    SQL 迁移(前向,无 down;0001~0012)
 prompts/       AI 抽取提示词(extract.md)
 configs/       docker-compose(dev/prod)+ .env 模板
-scripts/       dev 侧 setup.sh/deploy.sh;lab 侧 pipeline.sh/backup.sh/health.sh
+scripts/       dev 侧 setup.sh/deploy.sh/check-research-isolation.sh;lab 侧 pipeline.sh/backup.sh/health.sh
 (依赖不入库:go.sum 校验 + GOPROXY 模块代理,见 Dockerfile)
 docs/          项目详解、进度总表、各阶段设计定稿 + 实现归档
 PIKS-Vault/    Obsidian vault 存档(界面层已下线,不再更新)
+```
+
+## 深研并入(research,能力并入 P4)
+
+`research/`(自 `investment-research` 并入)是 Python 个股深研 agent;Go 侧 `internal/research`
+用 `os/exec` 调其 CLI 三命令(`research`/`synthesize`/`gate`),读产物落 `research_runs`。
+设计与验收见 `docs/phase4/{design,stages}/research-merge.md`。
+
+**独立迭代(D-11 硬约束)**:改 Python 只需重建 `piks-research` 镜像,Go 与前端零接触。
+耦合面仅「CLI 参数 + 产物契约」(冻结,`research/README.md` 契约表)。
+
+```bash
+# 只重建深研镜像(不触发 golang/node 阶段)
+go build -o bin/research-run ./cmd/research-run   # ENTRYPOINT 二进制取自上下文
+docker build --target research -t piks-research:latest .
+
+# 独立性 CI 检查(零共享状态 / 产物契约面)
+./scripts/check-research-isolation.sh
+
+# 两侧测试(可各自独立跑)
+go test ./internal/research/...                   # fixture 状态机,不依赖 Python
+cd research && .venv/bin/python -m pytest tests   # Python 单测,不依赖 PIKS
 ```
 
 ## 快速开始(dev,本机)

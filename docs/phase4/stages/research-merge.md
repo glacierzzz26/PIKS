@@ -113,12 +113,19 @@ POST 同步建 pending 行并立即返回 `{run_id,status}`(202),编排在后台
 
 目标:证明「改 Python 只需重建 `piks-research`,Go 与前端零接触」。
 
-1. 改动 `research/` 内一处 Python 代码;
-2. `docker build --target research -t piks-research:test .` —— 构建日志中**无 golang/node 阶段**;
-3. 冒烟:该镜像内 `research-run` 跑通;
-4. Go 二进制与前端 dist **未重建**,报告页仍正常。
+1. 改 `research/src/models/symbol.py`(加一行临时 marker,模拟 Python 迭代);
+2. `git diff --stat internal/ frontend/ cmd/` → **空**(Go/前端零改动);
+3. `docker build --target research -t piks-research:test .` → **Step 1/10 ~ 10/10 全 Python**,
+   日志无 golang/node 阶段;依赖层缓存命中,数秒完成;
+4. 验证改动进新镜像(`grep DRILL-MARKER` = 1)+ 镜像内 `symbol.resolve_symbol("600519")`
+   仍返回 `sh600519`(冒烟通过);
+5. 回滚 marker,`git status` 干净。
 
 结论:独立迭代成立。唯一耦合面是**冻结的产物契约 + CLI 参数**(§4.10 G4),契约加法变更即向前兼容(前端可先不展示新字段)。
+
+> 构建补强:首次构建时 pip 从 `files.pythonhosted.org` 长读超时导致随机失败,故给
+> Dockerfile 的 pip 加 `--retries 10 --timeout 120` 与 `PYPI_INDEX` build-arg
+> (国内可传 aliyun 镜像,实测 3.5× 加速)。
 
 ## 7. 已知边界与后续
 

@@ -9,14 +9,22 @@
 PIKS-Vault/
 
 # 构建产物与缓存
-bin/
+bin/*
 dist/
 build/
 *.test
 vendor-verify/
+# 唯一例外:research 镜像的 ENTRYPOINT 用这个 Go 编排二进制(设计 §4.3)。
+# 放行它才能让 `--target research` 不触发 golang 阶段(§4.10 G3 构建隔离);
+# 代价 = 必须先在 dev 侧 `go build -o bin/research-run ./cmd/research-run`(见 scripts/deploy.sh)。
+!bin/research-run
 
 # 前端依赖与产物(node 阶段 npm ci 重新生成,不进上下文/镜像)
 frontend/node_modules/
+
+# Python 字节码缓存(dev 侧运行残留,不进镜像)
+research/**/__pycache__/
+research/.venv/
 
 # 文档与样本(镜像不需要)
 docs/

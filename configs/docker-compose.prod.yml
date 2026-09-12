@@ -44,6 +44,26 @@ services:
     networks: [piks]
     command: ["sh", "-c", "./bin/web -listen 127.0.0.1:8090 & sleep 1; exec nginx -g 'daemon off;'"]
 
+  # 个股深研(research 并入,D-2 双镜像):独立镜像,独立升级 ——
+  # `docker compose run --rm research 000560 --profile short-term`
+  # 镜像变了只重建 piks-research,piks-tools 完全不动(§4.3.1 独立迭代)。
+  research:
+    image: piks-research:latest
+    profiles: ["run"]                  # 仅 compose run --rm 用,不随 up 常驻
+    user: "1000:1000"                  # 对齐宿主 rguo
+    env_file: [".env"]
+    environment:
+      - TZ=Asia/Shanghai
+      - PIKS_DATABASE_URL=postgres://piks:${PIKS_DB_PASSWORD:-piks_dev_password}@postgres:5432/piks?sslmode=disable
+      - PIKS_RESEARCH_OUT_DIR=/data/research  # 产物持久化:断点重跑可复用(容器内 /tmp 易失)
+    volumes:
+      - piks_data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [piks]
+    command: ["000560", "--profile", "short-term"]
+
   tools:
     image: piks-tools:latest
     profiles: ["run"]                  # 仅 compose run --rm 用,不随 up 常驻

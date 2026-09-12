@@ -22,7 +22,8 @@
 
 ```bash
 # 1. 采集 + 确定性分析 → 骨架报告 + 指标卡 + 合成提示
-python3 -m src.cli research <代码> [--days N] [--profile complete-stock|short-term] [--out-dir DIR]
+#    --run-id 可选:上层编排(Go cmd/research-run)传入稳定幂等键;独立 CLI 不需要。
+python3 -m src.cli research <代码> [--days N] [--profile complete-stock|short-term] [--out-dir DIR] [--run-id ID]
 
 # 2. 把 LLM 的三段定性渲染进报告 + Number Lint(数字一致性机检)
 python3 -m src.cli synthesize <产物目录> <代码> --synthesis-file <LLM输出.json>
@@ -30,6 +31,10 @@ python3 -m src.cli synthesize <产物目录> <代码> --synthesis-file <LLM输�
 # 3. 六项 Quality Gate 机检
 python3 -m src.cli gate <产物目录> <代码> [--json]
 ```
+
+> **退出码**:`synthesize` 在 Number Lint 有 issue 时退 2;`gate` 机检未过退 3。
+> 两者都**已把结果写进产物文件**——非零表示"结果未通过机检",不是"执行失败";
+> Go 侧据此区分处理(§4.4 机检失败处置:markdown 回落骨架报告,lint/gate 原样落库)。
 
 ## 产物契约(冻结,`run_meta.json` 是幂等键与契约版本来源)
 

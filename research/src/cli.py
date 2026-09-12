@@ -107,6 +107,7 @@ def run_research(args) -> None:
         plan=plan,
         as_of=date.today(),
         skip_capital=args.no_lhb,
+        run_id=getattr(args, "run_id", None),
     )
 
     try:
@@ -321,6 +322,8 @@ def main():
     p_research.add_argument("--json", action="store_true", help="同时输出 JSON 结构化数据")
     p_research.add_argument("--no-lhb", action="store_true", help="跳过龙虎榜采集（加快速度）")
     p_research.add_argument("--out-dir", type=str, default=None, help="保存研究产物（骨架报告+指标卡+合成提示）")
+    # 上层编排(Go cmd/research-run)传入稳定 run_id 作幂等键;独立 CLI 不需要。
+    p_research.add_argument("--run-id", type=str, default=None, help="覆盖 run_id（上层编排幂等键）")
 
     # 综合研判命令
     p_synth = sub.add_parser("synthesize", help="AI 综合研判：渲染 LLM 定性段落进报告")

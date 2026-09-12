@@ -31,6 +31,14 @@ func (m *Mock) StructuredOutput(ctx context.Context, req StructuredRequest) (Str
 		} `json:"events"`
 	}
 	switch {
+	case strings.Contains(req.System, "A 股研究分析师"):
+		// 深研合成(research-run):三段定性。数字刻意不写,避免 mock 编数触发 Number Lint。
+		data, _ := json.Marshal(map[string]any{
+			"summary":    "该股近期量价表现平稳,数据来自确定性计算引擎,基本面与事件面缺乏显著驱动。",
+			"trend":      "从指标卡看,区间涨跌幅与波动率均处于常规区间,未见趋势性放量或缩量特征,资金面无异常信号。",
+			"conclusion": "综合评分卡各项维度,当前呈中性倾向,建议持续跟踪后续量价变化与事件面更新,不构成任何投资建议。",
+		})
+		return StructuredResponse{Data: data, Usage: Usage{InputTokens: 800, OutputTokens: 200}}, nil
 	case strings.Contains(req.System, "事件去重确认"):
 		// 去重批量确认:按行解析 "#N: 事件A: X | 事件B: Y",同关键词 → 同事件。
 		var results []map[string]any

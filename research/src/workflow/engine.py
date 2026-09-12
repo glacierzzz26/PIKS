@@ -54,18 +54,22 @@ class WorkflowEngine:
         plan: ResearchPlan,
         as_of: Optional[date] = None,
         skip_capital: bool = False,
+        run_id: Optional[str] = None,
     ):
         self.symbol = resolve_symbol(symbol_code)
         self.profile = profile
         self.plan = plan
         self.as_of = as_of or date.today()
         self.skip_capital = skip_capital
+        # 上层(Go cmd/research-run)可传入稳定 run_id 作为幂等键;
+        # 不传则按"代码_档案_日期_时刻"生成(独立 CLI 用)。
+        self.run_id_override = run_id
         self.context: Dict[str, Any] = {}
         self.errors: Dict[str, str] = {}
 
     def run(self) -> WorkflowResult:
         """执行工作流"""
-        run_id = (
+        run_id = self.run_id_override or (
             f"{self.symbol.full_code}_{self.profile.name}_{self.as_of.isoformat()}"
             f"_{datetime.now().strftime('%H%M%S')}"
         )

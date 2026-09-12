@@ -25,12 +25,14 @@ func TestResearchRunCRUD(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pool.Close()
 	s := store.New(pool)
-
+	// 注意注册顺序:t.Cleanup 是 LIFO。先注册关池(最后跑),再注册删行(先跑)——
+	// 若改用 `defer pool.Close()`,defer 会早于 Cleanup 执行,清理将作用在已关闭的池上而静默失败。
 	runID := "test_sz000560_short-term_" + time.Now().Format("20060102150405.000000")
+	t.Cleanup(func() { pool.Close() })
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM research_runs WHERE run_id=$1`, runID) })
+
 	asOf := time.Date(2026, 9, 11, 0, 0, 0, 0, time.UTC)
-	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM research_runs WHERE symbol='sz000560'`) })
 
 	// 1. create(pending)
 	created, err := s.CreateResearchRun(ctx, &store.ResearchRun{

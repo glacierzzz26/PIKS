@@ -67,6 +67,13 @@ func (s *Store) CreateResearchRun(ctx context.Context, r *ResearchRun) (bool, er
 	return created, err
 }
 
+// UpdateResearchRunAsOf 回写数据截止日(采集后以指标卡 meta.as_of 为准,防未来函数基准)。
+func (s *Store) UpdateResearchRunAsOf(ctx context.Context, runID string, asOf time.Time) error {
+	_, err := s.Pool.Exec(ctx,
+		`UPDATE research_runs SET as_of=$2, updated_at=now() WHERE run_id=$1`, runID, asOf)
+	return err
+}
+
 // UpdateResearchRunStatus 推进状态机;error 为空则清空错误列(重试成功不留旧错)。
 func (s *Store) UpdateResearchRunStatus(ctx context.Context, runID, status, errMsg string) error {
 	_, err := s.Pool.Exec(ctx,

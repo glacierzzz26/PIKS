@@ -105,7 +105,7 @@ POST 同步建 pending 行并立即返回 `{run_id,status}`(202),编排在后台
 - **构建隔离**:`docker build --target research` 只跑 Python 阶段,日志无 golang/node;反向 `--target tools` 的 Python 阶段因本机无 buildx 无法跳过(已如实标注,产物隔离不受影响 —— 两镜像内容实测互不含对方运行时)。
 - **契约升版保护**:`contract: 2` fixture → Go 明确报错「research 产物契约 v2 高于本端支持的 v1,请升级 PIKS」,不崩溃不硬解;`contract: 1` 与缺字段均正常 `done`。
 - **最小版本测试**:`internal/research/artifacts_test.go` 用固定产物 fixture,`go test ./internal/research/...` **不 exec Python**(CI 可跑);完整状态机测试(注入 fakeCLI + mock provider)在 DB 集成开关下跑通 `pending→done`。
-- **Python 独立测试**:`pytest research/tests` 71 项在 `research/` 子目录内独立通过(不依赖 PIKS)。
+- **Python 独立测试**:`pytest research/tests` 71 项在 `research/` 子目录内独立通过(不依赖 PIKS)。测试依赖拆到 `requirements-dev.txt`,不进 `piks-research` 运行镜像(避免 pytest 链污染生产产物)。
 - **端到端独立迭代演练**:见 §6。
 - **产物契约冻结**:五类产物文件名与 `research/README.md` 契约表一一对应(测试断言 + CI 校验)。
 

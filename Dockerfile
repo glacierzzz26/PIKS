@@ -22,7 +22,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends tzdata ca-certi
 WORKDIR /app
 # 依赖层独立缓存:requirements.txt 不变则不重装(akshare 装一次较慢)
 COPY research/requirements.txt ./research/requirements.txt
-RUN pip install --no-cache-dir -r research/requirements.txt
+# 镜像源不稳定(files.pythonhosted.org 时长读超时),加重试与超时兜底;
+# PYPI_INDEX 可用 --build-arg 覆盖为国内镜像加速。
+ARG PYPI_INDEX=https://pypi.org/simple
+RUN pip install --no-cache-dir --retries 10 --timeout 120 \
+      -i "${PYPI_INDEX}" -r research/requirements.txt
 COPY research/ ./research/
 COPY bin/research-run /app/bin/research-run
 # 编排器定位 Python 源码/解释器(见 internal/research/runner.go);

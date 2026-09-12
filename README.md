@@ -70,8 +70,9 @@ docker build --target research -t piks-research:latest .
 ./scripts/check-research-isolation.sh
 
 # 两侧测试(可各自独立跑)
-go test ./internal/research/...                   # fixture 状态机,不依赖 Python
-cd research && .venv/bin/python -m pytest tests   # Python 单测,不依赖 PIKS
+go test ./internal/research/...                                 # fixture 状态机,不依赖 Python
+cd research && .venv/bin/python -m pytest tests                 # Python 单测,不依赖 PIKS
+#   依赖:requirements.txt(运行)+ requirements-dev.txt(测试;不进运行镜像)
 ```
 
 ## 快速开始(dev,本机)

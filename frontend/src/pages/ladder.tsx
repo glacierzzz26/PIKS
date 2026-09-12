@@ -4,11 +4,9 @@ import { useMemo } from "react";
 import { useData } from "@/hooks/useData";
 import { ENDPOINTS } from "@/lib/api";
 import { fmtYi, fmtWan } from "@/lib/format";
-import EChart from "@/components/charts/EChart";
-import { Num } from "@/components/ui/Num";
+import LadderCharts from "@/components/ladder/LadderCharts";
 import { LoadingBlock, EmptyState, ErrorState } from "@/components/ui/States";
 import type { MarketSnapshot } from "@/lib/types";
-import type { EChartsOption } from "echarts";
 
 /** 涨停梯队（对齐 dev market 视图）：最新快照 + 连板阶梯 + 行业分布 + 涨停池表 */
 export default function Page() {
@@ -53,110 +51,37 @@ export default function Page() {
         </div>
       </div>
 
-      <div className="two-col">
-        <div className="panel panel-pad">
-          <h2 className="mb-3 text-[15px] font-bold tracking-wide">连板梯队</h2>
-          <LadderChart market={m} />
+      <section className="section">
+        <div className="section-head">
+          <span className="bar" />
+          <h2>连板梯队 与 行业分布</h2>
+          <span className="hint">
+            最高 {m.max_board} 板 · 涨停 {m.limit_up} 家
+          </span>
         </div>
-        <div className="panel panel-pad">
-          <h2 className="mb-3 text-[15px] font-bold tracking-wide">行业分布</h2>
-          <DistChart market={m} />
+        <div className="two-col">
+          <LadderCharts market={m} />
         </div>
-      </div>
+      </section>
 
-      <div className="section">
+      <section className="section">
+        <div className="section-head">
+          <span className="bar" />
+          <h2>涨停池</h2>
+          <span className="hint">共 {m.ladder.length} 只 · 按连板数降序</span>
+        </div>
         <div className="panel">
-          <div className="flex h-12 items-center border-b border-line px-4">
-            <h2 className="mb-0 text-[15px] font-bold tracking-wide">涨停池</h2>
-            <span className="num ml-auto text-xs text-faint">
-              共 {m.ladder.length} 只
-            </span>
-          </div>
           <LadderTable market={m} />
         </div>
-      </div>
+      </section>
     </div>
   );
-}
-
-function LadderChart({ market }: { market: MarketSnapshot }) {
-  const option = useMemo<EChartsOption>(() => {
-    const groups = new Map<number, string[]>();
-    for (const s of market.ladder) {
-      (groups.get(s.boards) ?? groups.set(s.boards, []).get(s.boards)!).push(
-        `${s.name}(${s.code})`
-      );
-    }
-    const boards = Array.from(groups.keys()).sort((a, b) => b - a);
-    return {
-      grid: { left: 48, right: 24, top: 12, bottom: 24 },
-      xAxis: {
-        type: "value",
-        splitLine: { lineStyle: { color: "#e7ebf2" } },
-        axisLabel: { fontSize: 10, color: "#5b6678" },
-      },
-      yAxis: {
-        type: "category",
-        data: boards.map((b) => `${b} 板`),
-        axisLabel: { fontSize: 11, color: "#5b6678" },
-        axisLine: { lineStyle: { color: "#e7ebf2" } },
-      },
-      tooltip: {
-        trigger: "item",
-        formatter: (params) => {
-          const p = Array.isArray(params) ? params[0] : params;
-          const b = boards[p.dataIndex];
-          return `<b>${b} 板梯队</b><br/>${groups.get(b)!.join("<br/>")}`;
-        },
-      },
-      series: [
-        {
-          type: "bar",
-          data: boards.map((b) => groups.get(b)!.length),
-          barWidth: 18,
-          itemStyle: { color: "#e0392b", borderRadius: [0, 4, 4, 0] },
-          label: { show: true, position: "right", fontSize: 11, color: "#5b6678" },
-        },
-      ],
-    };
-  }, [market]);
-  return <EChart option={option} height={260} />;
-}
-
-function DistChart({ market }: { market: MarketSnapshot }) {
-  const option = useMemo<EChartsOption>(() => {
-    const rows = [...market.industry_dist].reverse();
-    return {
-      grid: { left: 70, right: 30, top: 10, bottom: 20 },
-      xAxis: {
-        type: "value",
-        splitLine: { lineStyle: { color: "#e7ebf2" } },
-        axisLabel: { fontSize: 10, color: "#5b6678" },
-      },
-      yAxis: {
-        type: "category",
-        data: rows.map((d) => d.name),
-        axisLabel: { fontSize: 11, color: "#5b6678" },
-        axisLine: { show: false },
-      },
-      series: [
-        {
-          type: "bar",
-          data: rows.map((d) => d.count),
-          barWidth: 12,
-          itemStyle: { color: "#28457e", borderRadius: [0, 4, 4, 0] },
-        },
-      ],
-    };
-  }, [market]);
-  return <EChart option={option} height={260} />;
 }
 
 function LadderTable({ market }: { market: MarketSnapshot }) {
   const rows = useMemo(
     () => [...market.ladder].sort((a, b) => b.boards - a.boards),
-    [market]
-  );
+    [market]  );
   return (
     <div className="overflow-x-auto">
       <table className="table">
@@ -176,28 +101,25 @@ function LadderTable({ market }: { market: MarketSnapshot }) {
           {rows.map((s) => (
             <tr key={s.code}>
               <td style={{ textAlign: "left" }}>
-                <span className="num rounded-[5px] bg-bg-soft px-1.5 py-0.5 text-xs text-faint">
-                  {s.code}
-                </span>
-                <span className="ml-2 text-[13px] font-semibold">{s.name}</span>
+                <span className="chip">{s.code}</span>
+                <span className="ml-2 font-semibold">{s.name}</span>
               </td>
-              <td>
-                <span
-                  className={`num inline-block min-w-6 font-bold ${
-                    s.boards >= 5
-                      ? "rounded-full bg-red-soft px-2 text-up"
-                      : s.boards >= 3
-                        ? "text-up"
-                        : ""
-                  }`}
-                >
-                  {s.boards}
-                </span>
+              <td className="num-t">
+                {s.boards >= 5 ? (
+                  <span className="st st-up">{s.boards} 板</span>
+                ) : (
+                  <span className={s.boards >= 3 ? "text-up" : ""}>
+                    {s.boards}
+                  </span>
+                )}
               </td>
-              <td style={{ textAlign: "left" }} className="text-muted">
+              <td style={{ textAlign: "left", color: "var(--ink-faint)" }}>
                 {s.industry}
               </td>
-              <td style={{ textAlign: "left" }} className="max-w-[200px] truncate">
+              <td
+                className="max-w-[200px] truncate text-[12.5px]"
+                style={{ textAlign: "left", color: "var(--ink-faint)" }}
+              >
                 {s.reason}
               </td>
               <td className="num-t">{fmtWan(s.seal_amount)}</td>

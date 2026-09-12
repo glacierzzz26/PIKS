@@ -89,7 +89,7 @@ export default function Page() {
 
       <div
         ref={containerRef}
-        className="graph-canvas panel relative h-[calc(100vh-260px)] min-h-[460px] overflow-hidden"
+        className="graph-canvas panel relative h-[calc(100vh-190px)] min-h-[460px] overflow-hidden"
       >
         {entities.error || rels.error ? (
           <ErrorState msg={entities.error ?? rels.error ?? ""} />

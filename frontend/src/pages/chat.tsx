@@ -90,7 +90,7 @@ export default function Page() {
       </div>
 
       <div className="chat-wrap">
-        <div className="panel flex h-[calc(100vh-260px)] min-h-[440px] flex-col overflow-hidden">
+        <div className="panel flex h-[calc(100vh-190px)] min-h-[440px] flex-col overflow-hidden">
           <div className="chat-log flex-1 overflow-y-auto">
             {initial.loading ? (
               <LoadingBlock rows={3} />

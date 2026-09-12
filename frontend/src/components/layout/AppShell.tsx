@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import TopNav from "./TopNav";
+import SideNav from "./SideNav";
 import CommandPalette from "./CommandPalette";
 
-/** 全局壳：顶部玻璃导航 + 内容区 + 页脚 + ⌘K 命令面板（对齐 HTML .wrap/.footer） */
+/** 全局壳：左侧分组导航 + 内容区 + 页脚 + ⌘K 命令面板 */
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
 
@@ -24,15 +24,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <div className="min-h-screen">
-      <TopNav onOpenPalette={openPalette} />
-      <main className="mx-auto max-w-[1440px] px-6 pb-16">{children}</main>
-      <footer className="footer">
-        <div className="src">
-          数据来源：东方财富 7×24 快讯 · 涨停池 · PIKS 管线自动生成 · PostgreSQL 唯一数据源
-        </div>
-        <div>Fact ≠ Inference ≠ Belief · 数据诚实：缺失如实标空态，宁缺毋假。</div>
-      </footer>
+    <div className="flex items-start">
+      <SideNav onOpenPalette={openPalette} />
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col">
+        <main className="mx-auto w-full max-w-[1440px] px-6 pb-4">{children}</main>
+        <footer className="footer">
+          <div className="src">
+            数据来源：东方财富 7×24 快讯 · 涨停池 · PIKS 管线自动生成 · PostgreSQL 唯一数据源
+          </div>
+          <div>Fact ≠ Inference ≠ Belief · 数据诚实：缺失如实标空态，宁缺毋假。</div>
+        </footer>
+      </div>
       {paletteOpen && <CommandPalette onClose={closePalette} />}
     </div>
   );

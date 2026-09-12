@@ -4,13 +4,17 @@
 #   web:   nginx 网关(:80,发布 :8090)服务 React SPA + 反代 Go(127.0.0.1:8090)与交互页
 #   tools: docker compose run --rm tools ./bin/<cmd>
 # 相对路径依赖(migrate→migrations/、worker→prompts/extract.md)在 /app 下。
+# 依赖不入库:go.sum 校验完整性 + GOPROXY 模块代理下载(首次构建需网络;GOPROXY 可用 --build-arg 覆盖)。
 FROM golang:1.26-alpine AS build
 WORKDIR /src
-# 自包含构建(go mod vendor,免模块下载,不受 proxy 可达性影响)
+# 依赖走模块代理(不再 vendor 入库);依赖层单独 COPY + download,业务代码改动不触发重新下载。
+# GOPROXY 可用 --build-arg 覆盖(离线构建可传 off 并预热 module cache)。
+ARG GOPROXY=https://goproxy.cn,direct
+ENV GOPROXY=${GOPROXY}
 COPY go.mod go.sum ./
-COPY vendor ./vendor
+RUN go mod download && go mod verify
 COPY . .
-RUN CGO_ENABLED=0 go build -mod=vendor -trimpath -o /out/bin/ ./cmd/...
+RUN CGO_ENABLED=0 go build -trimpath -o /out/bin/ ./cmd/...
 
 # 前端静态构建(Vite SPA;dist 是唯一产物)
 FROM node:20-alpine AS frontend

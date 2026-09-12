@@ -9,6 +9,8 @@
 bin/
 *.exe
 *.test
+# 依赖不再入库:改由 go.sum 校验 + 模块代理(GOPROXY)下载(见 Dockerfile)
+vendor/
 
 # 构建产物
 dist/

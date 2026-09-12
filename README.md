@@ -29,7 +29,7 @@ migrate → collector(东财 7x24 快讯) → worker(AI 抽取 events) → clust
 
 | 层 | 选型 |
 |---|---|
-| 语言 | Go 1.26(静态编译,`go mod vendor` 自包含构建) |
+| 语言 | Go 1.26(静态编译,依赖走 go.mod/go.sum + 模块代理,不入库) |
 | 数据源 | PostgreSQL 16(唯一 Source of Truth;11 个前向迁移) |
 | 界面 | Web(PG 直渲 HTML + 原生 SVG 图谱;Obsidian/GitHub 已下线,`PIKS-Vault/` 仅存档) |
 | AI | OpenCode Zen,OpenAI 兼容;**base URL 必须带 `/go` 路由**(`https://opencode.ai/zen/go/v1`);配置存 `app_config` 表(/settings 可编辑),模型分层 extract/reasoning/vision |
@@ -45,7 +45,7 @@ migrations/    SQL 迁移(前向,无 down;0001~0011)
 prompts/       AI 抽取提示词(extract.md)
 configs/       docker-compose(dev/prod)+ .env 模板
 scripts/       dev 侧 setup.sh/deploy.sh;lab 侧 pipeline.sh/backup.sh/health.sh
-vendor/        自包含构建依赖(镜像构建免网络)
+(依赖不入库:go.sum 校验 + GOPROXY 模块代理,见 Dockerfile)
 docs/          项目详解、进度总表、各阶段设计定稿 + 实现归档
 PIKS-Vault/    Obsidian vault 存档(界面层已下线,不再更新)
 ```
@@ -60,7 +60,7 @@ docker compose -f configs/docker-compose.yml up -d
 set -a; source .env.local; set +a   # 键:PIKS_DATABASE_URL / PIKS_LISTEN_ADDR / PIKS_UPLOAD_DIR
 
 # 3. 构建并跑迁移(migrate 会种子 app_config 默认值)
-go build -mod=vendor -o bin/ ./cmd/...
+go build -o bin/ ./cmd/...
 ./bin/migrate
 
 # 4. 手动跑一次全链(或等生产 crontab 自动;命令均幂等)

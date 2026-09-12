@@ -17,6 +17,7 @@ import Weekly from "@/pages/weekly";
 import Trades from "@/pages/trades";
 import Chat from "@/pages/chat";
 import Settings from "@/pages/settings";
+import Research from "@/pages/research";
 
 /**
  * SPA 路由：全部页面（只读分析页 + 交互页）均由 React 提供。
@@ -43,6 +44,7 @@ export default function App() {
         <Route path="/notes/:id" element={<NoteDetail />} />
         <Route path="/weekly" element={<Weekly />} />
         <Route path="/trades" element={<Trades />} />
+        <Route path="/research/:runId" element={<Research />} />
         <Route path="/chat" element={<Chat />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />

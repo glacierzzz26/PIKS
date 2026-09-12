@@ -35,6 +35,8 @@ export const ENDPOINTS = {
   tradesConfirm: "/trades/confirm", // POST
   settingsForm: "/settings/form", // GET
   chatClear: "/chat/clear", // POST
+  researchRuns: "/research-runs", // GET ?code=&entity=&limit= | POST {code,profile?,days?}
+  researchRun: "/research-runs/:runId", // GET
 } as const;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

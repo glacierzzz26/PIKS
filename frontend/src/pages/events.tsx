@@ -9,14 +9,30 @@ import { ENDPOINTS } from "@/lib/api";
 import { EVENT_TYPE_LABEL } from "@/lib/format";
 import EventDetail from "@/components/events/EventDetail";
 import Pagination from "@/components/ui/Pagination";
-import { Chip } from "@/components/ui/Num";
+import { ConfidenceBar } from "@/components/ui/Num";
 import { LoadingBlock, EmptyState, ErrorState } from "@/components/ui/States";
 import type { EventItem } from "@/lib/types";
+
+const TYPE_TAG: Record<string, string> = {
+  policy: "t-mix",
+  earnings: "t-idx",
+  product_launch: "t-ev",
+  supply_agreement: "t-bond",
+  industry_event: "t-idx",
+  investment: "t-mix",
+  sales_data: "t-ev",
+  rumor: "t-gray",
+};
+const STATUS_ST: Record<string, { cls: string; label: string }> = {
+  confirmed: { cls: "st-down", label: "已确认" },
+  pending: { cls: "st-amber", label: "待复核" },
+  archived: { cls: "st-dim", label: "已归档" },
+};
 
 /** 事件流（核心）：筛选 + 搜索 + 分页全部写入 URL query（规范第 7 条，默认 20/页） */
 export default function Page() {
   return (
-    <Suspense fallback={<div className="mt-6"><LoadingBlock rows={8} /></div>}>
+    <Suspense fallback={<div className="panel mt-6"><LoadingBlock rows={8} /></div>}>
       <EventsInner />
     </Suspense>
   );
@@ -32,118 +48,131 @@ function EventsInner() {
     path: ENDPOINTS.events,
     params: { type: query.type, status: query.status, q: query.q },
   });
-
   const data = events.data ?? [];
   const paged = paginate(data);
-  const groups = useMemo(() => {
-    const map = new Map<string, EventItem[]>();
-    for (const e of paged) {
-      const day = e.occurred_at.slice(0, 10);
-      (map.get(day) ?? map.set(day, []).get(day)!).push(e);
-    }
-    return [...map.entries()];
-  }, [paged]);
 
   const submitKw = () => setFilter("q", kw.trim());
 
   return (
     <div>
-      <div className="mb-1 mt-5">
-        <div className="flex items-baseline gap-3">
-          <h1 className="mb-0 text-2xl font-bold tracking-wide">事件流</h1>
-          <span className="num text-[13px] text-muted">
-            {events.loading ? "" : `${data.length} 条`}
-          </span>
+      <div className="page-head">
+        <div>
+          <h1>事件流</h1>
+          <div className="psub">
+            AI 从快讯中抽取的结构化事实 · 含置信度 · 与个人推断严格分域
+          </div>
         </div>
-
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <ChipGroup
-            options={EVENT_TYPES}
-            value={query.type ?? ""}
-            onChange={(v) => setFilter("type", v)}
-          />
-          <span className="h-4 w-px bg-line" />
-          <ChipGroup
-            options={EVENT_STATUS}
-            value={query.status ?? ""}
-            onChange={(v) => setFilter("status", v)}
-          />
-          <form
-            className="ml-auto flex h-8 w-[240px] items-center gap-2 rounded-sm border border-line bg-card px-2.5 focus-within:border-accent"
-            onSubmit={(e) => {
-              e.preventDefault();
-              submitKw();
-            }}
-          >
-            <Search size={13} className="shrink-0 text-muted" />
-            <input
-              value={kw}
-              onChange={(e) => setKw(e.target.value)}
-              placeholder="搜索标题 / 摘要…"
-              className="w-full bg-transparent text-xs outline-none placeholder:text-muted"
-            />
-            {query.q && (
-              <button
-                type="button"
-                onClick={() => {
-                  setKw("");
-                  setFilter("q", "");
-                }}
-                className="text-muted hover:text-up"
-              >
-                <X size={12} />
-              </button>
-            )}
-          </form>
+        <div className="meta">
+          <span className="st st-accent">
+            共 {events.loading ? "…" : data.length} 条
+          </span>
         </div>
       </div>
 
-      {events.loading ? (
-        <LoadingBlock rows={8} />
-      ) : events.error ? (
-        <div className="rounded border border-line bg-card shadow-card">
-          <ErrorState msg={events.error} />
-        </div>
-      ) : data.length === 0 ? (
-        <div className="rounded border border-line bg-card shadow-card">
-          <EmptyState tip="没有符合筛选条件的事件，试试放宽条件" />
-        </div>
-      ) : (
-        <>
-          {groups.map(([day, list]) => (
-            <section key={day}>
-              <div className="day-title">{day}</div>
-              {list.map((e) => (
-                <button
-                  key={e.id}
-                  onClick={() => setSelected(e)}
-                  className="mb-2.5 block w-full rounded border border-line bg-card p-4 text-left shadow-card hover:border-accent"
-                >
-                  <div className="text-base font-semibold">{e.title}</div>
-                  <div className="mt-1.5 flex flex-wrap gap-2">
-                    <Chip tone="accent">
-                      {EVENT_TYPE_LABEL[e.event_type] ?? e.event_type}
-                    </Chip>
-                    <Chip tone="dim">{e.source}</Chip>
-                    <Chip tone={e.status === "confirmed" ? "down" : "amber"}>
-                      {e.status === "confirmed" ? "已确认" : "待复核"}
-                    </Chip>
-                    <Chip tone="dim">
-                      置信度 {(e.confidence * 100).toFixed(0)}%
-                    </Chip>
-                    {e.affected.slice(0, 3).map((a, i) => (
-                      <Chip key={i} tone="accent">
-                        {a.entity_name ?? a.word}
-                      </Chip>
-                    ))}
-                  </div>
-                  <p className="mb-0 mt-2 text-sm text-muted">{e.summary}</p>
-                </button>
-              ))}
-            </section>
+      <div className="filter-bar">
+        {EVENT_STATUS.map((s) => (
+          <button
+            key={s.key}
+            onClick={() => setFilter("status", s.key)}
+            className={`chip-btn ${(query.status ?? "") === s.key ? "on" : ""}`}
+          >
+            {s.label}
+          </button>
+        ))}
+        <select
+          className="f-sel"
+          value={query.type ?? ""}
+          onChange={(e) => setFilter("type", e.target.value)}
+        >
+          {EVENT_TYPES.map((t) => (
+            <option key={t.key} value={t.key}>
+              {t.label}
+            </option>
           ))}
+        </select>
+        <form
+          className="f-search"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submitKw();
+          }}
+        >
+          <Search size={15} className="text-faint" strokeWidth={2} />
+          <input
+            value={kw}
+            onChange={(e) => setKw(e.target.value)}
+            placeholder="搜索事件标题 / 影响实体 / 关键词…"
+          />
+          {query.q && (
+            <button
+              type="button"
+              onClick={() => {
+                setKw("");
+                setFilter("q", "");
+              }}
+              className="text-faint hover:text-up"
+            >
+              <X size={13} />
+            </button>
+          )}
+        </form>
+      </div>
 
-          <div className="mt-3 rounded border border-line bg-card shadow-card">
+      <div className="panel">
+        {events.loading ? (
+          <LoadingBlock rows={8} />
+        ) : events.error ? (
+          <ErrorState msg={events.error} />
+        ) : data.length === 0 ? (
+          <EmptyState tip="没有符合筛选条件的事件，试试放宽条件" />
+        ) : (
+          <>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left" }}>事件标题</th>
+                  <th>类型</th>
+                  <th>影响实体</th>
+                  <th>发生时间</th>
+                  <th>置信度</th>
+                  <th>状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paged.map((e) => (
+                  <tr
+                    key={e.id}
+                    className="cursor-pointer"
+                    onClick={() => setSelected(e)}
+                  >
+                    <td>
+                      <div className="ev-title">
+                        <b>{e.title}</b>
+                        <span className="meta">
+                          来源：{e.source}
+                          {e.summary ? ` · ${e.summary.slice(0, 24)}` : ""}
+                        </span>
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`type-tag ${TYPE_TAG[e.event_type] ?? "t-gray"}`}>
+                        {EVENT_TYPE_LABEL[e.event_type] ?? e.event_type}
+                      </span>
+                    </td>
+                    <td className="num-t">{e.affected.length} 个</td>
+                    <td className="num-t">{e.occurred_at.slice(5, 16).replace("T", " ")}</td>
+                    <td>
+                      <ConfidenceBar v={e.confidence} />
+                    </td>
+                    <td>
+                      <span className={`st ${STATUS_ST[e.status]?.cls ?? "st-dim"}`}>
+                        {STATUS_ST[e.status]?.label ?? e.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
             <Pagination
               page={page}
               pageSize={size}
@@ -151,35 +180,11 @@ function EventsInner() {
               onPage={setPage}
               onPageSize={setSize}
             />
-          </div>
-        </>
-      )}
+          </>
+        )}
+      </div>
 
       <EventDetail event={selected} onClose={() => setSelected(null)} />
-    </div>
-  );
-}
-
-function ChipGroup({
-  options,
-  value,
-  onChange,
-}: {
-  options: { key: string; label: string }[];
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      {options.map((o) => (
-        <button
-          key={o.key}
-          onClick={() => onChange(o.key)}
-          className={`chip ${value === o.key ? "chip-accent" : "chip-dim"}`}
-        >
-          {o.label}
-        </button>
-      ))}
     </div>
   );
 }

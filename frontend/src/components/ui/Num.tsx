@@ -18,7 +18,7 @@ export function Num({
   className?: string;
 }) {
   if (value === null || value === undefined) {
-    return <span className="num block text-muted">—</span>;
+    return <span className="num block text-faint">—</span>;
   }
   const color = colored
     ? value > 0
@@ -32,12 +32,12 @@ export function Num({
     <span className={`num block ${color} ${className}`}>
       {sign}
       {value.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}
-      {suffix && <span className="ml-0.5 text-muted">{suffix}</span>}
+      {suffix && <span className="ml-0.5 text-faint">{suffix}</span>}
     </span>
   );
 }
 
-/** 语义胶囊徽章（对齐 base.css .chip） */
+/** 语义状态胶囊（对齐 HTML .st）。tone 沿用旧 API：accent/up/down/amber/dim */
 export function Chip({
   children,
   tone = "dim",
@@ -45,21 +45,17 @@ export function Chip({
   children: ReactNode;
   tone?: "dim" | "accent" | "up" | "down" | "amber";
 }) {
-  return <span className={`chip chip-${tone}`}>{children}</span>;
+  return <span className={`st st-${tone}`}>{children}</span>;
 }
 
-/** 置信度条（0-1） */
+/** 置信度条（对齐 HTML .pct-wrap/.pct-bar/.pct-num） */
 export function ConfidenceBar({ v }: { v: number }) {
-  const color = v >= 0.8 ? "bg-down" : v >= 0.6 ? "bg-accent" : "bg-up";
   return (
-    <span className="flex items-center justify-end gap-2">
-      <span className="num w-9 text-xs">{(v * 100).toFixed(0)}%</span>
-      <span className="h-1.5 w-14 overflow-hidden rounded-full bg-bg-soft">
-        <span
-          className={`block h-full rounded-full ${color}`}
-          style={{ width: `${v * 100}%` }}
-        />
+    <span className="pct-wrap">
+      <span className="pct-bar">
+        <i style={{ width: `${Math.max(0, Math.min(1, v)) * 100}%` }} />
       </span>
+      <span className="pct-num">{(v * 100).toFixed(0)}%</span>
     </span>
   );
 }

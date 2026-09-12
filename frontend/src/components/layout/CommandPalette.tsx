@@ -100,22 +100,22 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
       onClick={onClose}
     >
       <div
-        className="w-[520px] overflow-hidden rounded border border-line bg-card shadow-pop"
+        className="panel w-[520px] border border-line"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex h-12 items-center gap-3 border-b border-line px-4">
-          <Search size={15} className="text-muted" />
+          <Search size={15} className="text-faint" />
           <input
             autoFocus
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="跳转页面、实体，或执行命令…"
-            className="w-full bg-transparent text-[13px] outline-none placeholder:text-muted"
+            className="w-full bg-transparent text-[13px] outline-none placeholder:text-faint"
           />
         </div>
         <ul className="max-h-[320px] overflow-auto p-1.5">
           {filtered.length === 0 && (
-            <li className="px-3 py-6 text-center text-xs text-muted">
+            <li className="px-3 py-6 text-center text-xs text-faint">
               没有匹配项
             </li>
           )}
@@ -128,7 +128,7 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
                 onClose();
               }}
               className={`flex h-10 cursor-pointer items-center gap-3 rounded px-3 text-[13px] ${
-                i === cursor ? "bg-primary-soft text-primary" : ""
+                i === cursor ? "bg-accent-soft font-semibold text-accent" : ""
               }`}
             >
               {item.key.startsWith("cmd:") ? (
@@ -137,9 +137,9 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
                 <span className="w-1.5" />
               )}
               <span className="flex-1 truncate">{item.label}</span>
-              <span className="text-2xs text-muted">{item.hint}</span>
+              <span className="text-2xs text-faint">{item.hint}</span>
               {i === cursor && (
-                <CornerDownLeft size={12} className="text-muted" />
+                <CornerDownLeft size={12} className="text-faint" />
               )}
             </li>
           ))}

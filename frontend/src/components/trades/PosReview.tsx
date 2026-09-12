@@ -19,10 +19,10 @@ export default function PosReview() {
     setMsg(null);
     try {
       await apiPost<{ ok: boolean }>(`/trades/positions/review`);
-      setMsg("✅ 诊断已生成");
+      setMsg("诊断已生成");
       reviews.refresh();
     } catch (e) {
-      setMsg(`⚠️ ${e instanceof Error ? e.message : String(e)}`);
+      setMsg(`${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setBusy(false);
     }
@@ -33,27 +33,27 @@ export default function PosReview() {
       const res = await apiPost<{ message: string }>(`/trades/positions/save-risk/${n}`);
       setMsg(res.message);
     } catch (e) {
-      setMsg(`⚠️ ${e instanceof Error ? e.message : String(e)}`);
+      setMsg(`${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
   return (
-    <div className="mt-3.5 rounded border border-line bg-card shadow-card">
-      <div className="flex h-12 items-center gap-2 border-b border-line px-4">
-        <h2 className="card-title mb-0">持仓组合诊断</h2>
+    <div className="panel mt-3.5">
+      <div className="flex h-12 items-center gap-2 border-b border-line px-5">
+        <h2 className="mb-0 text-[15px] font-bold tracking-wide">持仓组合诊断</h2>
         <button
           onClick={run}
           disabled={busy}
-          className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-sm border border-line bg-card px-3 text-xs text-muted hover:text-accent disabled:opacity-50"
+          className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-[9px] border border-line bg-card px-3 text-xs text-muted hover:text-accent disabled:opacity-50"
         >
           <Wand2 size={12} />
           {busy ? "诊断中…" : latest ? "重新诊断" : "生成诊断"}
         </button>
       </div>
-      <div className="flex flex-col gap-3 px-4 py-3">
-        {msg && <p className="text-xs text-muted">{msg}</p>}
+      <div className="flex flex-col gap-3 px-5 py-3.5">
+        {msg && <p className="text-xs text-faint">{msg}</p>}
         {reviews.loading ? (
-          <p className="text-[13px] text-muted">加载诊断…</p>
+          <p className="text-[13px] text-faint">加载诊断…</p>
         ) : latest?.summary ? (
           <>
             <MarkdownBody content={latest.summary} />
@@ -62,15 +62,15 @@ export default function PosReview() {
                 {latest.risks.map((r, i) => (
                   <div
                     key={i}
-                    className="flex items-start justify-between gap-3 rounded border border-line px-3 py-2"
+                    className="flex items-start justify-between gap-3 rounded-[10px] border border-line px-3 py-2"
                   >
                     <div className="flex-1">
                       <p className="text-sm font-medium">{r.title}</p>
-                      <p className="text-xs text-muted">{r.content}</p>
+                      <p className="text-xs text-faint">{r.content}</p>
                     </div>
                     <button
                       onClick={() => save(i)}
-                      className="shrink-0 rounded-sm border border-line bg-card px-2 py-1 text-xs text-muted hover:text-accent"
+                      className="shrink-0 rounded-[9px] border border-line bg-card px-2 py-1 text-xs text-muted hover:text-accent"
                     >
                       存为笔记
                     </button>
@@ -80,7 +80,7 @@ export default function PosReview() {
             )}
           </>
         ) : (
-          <p className="text-[13px] text-muted">暂无诊断（点击上方「生成诊断」触发）。</p>
+          <p className="text-[13px] text-faint">暂无诊断（点击上方「生成诊断」触发）。</p>
         )}
       </div>
     </div>

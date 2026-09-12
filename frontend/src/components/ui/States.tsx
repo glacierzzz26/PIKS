@@ -22,14 +22,14 @@ export function ErrorState({ msg }: { msg: string }) {
     <div className="flex flex-col items-center justify-center gap-2 py-14 text-center">
       <AlertCircle size={22} className="text-up" strokeWidth={1.8} />
       <p className="text-sm">加载失败</p>
-      <p className="max-w-sm text-[13px] text-muted">{msg}</p>
+      <p className="max-w-sm text-[13px] text-faint">{msg}</p>
     </div>
   );
 }
 
 export function EmptyState({ tip = "暂无数据" }: { tip?: string }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 py-14 text-muted">
+    <div className="flex flex-col items-center justify-center gap-2 py-14 text-faint">
       <Inbox size={22} strokeWidth={1.8} />
       <p className="text-[13px] italic">{tip}</p>
     </div>

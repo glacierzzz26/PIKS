@@ -22,10 +22,10 @@ export default function TradeReview({
     setMsg(null);
     try {
       await apiPost<{ ok: boolean }>(`/trades/${trade.id}/review`);
-      setMsg("✅ 复盘已生成");
+      setMsg("复盘已生成");
       refresh();
     } catch (e) {
-      setMsg(`⚠️ ${e instanceof Error ? e.message : String(e)}`);
+      setMsg(`${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setBusy(false);
     }
@@ -36,13 +36,13 @@ export default function TradeReview({
       const res = await apiPost<{ message: string }>(`/trades/${trade.id}/save-mistake/${n}`);
       setMsg(res.message);
     } catch (e) {
-      setMsg(`⚠️ ${e instanceof Error ? e.message : String(e)}`);
+      setMsg(`${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
   return (
     <div className="flex flex-col gap-2">
-      {msg && <p className="text-xs text-muted">{msg}</p>}
+      {msg && <p className="text-xs text-faint">{msg}</p>}
       {trade.review ? (
         <>
           <MarkdownBody content={trade.review} />
@@ -51,15 +51,15 @@ export default function TradeReview({
               {trade.mistakes.map((m, i) => (
                 <div
                   key={i}
-                  className="flex items-start justify-between gap-3 rounded border border-line px-3 py-2"
+                  className="flex items-start justify-between gap-3 rounded-[10px] border border-line px-3 py-2"
                 >
                   <div className="flex-1">
                     <p className="text-sm font-medium">{m.title}</p>
-                    <p className="text-xs text-muted">{m.content}</p>
+                    <p className="text-xs text-faint">{m.content}</p>
                   </div>
                   <button
                     onClick={() => save(i)}
-                    className="shrink-0 rounded-sm border border-line bg-card px-2 py-1 text-xs text-muted hover:text-accent"
+                    className="shrink-0 rounded-[9px] border border-line bg-card px-2 py-1 text-xs text-muted hover:text-accent"
                   >
                     存为笔记
                   </button>
@@ -69,12 +69,12 @@ export default function TradeReview({
           )}
         </>
       ) : (
-        <p className="text-[13px] text-muted">暂无 AI 复盘。</p>
+        <p className="text-[13px] text-faint">暂无 AI 复盘。</p>
       )}
       <button
         onClick={review}
         disabled={busy}
-        className="inline-flex h-7 w-fit items-center gap-1.5 rounded-sm border border-line bg-card px-2.5 text-xs text-muted hover:text-accent disabled:opacity-50"
+        className="inline-flex h-7 w-fit items-center gap-1.5 rounded-[9px] border border-line bg-card px-2.5 text-xs text-muted hover:text-accent disabled:opacity-50"
       >
         <Wand2 size={12} />
         {busy ? "解读中…" : trade.review ? "重新解读" : "AI 解读"}

@@ -26,7 +26,7 @@ export default function Page() {
           返回笔记列表
         </Link>
       </div>
-      <div className="rounded border border-line bg-card p-6 shadow-card">
+      <div className="panel p-6">
         <h1 className="mb-5 border-b border-line pb-3 text-xl font-bold">
           新建笔记
         </h1>

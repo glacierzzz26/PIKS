@@ -30,25 +30,25 @@ export default function RefPicker({
   return (
     <div>
       <div className="mb-1.5 flex items-center justify-between">
-        <label className="text-[13px] font-semibold text-muted">{title}</label>
-        <span className="num text-xs text-muted">已选 {selected.length}</span>
+        <label className="text-[12.5px] font-semibold text-muted">{title}</label>
+        <span className="num text-xs text-faint">已选 {selected.length}</span>
       </div>
       <input
         value={kw}
         onChange={(e) => setKw(e.target.value)}
         placeholder={`搜索${title}…`}
-        className="h-8 w-full rounded-sm border border-line bg-card px-2.5 text-xs outline-none placeholder:text-muted focus:border-accent"
+        className="input h-8 text-xs"
       />
-      <div className="mt-1.5 flex max-h-44 flex-col gap-0.5 overflow-auto rounded-sm border border-line bg-card p-1.5">
+      <div className="mt-1.5 flex max-h-44 flex-col gap-0.5 overflow-auto rounded-[10px] border border-line bg-card p-1.5">
         {shown.length === 0 && (
-          <div className="px-2 py-3 text-center text-xs text-muted">
+          <div className="px-2 py-3 text-center text-xs text-faint">
             无匹配项
           </div>
         )}
         {shown.map((o) => (
           <label
             key={o.id}
-            className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-[13px] hover:bg-bg-soft"
+            className="flex cursor-pointer items-center gap-2 rounded-[8px] px-1.5 py-1 text-[13px] hover:bg-bg-soft"
           >
             <input
               type="checkbox"

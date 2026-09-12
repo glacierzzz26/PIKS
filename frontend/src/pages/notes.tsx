@@ -8,23 +8,22 @@ import { ENDPOINTS } from "@/lib/api";
 import type { Doc } from "@/lib/types";
 import { DOC_TYPE_LABEL } from "@/lib/format";
 import Pagination from "@/components/ui/Pagination";
-import { Chip } from "@/components/ui/Num";
 import { LoadingBlock, EmptyState, ErrorState } from "@/components/ui/States";
 import { usePagedQuery } from "@/hooks/usePagedQuery";
 
-const NOTE_TONES: Record<string, "accent" | "amber" | "up" | "down"> = {
-  note: "down",
-  belief: "accent",
-  case: "amber",
-  mistake: "up",
-  "daily-review": "accent",
-  weekly: "accent",
+const NOTE_TAG: Record<string, string> = {
+  note: "t-bond",
+  belief: "t-mix",
+  case: "t-ev",
+  mistake: "t-gold",
+  "daily-review": "t-mix",
+  weekly: "t-mix",
 };
 
 /** 笔记：类型筛选 + 分页 + 新建/编辑/归档（交互） */
 export default function Page() {
   return (
-    <Suspense fallback={<div className="mt-6 h-40 animate-pulse rounded bg-card" />}>
+    <Suspense fallback={<div className="panel mt-6"><LoadingBlock rows={6} /></div>}>
       <NotesInner />
     </Suspense>
   );
@@ -35,93 +34,86 @@ function NotesInner() {
     usePagedQuery();
   const type = query.type ?? "";
 
-  const docs = useData<Doc[]>({
-    path: ENDPOINTS.notes,
-  });
+  const docs = useData<Doc[]>({ path: ENDPOINTS.notes });
   const all = docs.data ?? [];
   const data = type ? all.filter((d) => d.type === type) : all;
   const paged = paginate(data);
 
   return (
     <div>
-      <div className="mb-1 mt-5">
-        <div className="flex items-baseline gap-3">
-          <h1 className="mb-0 text-2xl font-bold tracking-wide">笔记</h1>
-          <span className="num text-[13px] text-muted">{data.length} 篇</span>
+      <div className="page-head">
+        <div>
+          <h1>笔记</h1>
+          <div className="psub">个人判断层 · 事实（机器）与推断（自己）严格分域</div>
+        </div>
+        <div className="meta">
+          <span className="st st-accent">共 {data.length} 篇</span>
           <Link
             to="/notes/new"
-            className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-sm border border-line bg-card px-3 text-xs text-muted no-underline hover:text-accent"
+            className="inline-flex h-8 items-center gap-1.5 rounded-[9px] border border-line bg-card px-3 text-xs font-semibold text-muted no-underline hover:text-accent"
           >
             <Plus size={13} />
             新建笔记
           </Link>
         </div>
-        <div className="mt-3 flex flex-wrap gap-1.5">
+      </div>
+
+      <div className="filter-bar">
+        <button
+          onClick={() => setFilter("type", "")}
+          className={`chip-btn ${type === "" ? "on" : ""}`}
+        >
+          全部
+        </button>
+        {["belief", "note", "case", "mistake"].map((t) => (
           <button
-            onClick={() => setFilter("type", "")}
-            className={`chip ${type === "" ? "chip-accent" : "chip-dim"}`}
+            key={t}
+            onClick={() => setFilter("type", t)}
+            className={`chip-btn ${type === t ? "on" : ""}`}
           >
-            全部
+            {DOC_TYPE_LABEL[t] ?? t}
           </button>
-          {["daily-review", "note", "weekly", "mistake"].map((t) => (
-            <button
-              key={t}
-              onClick={() => setFilter("type", t)}
-              className={`chip ${type === t ? "chip-accent" : "chip-dim"}`}
-            >
-              {DOC_TYPE_LABEL[t]}
-            </button>
-          ))}
-        </div>
+        ))}
       </div>
 
       {docs.loading ? (
-        <div className="mt-4 rounded border border-line bg-card shadow-card">
+        <div className="panel">
           <LoadingBlock rows={6} />
         </div>
       ) : docs.error ? (
-        <div className="mt-4 rounded border border-line bg-card shadow-card">
+        <div className="panel">
           <ErrorState msg={docs.error} />
         </div>
       ) : data.length === 0 ? (
-        <div className="mt-4 rounded border border-line bg-card shadow-card">
+        <div className="panel">
           <EmptyState tip="该类型暂无笔记" />
         </div>
       ) : (
         <>
-          <div className="mt-4 flex flex-col gap-2.5">
+          <div className="note-grid">
             {paged.map((d) => (
-              <Link
-                key={d.id}
-                to={`/notes/${d.id}`}
-                className="block rounded border border-line bg-card p-4 shadow-card no-underline hover:border-accent"
-              >
-                <div className="flex items-center gap-2.5">
-                  <span className="text-base font-semibold text-ink">
-                    {d.title}
+              <Link key={d.id} to={`/notes/${d.id}`} className="note-card no-underline">
+                <div className="nh">
+                  <span className={`type-tag ${NOTE_TAG[d.type] ?? "t-gray"}`}>
+                    {DOC_TYPE_LABEL[d.type] ?? d.type}
                   </span>
-                  <Chip tone={NOTE_TONES[d.type] ?? "dim"}>
-                    {DOC_TYPE_LABEL[d.type]}
-                  </Chip>
-                  <span className="num ml-auto text-xs text-muted">
-                    {d.updated_at}
-                  </span>
+                  <b style={{ color: "var(--ink)" }}>{d.title}</b>
                 </div>
-                <p className="mb-0 mt-1.5 line-clamp-2 text-[13px] text-muted">
-                  {d.content.replace(/[#*>|-]/g, "").slice(0, 120)}
-                </p>
+                <p>{d.content.replace(/[#*>|-]/g, "").slice(0, 140)}</p>
+                <div className="nfoot">
+                  <span>更新 {d.updated_at}</span>
+                  <span className="conf">阅读全文 →</span>
+                </div>
               </Link>
             ))}
           </div>
-          <div className="mt-3 rounded border border-line bg-card shadow-card">
-            <Pagination
-              page={page}
-              pageSize={size}
-              total={data.length}
-              onPage={setPage}
-              onPageSize={setSize}
-            />
-          </div>
+          <Pagination
+            page={page}
+            pageSize={size}
+            total={data.length}
+            onPage={setPage}
+            onPageSize={setSize}
+          />
         </>
       )}
     </div>

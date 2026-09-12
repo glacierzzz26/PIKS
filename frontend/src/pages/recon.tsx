@@ -3,74 +3,91 @@
 import { useData } from "@/hooks/useData";
 import { ENDPOINTS } from "@/lib/api";
 import type { ReconRow } from "@/lib/types";
-import { Chip, Num } from "@/components/ui/Num";
 import { LoadingBlock, EmptyState, ErrorState } from "@/components/ui/States";
 
-const STATUS: Record<string, { tone: "down" | "amber" | "up"; label: string }> = {
-  ok: { tone: "down", label: "通过" },
-  warn: { tone: "amber", label: "有异常" },
-  failed: { tone: "up", label: "失败" },
+const STATUS: Record<string, { cls: string; label: string }> = {
+  ok: { cls: "st-down", label: "正常" },
+  warn: { cls: "st-amber", label: "警告" },
+  failed: { cls: "st-up", label: "失败" },
 };
 
-/** 对账（只读；对齐 dev /recon）：每日对账索引 + 异常明细 */
+/** 对账：每日核对快讯 → 事件链路完整性 · 异常不掩盖 */
 export default function Page() {
-  const recon = useData<ReconRow[]>({
-    path: ENDPOINTS.recon,
-  });
+  const recon = useData<ReconRow[]>({ path: ENDPOINTS.recon });
   const rows = recon.data ?? [];
+  const anomalies = rows.filter((r) => r.anomalies > 0).length;
 
   return (
     <div>
-      <div className="mb-1 mt-5">
-        <div className="flex items-baseline gap-3">
-          <h1 className="mb-0 text-2xl font-bold tracking-wide">对账</h1>
-          <span className="text-[13px] text-muted">
-            每日数据完整性核验 · 异常不掩盖，如实呈现
-          </span>
+      <div className="page-head">
+        <div>
+          <h1>对账</h1>
+          <div className="psub">
+            reconcile · 每日核对快讯 → 事件链路完整性 · 异常不掩盖
+          </div>
+        </div>
+        <div className="meta">
+          <span className="st st-accent">近 {rows.length} 日</span>
+          {anomalies > 0 && <span className="st st-amber">异常 {anomalies} 天</span>}
         </div>
       </div>
 
-      {recon.loading ? (
-        <div className="mt-4 rounded border border-line bg-card shadow-card">
-          <LoadingBlock rows={5} />
-        </div>
-      ) : recon.error ? (
-        <div className="mt-4 rounded border border-line bg-card shadow-card">
+      <div className="panel">
+        {recon.loading ? (
+          <LoadingBlock rows={6} />
+        ) : recon.error ? (
           <ErrorState msg={recon.error} />
-        </div>
-      ) : rows.length === 0 ? (
-        <div className="mt-4 rounded border border-line bg-card shadow-card">
+        ) : rows.length === 0 ? (
           <EmptyState tip="暂无对账记录" />
-        </div>
-      ) : (
-      <div className="mt-4 flex flex-col gap-2.5">
-        {rows.map((r) => (
-          <div
-            key={r.date}
-            className="flex items-center gap-4 rounded border border-line bg-card px-4 py-3.5 shadow-card"
-          >
-            <span className="w-[92px] text-base font-bold">{r.date}</span>
-            <Chip tone={STATUS[r.status].tone}>{STATUS[r.status].label}</Chip>
-            <div className="flex flex-1 gap-5 text-[13px] text-muted">
-              <span>
-                快讯 <Num value={r.flashes} className="inline text-ink" />
-              </span>
-              <span>
-                事件 <Num value={r.events} className="inline text-ink" />
-              </span>
-              <span>
-                异常 <Num value={r.anomalies} className={`inline ${r.anomalies ? "text-up" : "text-ink"}`} />
-              </span>
+        ) : (
+          <>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left" }}>日期</th>
+                  <th>快讯数</th>
+                  <th>生成事件</th>
+                  <th>异常</th>
+                  <th>状态</th>
+                  <th style={{ textAlign: "left" }}>备注</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.date}>
+                    <td style={{ textAlign: "left" }} className="num-t">
+                      {r.date}
+                    </td>
+                    <td className="num-t">{r.flashes.toLocaleString("zh-CN")}</td>
+                    <td className="num-t">{r.events}</td>
+                    <td
+                      className="num-t"
+                      style={{ color: r.anomalies ? "var(--warn)" : undefined }}
+                    >
+                      {r.anomalies}
+                    </td>
+                    <td>
+                      <span className={`st ${STATUS[r.status]?.cls ?? "st-dim"}`}>
+                        {STATUS[r.status]?.label ?? r.status}
+                      </span>
+                    </td>
+                    <td
+                      style={{ textAlign: "left", color: "var(--ink-faint)" }}
+                      className="text-[12.5px]"
+                    >
+                      {r.note ?? "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="rv-foot">
+              <span className="chip">数据诚实</span>
+              <span>缺失如实标空态，宁缺毋假 · 异常当日记录不阻断，次日重试</span>
             </div>
-            {r.note && (
-              <span className="hidden max-w-[380px] truncate text-xs text-amber md:inline">
-                {r.note}
-              </span>
-            )}
-          </div>
-        ))}
+          </>
+        )}
       </div>
-      )}
     </div>
   );
 }

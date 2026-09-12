@@ -23,12 +23,12 @@ export default function Page() {
 
   if (detail.loading) {
     return (
-      <div className="py-20 text-center text-[13px] text-muted">加载中…</div>
+      <div className="py-20 text-center text-[13px] text-faint">加载中…</div>
     );
   }
   if (detail.error || !detail.data) {
     return (
-      <div className="mx-auto mt-6 max-w-[860px] rounded border border-line bg-card shadow-card">
+      <div className="panel mx-auto mt-6 max-w-[860px]">
         <ErrorState msg={detail.error ?? "笔记不存在"} />
       </div>
     );
@@ -45,7 +45,7 @@ export default function Page() {
           返回笔记
         </Link>
       </div>
-      <div className="rounded border border-line bg-card p-6 shadow-card">
+      <div className="panel p-6">
         <h1 className="mb-5 border-b border-line pb-3 text-xl font-bold">
           编辑笔记
         </h1>

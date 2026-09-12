@@ -58,14 +58,14 @@ PIKS-Vault/    Obsidian vault 存档(界面层已下线,不再更新)
 用 `os/exec` 调其 CLI 三命令(`research`/`synthesize`/`gate`),读产物落 `research_runs`。
 设计与验收见 `docs/phase4/{design,stages}/research-merge.md`。
 
-**独立迭代(D-11 硬约束)**:改 Python 只需重建 `piks-research` 镜像,Go 与前端零接触。
-耦合面仅「CLI 参数 + 产物契约」(冻结,`research/README.md` 契约表)。
+**独立迭代(代码级)**:Go 与前端**不依赖 research 源码**,只经「CLI 参数 + 产物契约」
+(冻结,`research/README.md` 契约表)交互 —— 由 `scripts/check-research-isolation.sh` 校验。
+
+**部署形态(2026-09-12 起,单镜像)**:`piks-tools` 底座为 `python:3.12-slim`,同时含
+nginx 网关 + Go bins + React dist + research(Python 运行时)。Go 编排在 web 进程内
+`os/exec python3` 触发 —— 故 UI「深研」按钮与 CLI 深研共用同一镜像、同一容器。
 
 ```bash
-# 只重建深研镜像(不触发 golang/node 阶段)
-go build -o bin/research-run ./cmd/research-run   # ENTRYPOINT 二进制取自上下文
-docker build --target research -t piks-research:latest .
-
 # 独立性 CI 检查(零共享状态 / 产物契约面)
 ./scripts/check-research-isolation.sh
 
@@ -73,6 +73,10 @@ docker build --target research -t piks-research:latest .
 go test ./internal/research/...                                 # fixture 状态机,不依赖 Python
 cd research && .venv/bin/python -m pytest tests                 # Python 单测,不依赖 PIKS
 #   依赖:requirements.txt(运行)+ requirements-dev.txt(测试;不进运行镜像)
+
+# 生产深研(单镜像,两种入口等价)
+#   UI:实体卡/持仓行「深研」按钮            CLI(容器内):
+docker compose exec web ./bin/research-run 000560 --profile short-term
 ```
 
 ## 快速开始(dev,本机)

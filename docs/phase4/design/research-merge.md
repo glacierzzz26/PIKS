@@ -1,6 +1,8 @@
 # research 并入 PIKS：单仓多运行时 + Go 去 vendor
 
-> 状态：**✅ 已定稿冻结（2026-09-12）**。D-2 = **方案 B（同仓双镜像）**；**research 支持独立迭代**（独立性契约见 §4.10，这是本设计的硬约束）。范围：把 `../investment-research`（个股研究智能体，Python 6562 行 / 5 个依赖）并入 PIKS 仓库，成为 PIKS 的「个股深研」能力；同时移除 Go `vendor/`（8.2MB / 280 文件）改为模块代理构建。
+> ⚠️ **D-2 已于 2026-09-12 被后续决策取代（单镜像）**：本文档 §4.2 的「方案 B（同仓双镜像）」不再是生产形态。实际部署为**单镜像**——`piks-tools` 底座换 `python:3.12-slim`，同容器含 nginx + Go bins + React dist + research(Python)。原因：双镜像下 web 容器（纯 Go）无 `python3`，Go 编排 `os/exec python3` 触发的 **UI「深研」按钮在生产必失败**，只能走 CLI；单镜像让 UI 与 CLI 共用同一容器、无需 docker.sock 委托桥。**D-11 的代码级独立性（不读 Python 源码、只经 CLI + 产物契约）完整保留**，仅放弃镜像级隔离（改 Python 需重启 web 容器）。下文与 §4.2/§4.3、D-2 相关的「双镜像」表述**已被取代，保留以存决策历史**。部署实现见 `docs/phase4/stages/research-merge.md` 顶部补记。
+>
+> 状态：**✅ 已定稿冻结（2026-09-12）**。D-2 = **方案 B（同仓双镜像）**（**已被上述单镜像取代**）；**research 支持独立迭代**（独立性契约见 §4.10，这是本设计的硬约束）。范围：把 `../investment-research`（个股研究智能体，Python 6562 行 / 5 个依赖）并入 PIKS 仓库，成为 PIKS 的「个股深研」能力；同时移除 Go `vendor/`（8.2MB / 280 文件）改为模块代理构建。
 > 契约依据：`internal/ai/ai.go`（Provider 接口）、`internal/ai/openai_compat.go`（Chat/StructuredOutput 现状）、`internal/model/model.go`（Event/Entity/Evidence/Trade 真实 DTO）、`internal/web/server.go`（`/api/v1` 路由与 CORS）、`migrations/0011_position_reviews.sql`（迁移与缓存表约定）、`cmd/entity-build/main.go:93`（实体股票代码落位）、investment-research `cli.py` / `report/synthesis.py` / `analysis/number_lint.py` / `quality_gate.py` / `storage/`。
 
 ---

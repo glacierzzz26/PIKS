@@ -2,7 +2,23 @@
 
 > 子阶段:research 并入实现与验收(2026-09-12)
 > 前置:`docs/phase4/design/research-merge.md` 已定稿冻结(D-1~D-11)
-> 状态:✅ 已落地(dev-only;未部署 lab —— D-8)
+> 状态:✅ 已落地;**生产上线(单镜像化)进行中(2026-09-12)**
+
+## 0.1 生产上线补记(2026-09-12,在 T1~T7 之后)
+
+T1~T7 原为 dev-only(D-8)。首次上生产时(单镜像化)发现并修复一处双镜像拓扑缺陷:
+
+- **缺陷**:D-2 双镜像下 web 容器是纯 Go(`nginx:alpine`,无 `python3`),而 Go 编排
+  `internal/research/runner.go` 用 `os/exec python3` 触发深研 —— **UI「深研」按钮在生产必 `failed`**
+  (`exec: python3: not found`),只有 `docker compose run --rm research` CLI 能跑。dev 未暴露(宿主机有 venv)。
+- **修复(用户决策,2026-09-12)**:**单镜像**——`piks-tools` 底座换 `python:3.12-slim` + apt 装 nginx
+  + pip 装 research 依赖,web 容器内 nginx + Go + Python 同驻。Go 侧零改动(仍找 venv→退回 PATH python3)。
+- **保留**:D-11 代码级独立性(`check-research-isolation.sh` 照跑);**放弃**镜像级隔离(改 Python 需重启 web)。
+- **顺带**:Go bins 加 `-ldflags "-s -w"`(179MB→136MB);`deploy.sh` 的 pip/apt 默认走 aliyun
+  (国内 pypi.org 15s 超时、deb.debian.org apt 挂 20+ 分钟实测)。
+- **验收**:本地隔离栈实测 UI 触发(`POST /api/v1/research-runs`→`done`,metrics/synthesis/lint 44/44/gate 齐全)
+  + CLI(`./bin/research-run 000001`→done)双链路;migrate 12 个(含 0012);10 页面 + SPA + `/api/*` 全 200。
+- **镜像**:908MB(pip 300 + apt 114 + Go 136 + python 底座 179 + 其余);双镜像原为 970MB —— 单镜像总量略省。
 
 ## 0. 落地范围
 

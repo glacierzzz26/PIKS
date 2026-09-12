@@ -36,10 +36,10 @@ function Card({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded border border-line bg-card shadow-card">
-      <div className="flex h-12 items-center gap-2 border-b border-line px-4">
-        <h2 className="card-title mb-0">{title}</h2>
-        {count !== undefined && <span className="num text-xs text-muted">{count}</span>}
+    <div className="panel">
+      <div className="flex h-12 items-center gap-2 border-b border-line px-5">
+        <h2 className="mb-0 text-[15px] font-bold tracking-wide">{title}</h2>
+        {count !== undefined && <span className="num text-xs text-faint">{count}</span>}
       </div>
       {children}
     </div>
@@ -48,7 +48,7 @@ function Card({
 
 /** 分段空态（小号，保持表格高度节奏） */
 function Mini({ label }: { label: string }) {
-  return <p className="px-4 py-4 text-[13px] text-muted">{label}</p>;
+  return <p className="px-4 py-4 text-[13px] text-faint">{label}</p>;
 }
 
 /** 周报（交互）：周导航 + 五段聚合 + AI 综述生成 */
@@ -85,18 +85,17 @@ export default function Page() {
 
   return (
     <div>
-      <div className="mb-1 mt-5">
-        <div className="flex items-baseline gap-3">
-          <h1 className="mb-0 text-2xl font-bold tracking-wide">周报</h1>
-          <span className="num text-[13px] text-muted">
-            {data ? `${data.week}` : "—"}
-          </span>
-          <span className="ml-auto text-xs text-muted">{data?.range ?? ""}</span>
+      <div className="page-head">
+        <div>
+          <h1>周报</h1>
+          <div className="psub">
+            规则聚合本周快照 / 事件 / 笔记 / 交易 + AI 综述（手动触发）
+          </div>
         </div>
-        <div className="mt-3 flex items-center gap-1.5">
+        <div className="meta">
           <button
             onClick={() => go(-1)}
-            className="inline-flex h-8 items-center gap-1 rounded-sm border border-line bg-card px-2.5 text-xs text-muted hover:text-accent"
+            className="inline-flex h-8 items-center gap-1 rounded-[9px] border border-line bg-card px-2.5 text-xs text-muted hover:text-accent"
           >
             <ChevronLeft size={13} />
             上一周
@@ -106,7 +105,7 @@ export default function Page() {
           </Chip>
           <button
             onClick={() => go(1)}
-            className="inline-flex h-8 items-center gap-1 rounded-sm border border-line bg-card px-2.5 text-xs text-muted hover:text-accent"
+            className="inline-flex h-8 items-center gap-1 rounded-[9px] border border-line bg-card px-2.5 text-xs text-muted hover:text-accent"
           >
             下一周
             <ChevronRight size={13} />
@@ -115,51 +114,53 @@ export default function Page() {
       </div>
 
       {loading ? (
-        <div className="mt-4 rounded border border-line bg-card shadow-card">
+        <div className="panel">
           <LoadingBlock rows={5} />
         </div>
       ) : error ? (
-        <div className="mt-4 rounded border border-line bg-card shadow-card">
+        <div className="panel">
           <ErrorState msg={error} />
         </div>
       ) : !data ? (
-        <div className="mt-4 rounded border border-line bg-card shadow-card">
+        <div className="panel">
           <EmptyState tip="周报数据不可用" />
         </div>
       ) : (
-        <div className="mt-4 flex flex-col gap-3.5">
+        <div className="flex flex-col gap-3.5">
           {/* AI 综述 */}
-          <div className="rounded border border-line bg-card shadow-card">
-            <div className="flex h-12 items-center gap-2 border-b border-line px-4">
-              <h2 className="card-title mb-0">AI 综述</h2>
-              {data.summary && (
-                <span className="num text-xs text-muted">
-                  {data.summary.model} · {data.summary.tokens.toLocaleString()} tokens
-                </span>
-              )}
-              <button
-                onClick={generate}
-                disabled={generating}
-                className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-sm bg-accent px-3 text-xs font-medium text-white no-underline hover:opacity-90 disabled:opacity-50"
-              >
-                <Wand2 size={13} />
+          <div className="panel">
+            <div className="wk-head">
+              <div>
+                <h3>{data.week}</h3>
+                <div className="rng">{data.range}</div>
+              </div>
+              <button onClick={generate} disabled={generating} className="btn">
+                <Wand2 size={13} className="mr-1 inline" />
                 {generating ? "生成中…" : data.summary ? "重新生成" : "生成 AI 综述"}
               </button>
             </div>
-            {genMsg && (
-              <div className="flex items-center gap-2 border-b border-line px-4 py-2.5">
-                <Chip tone={genMsg.tone}>{genMsg.label}</Chip>
-              </div>
-            )}
-            {data.summary ? (
-              <div className="px-5 py-4">
+            {data.summary && (
+              <div className="ai-summary">
+                <div className="ah">
+                  <Wand2 size={16} strokeWidth={2} />
+                  AI 综述 · 本周
+                  <span className="chip">
+                    {data.summary.model} · {data.summary.tokens.toLocaleString()} tokens
+                  </span>
+                </div>
                 <MarkdownBody content={data.summary.summary} />
-                <p className="num mt-3 border-t border-line pt-2 text-[11px] text-muted">
+                <p className="num mt-3 border-t border-line pt-2 text-[11px] text-faint">
                   生成于 {data.summary.updated_at}
                 </p>
               </div>
-            ) : (
-              <p className="px-4 py-4 text-[13px] text-muted">{data.summary_note}</p>
+            )}
+            {genMsg && (
+              <div className="flex items-center gap-2 px-5 pb-4">
+                <Chip tone={genMsg.tone}>{genMsg.label}</Chip>
+              </div>
+            )}
+            {!data.summary && (
+              <p className="px-5 py-4 text-[13px] text-faint">{data.summary_note}</p>
             )}
           </div>
 

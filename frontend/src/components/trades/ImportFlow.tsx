@@ -7,7 +7,7 @@ import { Chip } from "@/components/ui/Num";
 import type { ImportPreview, PreviewPosition, PreviewTrade } from "@/lib/types";
 
 const INPUT =
-  "h-8 w-full min-w-0 rounded-sm border border-line bg-card px-2 text-sm outline-none focus:border-accent";
+  "h-8 w-full min-w-0 rounded-[9px] border border-line bg-card px-2 text-sm text-ink outline-none focus:border-accent";
 
 /** 截图导入：选类型 → 上传识别 → 预览可编辑表格(勾选) → 确认入库 */
 export default function ImportFlow({ onDone }: { onDone: () => void }) {
@@ -78,12 +78,22 @@ export default function ImportFlow({ onDone }: { onDone: () => void }) {
   };
 
   return (
-    <div className="flex flex-col gap-3 rounded border border-line bg-card p-4 shadow-card">
-      <div className="flex items-center gap-2">
-        <h2 className="card-title mb-0">截图导入</h2>
-        <span className="text-xs text-muted">同花顺今日交易 / 持仓截图，AI 视觉识别后预览确认</span>
-        {msg && <span className="text-xs text-down">{msg}</span>}
-        {err && <span className="text-xs text-up">{err}</span>}
+    <div className="panel panel-pad flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="mb-0 text-[15px] font-bold tracking-wide">截图导入</h2>
+        <span className="text-xs text-faint">
+          同花顺今日交易 / 持仓截图，AI 视觉识别后预览确认
+        </span>
+        {msg && (
+          <span className="text-xs" style={{ color: "var(--green)" }}>
+            {msg}
+          </span>
+        )}
+        {err && (
+          <span className="text-xs" style={{ color: "var(--red)" }}>
+            {err}
+          </span>
+        )}
       </div>
 
       {!preview && (
@@ -97,12 +107,12 @@ export default function ImportFlow({ onDone }: { onDone: () => void }) {
             <button
               key={o.k}
               onClick={() => setKind(o.k)}
-              className={`chip ${kind === o.k ? "chip-accent" : "chip-dim"}`}
+              className={`chip-btn ${kind === o.k ? "on" : ""}`}
             >
               {o.label}
             </button>
           ))}
-          <label className="inline-flex h-8 items-center gap-1.5 rounded-sm bg-accent px-3 text-xs font-medium text-white hover:opacity-90">
+          <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-[9px] bg-accent px-3 text-xs font-semibold text-white hover:opacity-90">
             <Upload size={12} />
             选择截图
             <input
@@ -117,9 +127,12 @@ export default function ImportFlow({ onDone }: { onDone: () => void }) {
             />
           </label>
           {file && (
-            <span className="inline-flex items-center gap-1 text-xs text-muted">
+            <span className="inline-flex items-center gap-1 text-xs text-faint">
               {file.name}
-              <button onClick={() => setFile(null)} className="hover:text-up">
+              <button
+                onClick={() => setFile(null)}
+                style={{ color: "var(--ink-faint)" }}
+              >
                 <X size={11} />
               </button>
             </span>
@@ -127,7 +140,7 @@ export default function ImportFlow({ onDone }: { onDone: () => void }) {
           <button
             onClick={upload}
             disabled={busy || !kind || !file}
-            className="inline-flex h-8 items-center rounded-sm border border-line bg-card px-3 text-xs text-muted hover:text-accent disabled:opacity-40"
+            className="inline-flex h-8 items-center rounded-[9px] border border-line bg-card px-3 text-xs text-muted hover:text-accent disabled:opacity-40"
           >
             {busy ? "识别中…" : "开始识别"}
           </button>
@@ -138,22 +151,22 @@ export default function ImportFlow({ onDone }: { onDone: () => void }) {
         <>
           {preview.kind === "position" ? (
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-[13px]">
+              <table className="table">
                 <thead>
-                  <tr className="border-b border-line-strong text-xs font-semibold text-muted">
-                    <th className="px-2 py-2 text-left">选</th>
-                    <th className="px-2 py-2 text-left">代码</th>
-                    <th className="px-2 py-2 text-left">名称</th>
-                    <th className="px-2 py-2 text-right">数量</th>
-                    <th className="px-2 py-2 text-right">成本</th>
-                    <th className="px-2 py-2 text-right">现价</th>
-                    <th className="px-2 py-2 text-right">市值</th>
-                    <th className="px-2 py-2 text-right">盈亏</th>
+                  <tr>
+                    <th style={{ textAlign: "left" }}>选</th>
+                    <th style={{ textAlign: "left" }}>代码</th>
+                    <th style={{ textAlign: "left" }}>名称</th>
+                    <th>数量</th>
+                    <th>成本</th>
+                    <th>现价</th>
+                    <th>市值</th>
+                    <th>盈亏</th>
                   </tr>
                 </thead>
                 <tbody>
                   {preview.positions.map((r, i) => (
-                    <tr key={i} className="border-b border-line last:border-0">
+                    <tr key={i}>
                       <td className="px-2 py-1.5">
                         <input type="checkbox" checked={r.include} onChange={(e) => patch("positions", i, { include: e.target.checked })} />
                       </td>
@@ -171,22 +184,22 @@ export default function ImportFlow({ onDone }: { onDone: () => void }) {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-[13px]">
+              <table className="table">
                 <thead>
-                  <tr className="border-b border-line-strong text-xs font-semibold text-muted">
-                    <th className="px-2 py-2 text-left">选</th>
-                    <th className="px-2 py-2 text-left">日期</th>
-                    <th className="px-2 py-2 text-left">代码</th>
-                    <th className="px-2 py-2 text-left">名称</th>
-                    <th className="px-2 py-2 text-left">方向</th>
-                    <th className="px-2 py-2 text-right">价格</th>
-                    <th className="px-2 py-2 text-right">数量</th>
-                    <th className="px-2 py-2 text-right">金额</th>
+                  <tr>
+                    <th style={{ textAlign: "left" }}>选</th>
+                    <th style={{ textAlign: "left" }}>日期</th>
+                    <th style={{ textAlign: "left" }}>代码</th>
+                    <th style={{ textAlign: "left" }}>名称</th>
+                    <th style={{ textAlign: "left" }}>方向</th>
+                    <th>价格</th>
+                    <th>数量</th>
+                    <th>金额</th>
                   </tr>
                 </thead>
                 <tbody>
                   {preview.trades.map((r, i) => (
-                    <tr key={i} className="border-b border-line last:border-0">
+                    <tr key={i}>
                       <td className="px-2 py-1.5">
                         <input type="checkbox" checked={r.include} onChange={(e) => patch("trades", i, { include: e.target.checked })} />
                       </td>
@@ -206,7 +219,9 @@ export default function ImportFlow({ onDone }: { onDone: () => void }) {
                       </td>
                       <td className="px-1 py-1.5"><input value={r.price} onChange={(e) => patch("trades", i, { price: e.target.value })} className={`${INPUT} num text-right`} /></td>
                       <td className="px-1 py-1.5"><input value={r.qty} onChange={(e) => patch("trades", i, { qty: e.target.value })} className={`${INPUT} num text-right`} /></td>
-                      <td className="num px-2 py-1.5 text-right text-muted">{r.amount}</td>
+                      <td className="num-t" style={{ color: "var(--ink-faint)" }}>
+                        {r.amount}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -218,13 +233,13 @@ export default function ImportFlow({ onDone }: { onDone: () => void }) {
             <button
               onClick={confirm}
               disabled={busy}
-              className="inline-flex h-8 items-center gap-1.5 rounded-sm bg-accent px-3 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+              className="inline-flex h-8 items-center gap-1.5 rounded-[9px] bg-accent px-3 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
             >
               {busy ? "确认中…" : "确认导入"}
             </button>
             <button
               onClick={reset}
-              className="inline-flex h-8 items-center rounded-sm border border-line bg-card px-3 text-xs text-muted hover:text-up"
+              className="inline-flex h-8 items-center rounded-[9px] border border-line bg-card px-3 text-xs text-muted hover:text-up"
             >
               取消
             </button>

@@ -7,9 +7,6 @@ import { apiPost, ENDPOINTS } from "@/lib/api";
 import { LoadingBlock, ErrorState } from "@/components/ui/States";
 import type { SettingsForm } from "@/lib/types";
 
-const INPUT =
-  "h-9 w-full rounded-sm border border-line bg-card px-3 text-sm outline-none focus:border-accent";
-
 /** 表单项：标签 + 提示 + 控件 */
 function Field({
   label,
@@ -21,10 +18,10 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-[13px] font-medium text-ink">{label}</label>
+    <div className="frow">
+      <label>{label}</label>
       {children}
-      {hint && <p className="text-xs text-muted">{hint}</p>}
+      {hint && <p className="tip">{hint}</p>}
     </div>
   );
 }
@@ -85,100 +82,112 @@ export default function Page() {
   const opts = form.data?.model_options ?? [];
 
   return (
-    <div className="mx-auto max-w-[680px]">
-      <div className="mb-1 mt-5">
-        <div className="flex items-baseline gap-3">
-          <h1 className="mb-0 text-2xl font-bold tracking-wide">设置</h1>
-          <span className="text-[13px] text-muted">大模型分层配置（存 app_config 表）</span>
+    <div>
+      <div className="page-head">
+        <div>
+          <h1>设置</h1>
+          <div className="psub">大模型分层配置（存 app_config 表）</div>
         </div>
       </div>
 
       {form.loading ? (
-        <div className="mt-4 rounded border border-line bg-card shadow-card">
+        <div className="panel">
           <LoadingBlock rows={4} />
         </div>
       ) : form.error ? (
-        <div className="mt-4 rounded border border-line bg-card shadow-card">
+        <div className="panel">
           <ErrorState msg={form.error} />
         </div>
       ) : !form.data ? (
-        <div className="mt-4 rounded border border-line bg-card shadow-card">
-          <p className="px-4 py-6 text-[13px] text-muted">配置不可用</p>
+        <div className="panel">
+          <p className="px-5 py-6 text-[13px] text-faint">配置不可用</p>
         </div>
       ) : (
-        <div className="mt-4 flex flex-col gap-4 rounded border border-line bg-card p-5 shadow-card">
-          {msg && (
-            <p className={`text-xs ${msg.ok ? "text-down" : "text-up"}`}>{msg.text}</p>
-          )}
+        <div className="max-w-[720px]">
+          <div className="form-card">
+            <h3>AI 服务</h3>
+            <p className="fnote">抽取 / 推理 / 视觉三档模型 + 日预算护栏</p>
 
-          <Field label="AI 服务地址" hint="OpenAI 兼容 base_url，如 https://api.xxx.com/v1">
-            <input
-              value={vals.base_url}
-              onChange={set("base_url")}
-              placeholder="https://…"
-              className={INPUT}
-            />
-          </Field>
+            {msg && (
+              <p
+                className="mb-3 text-xs"
+                style={{ color: msg.ok ? "var(--green)" : "var(--red)" }}
+              >
+                {msg.text}
+              </p>
+            )}
 
-          <Field label="API Key" hint={form.data.key_masked ? `已配置：${form.data.key_masked}（留空则不改）` : "尚未配置"}>
-            <input
-              type="password"
-              value={vals.key}
-              onChange={set("key")}
-              placeholder={form.data.key_masked ? "留空保持原密钥" : "粘贴 API Key"}
-              className={INPUT}
-            />
-          </Field>
+            <Field label="AI 服务地址" hint="OpenAI 兼容 base_url，如 https://api.xxx.com/v1">
+              <input
+                value={vals.base_url}
+                onChange={set("base_url")}
+                placeholder="https://…"
+              />
+            </Field>
 
-          <Field label="抽取模型">
-            <select value={vals.model_extract} onChange={set("model_extract")} className={INPUT}>
-              <option value="">选择模型</option>
-              {opts.map((o) => (
-                <option key={o} value={o}>{o}</option>
-              ))}
-            </select>
-          </Field>
+            <Field
+              label="API Key"
+              hint={
+                form.data.key_masked
+                  ? `已配置：${form.data.key_masked}（留空则不改）`
+                  : "尚未配置"
+              }
+            >
+              <input
+                type="password"
+                value={vals.key}
+                onChange={set("key")}
+                placeholder={form.data.key_masked ? "留空保持原密钥" : "粘贴 API Key"}
+              />
+            </Field>
 
-          <Field label="深度推理模型" hint="用于周报综述 / 交易复盘 / AI 对话">
-            <select value={vals.model_reasoning} onChange={set("model_reasoning")} className={INPUT}>
-              <option value="">选择模型</option>
-              {opts.map((o) => (
-                <option key={o} value={o}>{o}</option>
-              ))}
-            </select>
-          </Field>
+            <Field label="抽取模型">
+              <select value={vals.model_extract} onChange={set("model_extract")}>
+                <option value="">选择模型</option>
+                {opts.map((o) => (
+                  <option key={o} value={o}>{o}</option>
+                ))}
+              </select>
+            </Field>
 
-          <Field label="视觉模型" hint="用于截图导入/截图提问；留空回退抽取模型">
-            <select value={vals.model_vision} onChange={set("model_vision")} className={INPUT}>
-              <option value="">回退抽取模型</option>
-              {opts.map((o) => (
-                <option key={o} value={o}>{o}</option>
-              ))}
-            </select>
-          </Field>
+            <Field label="深度推理模型" hint="用于周报综述 / 交易复盘 / AI 对话">
+              <select value={vals.model_reasoning} onChange={set("model_reasoning")}>
+                <option value="">选择模型</option>
+                {opts.map((o) => (
+                  <option key={o} value={o}>{o}</option>
+                ))}
+              </select>
+            </Field>
 
-          <Field label="日 token 预算" hint="0 = 关闭预算护栏">
-            <input
-              type="number"
-              min={0}
-              value={vals.budget}
-              onChange={set("budget")}
-              className={INPUT}
-            />
-          </Field>
+            <Field label="视觉模型" hint="用于截图导入/截图提问；留空回退抽取模型">
+              <select value={vals.model_vision} onChange={set("model_vision")}>
+                <option value="">回退抽取模型</option>
+                {opts.map((o) => (
+                  <option key={o} value={o}>{o}</option>
+                ))}
+              </select>
+            </Field>
 
-          {form.data.model_note && (
-            <p className="text-xs text-amber">{form.data.model_note}</p>
-          )}
+            <Field label="日 token 预算" hint="0 = 关闭预算护栏">
+              <input
+                type="number"
+                min={0}
+                value={vals.budget}
+                onChange={set("budget")}
+              />
+            </Field>
 
-          <button
-            onClick={save}
-            disabled={saving}
-            className="inline-flex h-9 w-fit items-center gap-1.5 rounded-sm bg-accent px-5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-          >
-            <Save size={13} />
-            {saving ? "保存中…" : "保存设置"}
-          </button>
+            {form.data.model_note && (
+              <p className="text-xs" style={{ color: "var(--amber)" }}>
+                {form.data.model_note}
+              </p>
+            )}
+
+            <button onClick={save} disabled={saving} className="btn-save mt-4">
+              <Save size={13} className="mr-1.5 inline" />
+              {saving ? "保存中…" : "保存设置"}
+            </button>
+          </div>
         </div>
       )}
     </div>

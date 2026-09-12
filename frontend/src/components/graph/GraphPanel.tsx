@@ -28,12 +28,12 @@ export default function GraphPanel({
   );
 
   return (
-    <div className="absolute bottom-3 right-3 top-3 w-[340px] max-w-[80%] overflow-auto rounded border border-line bg-card p-4 shadow-pop">
+    <div className="absolute bottom-3 right-3 top-3 w-[340px] max-w-[80%] overflow-auto rounded-[14px] border border-line bg-card p-4 shadow-pop">
       <div className="flex items-start justify-between">
         <h3 className="m-0 text-base font-bold leading-snug">{entity.name}</h3>
         <button
           onClick={onClose}
-          className="text-xs text-muted hover:text-up"
+          className="text-xs text-faint hover:text-up"
         >
           关闭
         </button>
@@ -47,13 +47,13 @@ export default function GraphPanel({
         ))}
       </div>
       {entity.description && (
-        <p className="mt-3 text-[13px] leading-relaxed">{entity.description}</p>
+        <p className="mt-3 text-[13px] leading-relaxed text-muted">{entity.description}</p>
       )}
 
-      <h4 className="mb-1.5 mt-3 border-t border-line pt-3 text-xs font-semibold text-muted">
+      <h4 className="mb-1.5 mt-3 border-t border-line pt-3 text-xs font-semibold text-faint">
         关系（{rels.length}）
       </h4>
-      {rels.length === 0 && <p className="text-xs italic text-muted">暂无</p>}
+      {rels.length === 0 && <p className="text-xs italic text-faint">暂无</p>}
       {rels.map((r) => {
         const otherId = r.from_id === entity.id ? r.to_id : r.from_id;
         const other = entities.find((e) => e.id === otherId);
@@ -63,7 +63,7 @@ export default function GraphPanel({
             onClick={() => onFocus(otherId)}
             className="mb-1 block w-full truncate text-left text-[13px] hover:text-accent"
           >
-            <span className="text-muted">{r.rel_type}</span> {other?.name ?? otherId}
+            <span className="text-faint">{r.rel_type}</span> {other?.name ?? otherId}
           </button>
         );
       })}

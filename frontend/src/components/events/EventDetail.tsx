@@ -36,7 +36,7 @@ export default function EventDetail({
               <span className="text-[15px] font-bold">事件详情</span>
               <button
                 onClick={onClose}
-                className="flex h-8 w-8 items-center justify-center rounded-sm text-muted hover:bg-bg-soft"
+                className="flex h-8 w-8 items-center justify-center rounded-[9px] text-faint hover:bg-bg-soft"
               >
                 <X size={16} />
               </button>
@@ -59,14 +59,14 @@ function EventBody({ event }: { event: EventItem }) {
         <Chip tone={event.status === "confirmed" ? "down" : "amber"}>
           {event.status === "confirmed" ? "已确认" : "待复核"}
         </Chip>
-        <span className="num ml-auto text-xs text-muted">
+        <span className="num ml-auto text-xs text-faint">
           {event.occurred_at.slice(0, 16).replace("T", " ")}
         </span>
       </div>
 
       <h2 className="mt-3 text-lg font-semibold leading-snug">{event.title}</h2>
 
-      <div className="mt-3 flex items-center justify-between rounded-sm border border-line bg-bg-soft px-3 py-2">
+      <div className="mt-3 flex items-center justify-between rounded-[10px] border border-line bg-card-soft px-3 py-2">
         <span className="text-xs text-muted">AI 置信度</span>
         <ConfidenceBar v={event.confidence} />
       </div>
@@ -94,7 +94,7 @@ function EventBody({ event }: { event: EventItem }) {
       </Section>
 
       <Section title="来源">
-        <span className="inline-flex items-center gap-1 text-[13px] text-muted">
+        <span className="inline-flex items-center gap-1 text-[13px] text-faint">
           {event.source}
           {event.source_url && <ExternalLink size={12} className="text-accent" />}
         </span>

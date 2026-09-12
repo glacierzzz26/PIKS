@@ -6,7 +6,7 @@ const PAGE_SIZES = [20, 50, 100];
 
 /**
  * 分页（规范：默认 20/页；页码与页大小写入 URL query 可分享）。
- * 用法：page/size 由页面的 useUrlState 提供，翻页时调用 onPage 重置筛选后的页码。
+ * 样式对齐 HTML .pager（圆角页码，当前页品牌实底）。
  */
 export default function Pagination({
   page,
@@ -27,39 +27,47 @@ export default function Pagination({
   const nums = pageNumbers(page, pages);
 
   return (
-    <div className="flex flex-wrap items-center gap-3 border-t border-line px-4 py-3">
-      <span className="num text-xs text-muted">
+    <div className="pager">
+      <span className="num mr-2 text-[12.5px] text-faint">
         共 {total} 条 · 第 {page}/{pages} 页
       </span>
 
-      <div className="ml-auto flex items-center gap-1">
-        <PagerBtn disabled={page <= 1} onClick={() => onPage(page - 1)}>
-          <ChevronLeft size={14} />
-        </PagerBtn>
+      <button
+        disabled={page <= 1}
+        onClick={() => onPage(page - 1)}
+        className="disabled:cursor-not-allowed disabled:opacity-40"
+        aria-label="上一页"
+      >
+        <ChevronLeft size={14} />
+      </button>
 
-        {nums.map((n, i) =>
-          n === -1 ? (
-            <span key={`e${i}`} className="px-1 text-xs text-muted">
-              …
-            </span>
-          ) : (
-            <PagerBtn key={n} active={n === page} onClick={() => onPage(n)}>
-              {n}
-            </PagerBtn>
-          )
-        )}
+      {nums.map((n, i) =>
+        n === -1 ? (
+          <span key={`e${i}`} className="px-1 text-[12.5px] text-faint">
+            …
+          </span>
+        ) : (
+          <button key={n} className={n === page ? "cur" : ""} onClick={() => onPage(n)}>
+            {n}
+          </button>
+        )
+      )}
 
-        <PagerBtn disabled={page >= pages} onClick={() => onPage(page + 1)}>
-          <ChevronRight size={14} />
-        </PagerBtn>
-      </div>
+      <button
+        disabled={page >= pages}
+        onClick={() => onPage(page + 1)}
+        className="disabled:cursor-not-allowed disabled:opacity-40"
+        aria-label="下一页"
+      >
+        <ChevronRight size={14} />
+      </button>
 
-      <label className="flex items-center gap-1.5 text-xs text-muted">
+      <label className="ml-3 flex items-center gap-1.5 text-[12.5px] text-faint">
         每页
         <select
           value={pageSize}
           onChange={(e) => onPageSize(Number(e.target.value))}
-          className="h-7 rounded-sm border border-line bg-card-soft px-1.5 text-xs outline-none focus:border-accent"
+          className="rounded-[7px] border border-line bg-card px-1.5 py-0.5 text-[12.5px] text-muted outline-none focus:border-accent"
         >
           {PAGE_SIZES.map((s) => (
             <option key={s} value={s}>
@@ -70,32 +78,6 @@ export default function Pagination({
         条
       </label>
     </div>
-  );
-}
-
-function PagerBtn({
-  children,
-  onClick,
-  disabled,
-  active,
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-  disabled?: boolean;
-  active?: boolean;
-}) {
-  return (
-    <button
-      disabled={disabled}
-      onClick={onClick}
-      className={`flex h-7 min-w-7 items-center justify-center rounded-sm border px-1.5 text-xs transition-colors ${
-        active
-          ? "border-accent bg-accent-soft font-semibold text-accent"
-          : "border-line bg-card text-muted hover:border-accent hover:text-accent"
-      } disabled:cursor-not-allowed disabled:opacity-40`}
-    >
-      {children}
-    </button>
   );
 }
 

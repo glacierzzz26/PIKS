@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { apiPost, ENDPOINTS } from "@/lib/api";
 
-const INPUT =
-  "h-9 w-full rounded-sm border border-line bg-card px-3 text-sm outline-none focus:border-accent";
+const INPUT = "input";
 
 /** 手动录入一笔交易（POST /api/v1/trades，成功后回调刷新列表） */
 export default function TradeAddForm({ onDone }: { onDone: () => void }) {
@@ -49,10 +48,17 @@ export default function TradeAddForm({ onDone }: { onDone: () => void }) {
   };
 
   return (
-    <div className="flex flex-col gap-3 rounded border border-line bg-card p-4 shadow-card">
+    <div className="panel panel-pad flex flex-col gap-3">
       <div className="flex items-center gap-2">
-        <h2 className="card-title mb-0">手动录入</h2>
-        {msg && <span className={`text-xs ${msg === "已录入" ? "text-down" : "text-up"}`}>{msg}</span>}
+        <h2 className="mb-0 text-[15px] font-bold tracking-wide">手动录入</h2>
+        {msg && (
+          <span
+            className="text-xs"
+            style={{ color: msg === "已录入" ? "var(--green)" : "var(--red)" }}
+          >
+            {msg}
+          </span>
+        )}
       </div>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <input value={f.name} onChange={set("name")} placeholder="证券名称 *" className={INPUT} />
@@ -68,7 +74,7 @@ export default function TradeAddForm({ onDone }: { onDone: () => void }) {
         <button
           onClick={submit}
           disabled={saving}
-          className="h-9 rounded-sm bg-accent px-4 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+          className="h-9 rounded-[9px] bg-accent px-4 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
         >
           {saving ? "录入中…" : "录入"}
         </button>

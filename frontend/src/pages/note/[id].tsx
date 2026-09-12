@@ -49,11 +49,11 @@ export default function Page() {
   };
 
   if (docs.loading) {
-    return <div className="py-20 text-center text-[13px] text-muted">加载中…</div>;
+    return <div className="py-20 text-center text-[13px] text-faint">加载中…</div>;
   }
   if (docs.error) {
     return (
-      <div className="mt-6 rounded border border-line bg-card shadow-card">
+      <div className="panel">
         <ErrorState msg={docs.error} />
       </div>
     );
@@ -61,7 +61,7 @@ export default function Page() {
   const doc = docs.data;
   if (!doc) {
     return (
-      <div className="mt-6 rounded border border-line bg-card shadow-card">
+      <div className="panel">
         <EmptyState tip="文档不存在或已被归档" />
       </div>
     );
@@ -82,7 +82,7 @@ export default function Page() {
           <span className="ml-auto flex items-center gap-2">
             <Link
               to={`/notes/${doc.id}/edit`}
-              className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-line bg-card px-3 text-xs text-muted no-underline hover:text-accent"
+              className="inline-flex h-8 items-center gap-1.5 rounded-[9px] border border-line bg-card px-3 text-xs text-muted no-underline hover:text-accent"
             >
               <Pencil size={12} />
               编辑
@@ -90,7 +90,7 @@ export default function Page() {
             <button
               onClick={archive}
               disabled={archiving}
-              className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-line bg-card px-3 text-xs text-muted hover:text-up disabled:opacity-50"
+              className="inline-flex h-8 items-center gap-1.5 rounded-[9px] border border-line bg-card px-3 text-xs text-muted hover:text-up disabled:opacity-50"
             >
               <Archive size={12} />
               {archiving ? "归档中…" : "归档"}
@@ -99,7 +99,7 @@ export default function Page() {
         )}
       </div>
 
-      <article className="rounded border border-line bg-card px-7 py-6 shadow-card">
+      <article className="panel px-7 py-6">
         <div className="flex items-center gap-2.5">
           <Chip tone={NOTE_TONE[doc.type] ?? "accent"}>
             {DOC_TYPE_LABEL[doc.type] ?? doc.type}
@@ -109,7 +109,7 @@ export default function Page() {
               {STATUS_LABEL[doc.status] ?? doc.status}
             </Chip>
           )}
-          <span className="num text-xs text-muted">更新于 {doc.updated_at}</span>
+          <span className="num text-xs text-faint">更新于 {doc.updated_at}</span>
         </div>
         <h1 className="mb-4 mt-3 border-b border-line pb-3 text-2xl font-bold leading-snug">
           {doc.title}

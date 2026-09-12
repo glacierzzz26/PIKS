@@ -2,33 +2,22 @@
 
 import { Link } from "react-router-dom";
 import { Num } from "@/components/ui/Num";
-import { Chip } from "@/components/ui/Num";
 import type { SnapRow } from "@/lib/types";
 
-/** 历史情绪快照卡（对齐 base.css .snap） */
-export function SnapCard({
-  s,
-  latest,
-}: {
-  s: SnapRow;
-  latest?: boolean;
-}) {
+/** 历史情绪快照卡（对齐 HTML .snap） */
+export function SnapCard({ s, latest }: { s: SnapRow; latest?: boolean }) {
+  const tone =
+    s.emotion_score >= 60 ? "st-up" : s.emotion_score >= 45 ? "st-amber" : "st-down";
   return (
-    <div
-      className={`rounded-sm border bg-card p-3 ${
-        latest ? "border-accent shadow-card" : "border-line"
-      }`}
-    >
+    <div className="rounded-[12px] border border-line bg-soft p-3">
       <div className="mb-2.5 flex items-center gap-2">
-        <span className="text-[15px] font-bold">{s.date}</span>
+        <span className="num text-[15px] font-bold">{s.date}</span>
         {latest && (
           <span className="rounded-full bg-accent px-2 py-px text-[10px] font-bold text-accent-ink">
             最新
           </span>
         )}
-        <Chip tone={s.emotion_score >= 60 ? "up" : s.emotion_score >= 45 ? "amber" : "down"}>
-          {s.emotion_state}
-        </Chip>
+        <span className={`st ${tone} ml-auto`}>{s.emotion_state}</span>
       </div>
       <div className="grid grid-cols-4 gap-1.5">
         {[
@@ -38,10 +27,8 @@ export function SnapCard({
           { label: "最高板", v: s.max_board, cls: "" },
         ].map((m) => (
           <div key={m.label} className="text-center">
-            <b className={`num block text-[17px] font-extrabold ${m.cls}`}>
-              {m.v}
-            </b>
-            <span className="text-[11px] text-muted">{m.label}</span>
+            <b className={`num block text-[18px] font-extrabold ${m.cls}`}>{m.v}</b>
+            <span className="text-[11px] text-faint">{m.label}</span>
           </div>
         ))}
       </div>
@@ -49,60 +36,85 @@ export function SnapCard({
   );
 }
 
-/** 知识库规模统计（对齐 .stat） */
+/** 知识库规模统计（对齐 HTML .kpi） */
 export function StatCard({ label, value }: { label: string; value: number }) {
   return (
-    <div className="flex items-center justify-between rounded border border-line bg-card px-4 py-4 shadow-card">
-      <b className="num text-[28px] font-extrabold text-accent">{value}</b>
-      <span className="text-[13px] text-muted">{label}</span>
+    <div className="kpi">
+      <div className="label">{label}</div>
+      <div className="val">{value.toLocaleString("zh-CN")}</div>
     </div>
   );
 }
 
-/** 横向条形图（对齐 .bar-row） */
+/** 横向分布条（对齐 HTML .expo-*） */
 export function Bars({ data }: { data: { name: string; count: number }[] }) {
-  const max = Math.max(...data.map((d) => d.count));
+  const max = Math.max(1, ...data.map((d) => d.count));
   return (
-    <div className="flex flex-col gap-1.5">
-      {data.map((d) => (
-        <div key={d.name} className="grid grid-cols-[104px_1fr_28px] items-center gap-2">
-          <span className="truncate whitespace-nowrap text-right text-[13px] text-muted">
-            {d.name}
-          </span>
-          <span className="h-3 overflow-hidden rounded-[5px] border border-line bg-bg-soft">
-            <span
-              className="block h-full rounded-[5px] bg-accent transition-[width] duration-500"
+    <div>
+      {data.map((d, i) => (
+        <div key={d.name} className="expo-row">
+          <div className="expo-top">
+            <span className="en">{d.name}</span>
+            <span className="ev">{d.count} 家</span>
+          </div>
+          <div className="expo-track">
+            <i
+              className={i === 0 ? "lead" : "ok"}
               style={{ width: `${(d.count / max) * 100}%` }}
             />
-          </span>
-          <Num value={d.count} className="text-xs" />
+          </div>
         </div>
       ))}
     </div>
   );
 }
 
-/** 事件排行列表（对齐 .evlist） */
+/** 高置信事件排行（对齐 HTML .table 事件行 + .rank） */
 export function EventRank({
   items,
 }: {
   items: { title: string; score: number; id: string }[];
 }) {
   return (
-    <div className="flex flex-col">
-      {items.map((e, i) => (
-        <Link
-          key={e.id}
-          to={`/events?q=${encodeURIComponent(e.title.slice(0, 8))}`}
-          className="group flex items-baseline gap-2.5 border-b border-dashed border-line py-2 text-sm last:border-0"
-        >
-          <span className="w-4 shrink-0 text-xs text-muted">{i + 1}</span>
-          <span className="flex-1 truncate group-hover:text-accent">
-            {e.title}
-          </span>
-          <Num value={e.score} suffix="分" className="text-xs text-muted" />
-        </Link>
-      ))}
-    </div>
+    <table className="table">
+      <thead>
+        <tr>
+          <th style={{ width: 40 }}>#</th>
+          <th style={{ textAlign: "left" }}>事件标题</th>
+          <th>置信度</th>
+        </tr>
+      </thead>
+      <tbody>
+        {items.map((e, i) => (
+          <tr key={e.id}>
+            <td>
+              <span
+                className={`inline-flex h-5 w-5 items-center justify-center rounded-[6px] text-[11.5px] font-bold ${
+                  i < 2 ? "bg-accent-soft text-accent" : "bg-bg-soft text-faint"
+                }`}
+              >
+                {i + 1}
+              </span>
+            </td>
+            <td style={{ textAlign: "left" }}>
+              <Link
+                to={`/events?q=${encodeURIComponent(e.title.slice(0, 8))}`}
+                className="ev-title no-underline hover:text-accent"
+              >
+                <b>{e.title}</b>
+              </Link>
+            </td>
+            <td>
+              <div className="pct-wrap">
+                <div className="pct-bar">
+                  <i style={{ width: `${e.score * 100}%` }} />
+                </div>
+                <span className="pct-num">{e.score.toFixed(2)}</span>
+              </div>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }

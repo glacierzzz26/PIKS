@@ -14,7 +14,7 @@ import type { Flash } from "@/lib/types";
 /** 快讯流：来源筛选 + 分页（默认 20/页，URL 驱动），重要快讯高亮 */
 export default function Page() {
   return (
-    <Suspense fallback={<div className="mt-6 h-40 animate-pulse rounded bg-card" />}>
+    <Suspense fallback={<div className="panel mt-6"><LoadingBlock rows={8} /></div>}>
       <FlashesInner />
     </Suspense>
   );
@@ -38,44 +38,42 @@ function FlashesInner() {
 
   return (
     <div>
-      <div className="mb-1 mt-5">
-        <div className="flex items-baseline gap-3">
-          <h1 className="mb-0 text-2xl font-bold tracking-wide">快讯流</h1>
-          <span className="num text-[13px] text-muted">{data.length} 条</span>
+      <div className="page-head">
+        <div>
+          <h1>快讯流</h1>
+          <div className="psub">东财 7×24 快讯原始流 · 重要快讯高亮 · 可关联事件</div>
         </div>
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {FLASH_SOURCES.map((s) => (
-            <button
-              key={s.key}
-              onClick={() => setFilter("source", s.key)}
-              className={`chip ${
-                (query.source ?? "") === s.key ? "chip-accent" : "chip-dim"
-              }`}
-            >
-              {s.label}
-            </button>
-          ))}
+        <div className="meta">
+          <span className="st st-accent">
+            共 {flashes.loading ? "…" : data.length} 条
+          </span>
         </div>
       </div>
 
-      {flashes.loading ? (
-        <div className="mt-4 rounded border border-line bg-card shadow-card">
+      <div className="filter-bar">
+        {FLASH_SOURCES.map((s) => (
+          <button
+            key={s.key}
+            onClick={() => setFilter("source", s.key)}
+            className={`chip-btn ${(query.source ?? "") === s.key ? "on" : ""}`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="panel">
+        {flashes.loading ? (
           <LoadingBlock rows={8} />
-        </div>
-      ) : flashes.error ? (
-        <div className="mt-4 rounded border border-line bg-card shadow-card">
+        ) : flashes.error ? (
           <ErrorState msg={flashes.error} />
-        </div>
-      ) : data.length === 0 ? (
-        <div className="mt-4 rounded border border-line bg-card shadow-card">
+        ) : data.length === 0 ? (
           <EmptyState tip="没有匹配的快讯" />
-        </div>
-      ) : (
-        <>
-          {[...groups.entries()].map(([day, list]) => (
-            <section key={day}>
-              <div className="day-title">{day}</div>
-              <div className="rounded border border-line bg-card shadow-card">
+        ) : (
+          <>
+            {[...groups.entries()].map(([day, list]) => (
+              <div key={day}>
+                <div className="day-title px-4">{day}</div>
                 {list.map((f, i) => (
                   <div
                     key={f.id}
@@ -83,7 +81,7 @@ function FlashesInner() {
                       i < list.length - 1 ? "border-b border-line" : ""
                     }`}
                   >
-                    <span className="num w-10 shrink-0 pt-0.5 text-xs text-muted">
+                    <span className="num w-10 shrink-0 pt-0.5 text-xs text-faint">
                       {f.time.slice(11)}
                     </span>
                     <span
@@ -106,10 +104,7 @@ function FlashesInner() {
                   </div>
                 ))}
               </div>
-            </section>
-          ))}
-
-          <div className="mt-3 rounded border border-line bg-card shadow-card">
+            ))}
             <Pagination
               page={page}
               pageSize={size}
@@ -117,9 +112,9 @@ function FlashesInner() {
               onPage={setPage}
               onPageSize={setSize}
             />
-          </div>
-        </>
-      )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

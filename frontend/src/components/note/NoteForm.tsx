@@ -24,8 +24,7 @@ const STATUS_LABEL: Record<string, string> = {
   archived: "归档",
 };
 
-const inputCls =
-  "h-9 w-full rounded-sm border border-line bg-card px-2.5 text-sm outline-none placeholder:text-muted focus:border-accent";
+const inputCls = "input";
 
 /** 笔记编辑表单：type/slug/title/status/confidence/content + 事件/实体关联 */
 export default function NoteForm({
@@ -95,7 +94,7 @@ export default function NoteForm({
     <div className="flex flex-col gap-5">
       <div className="grid gap-4 md:grid-cols-2">
         <div>
-          <label className="mb-1.5 block text-[13px] font-semibold text-muted">
+          <label className="mb-1.5 block text-[12.5px] font-semibold text-muted">
             类型
           </label>
           <select
@@ -111,8 +110,8 @@ export default function NoteForm({
           </select>
         </div>
         <div>
-          <label className="mb-1.5 block text-[13px] font-semibold text-muted">
-            标题 <span className="text-up">*</span>
+          <label className="mb-1.5 block text-[12.5px] font-semibold text-muted">
+            标题 <span style={{ color: "var(--red)" }}>*</span>
           </label>
           <input
             value={title}
@@ -122,7 +121,7 @@ export default function NoteForm({
           />
         </div>
         <div>
-          <label className="mb-1.5 block text-[13px] font-semibold text-muted">
+          <label className="mb-1.5 block text-[12.5px] font-semibold text-muted">
             状态
           </label>
           <select
@@ -138,7 +137,7 @@ export default function NoteForm({
           </select>
         </div>
         <div>
-          <label className="mb-1.5 block text-[13px] font-semibold text-muted">
+          <label className="mb-1.5 block text-[12.5px] font-semibold text-muted">
             置信度（0~1，可选）
           </label>
           <input
@@ -150,7 +149,7 @@ export default function NoteForm({
         </div>
       </div>
       <div>
-        <label className="mb-1.5 block text-[13px] font-semibold text-muted">
+        <label className="mb-1.5 block text-[12.5px] font-semibold text-muted">
           slug（可选，留空自动生成）
         </label>
         <input
@@ -161,15 +160,15 @@ export default function NoteForm({
         />
       </div>
       <div>
-        <label className="mb-1.5 block text-[13px] font-semibold text-muted">
-          内容（Markdown）<span className="text-up">*</span>
+        <label className="mb-1.5 block text-[12.5px] font-semibold text-muted">
+          内容（Markdown）<span style={{ color: "var(--red)" }}>*</span>
         </label>
         <textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
           rows={10}
           placeholder="## 逻辑链&#10;…"
-          className="w-full rounded-sm border border-line bg-card px-2.5 py-2 font-mono text-sm leading-relaxed outline-none placeholder:text-muted focus:border-accent"
+          className="input h-auto py-2 font-mono leading-relaxed"
         />
       </div>
       <div className="grid gap-4 md:grid-cols-2">
@@ -186,12 +185,12 @@ export default function NoteForm({
           onChange={setSelEnts}
         />
       </div>
-      {err && <p className="m-0 text-[13px] text-up">{err}</p>}
+      {err && <p className="m-0 text-[13px]" style={{ color: "var(--red)" }}>{err}</p>}
       <div className="flex items-center gap-3">
         <button
           onClick={submit}
           disabled={saving}
-          className="h-9 rounded-sm bg-accent px-5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+          className="h-9 rounded-[9px] bg-accent px-5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
         >
           {saving ? "保存中…" : submitLabel}
         </button>

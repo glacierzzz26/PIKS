@@ -16,21 +16,21 @@ export default function Page() {
 
   if (events.loading) {
     return (
-      <div className="mt-10 rounded border border-line bg-card shadow-card">
+      <div className="panel mt-10">
         <LoadingBlock rows={3} />
       </div>
     );
   }
   if (events.error) {
     return (
-      <div className="mt-6 rounded border border-line bg-card shadow-card">
+      <div className="panel mt-6">
         <ErrorState msg={events.error} />
       </div>
     );
   }
   if (!event) {
     return (
-      <div className="mt-6 rounded border border-line bg-card shadow-card">
+      <div className="panel mt-6">
         <EmptyState tip="事件不存在或已被归档" />
       </div>
     );

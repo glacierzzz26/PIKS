@@ -1,8 +1,9 @@
 "use client";
 
+import DeepResearchButton from "@/components/research/DeepResearchButton";
 import type { PositionRow } from "@/lib/types";
 
-/** 持仓快照表 */
+/** 持仓快照表（持仓行带「深研」入口，§4.8） */
 export default function PositionTable({ positions }: { positions: PositionRow[] }) {
   return (
     <div className="overflow-x-auto">
@@ -14,6 +15,7 @@ export default function PositionTable({ positions }: { positions: PositionRow[] 
             <th>成本</th>
             <th>现价</th>
             <th>盈亏</th>
+            <th style={{ textAlign: "left" }}>深研</th>
           </tr>
         </thead>
         <tbody>
@@ -33,6 +35,9 @@ export default function PositionTable({ positions }: { positions: PositionRow[] 
                   {p.pnl_pct >= 0 ? "+" : ""}
                   {p.pnl_pct.toFixed(2)}%
                 </span>
+              </td>
+              <td>
+                {p.code ? <DeepResearchButton code={p.code} /> : "—"}
               </td>
             </tr>
           ))}

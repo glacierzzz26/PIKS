@@ -8,8 +8,8 @@
 .gitignore
 PIKS-Vault/
 
-# 构建产物与缓存
-bin/
+# 构建产物与缓存(Go 在 build 阶段从源码编全部 bin,本地 bin/ 不入上下文)
+bin/*
 dist/
 build/
 *.test
@@ -17,6 +17,10 @@ vendor-verify/
 
 # 前端依赖与产物(node 阶段 npm ci 重新生成,不进上下文/镜像)
 frontend/node_modules/
+
+# Python 字节码缓存与本地 venv(dev 侧运行残留,不进镜像;容器内依赖装系统 site-packages)
+research/**/__pycache__/
+research/.venv/
 
 # 文档与样本(镜像不需要)
 docs/

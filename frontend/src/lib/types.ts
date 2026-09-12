@@ -22,6 +22,8 @@ export type Entity = {
   description: string;
   status: "active" | "watch" | "archived";
   updated_at: string;
+  /** 6 位股票代码（仅公司实体带 detail.code 时）；缺省 = 不提供深研入口 */
+  code?: string;
 };
 
 export type Relationship = {
@@ -303,3 +305,125 @@ export type SettingsForm = {
   model_options: string[];
   model_note?: string;
 };
+
+// ---- 个股深研（research 并入，对齐 internal/web/api_research.go DTO）----
+
+/** 编排状态机：pending → gathering → synthesizing → verifying → done / failed */
+export type ResearchStatus =
+  | "pending"
+  | "gathering"
+  | "synthesizing"
+  | "verifying"
+  | "done"
+  | "failed";
+
+/** Evidence 一条：Fact 的溯源凭证（research 的 Evidence 链，逐条落库） */
+export type ResearchEvidence = {
+  id: string;
+  type: string; // fact / …
+  tier: string; // structured / …
+  section: string; // price / volume / events / risk …
+  statement: string;
+  period?: string | null;
+  source?: { provider?: string; uri?: string | null; title?: string | null };
+};
+
+/** 机检问题一条（Number Lint 或 Quality Gate） */
+export type ResearchIssue = {
+  kind?: string;
+  detail?: string;
+  [k: string]: unknown;
+};
+
+/** Number Lint 结果（数字机检：扫描/匹配/忽略/问题） */
+export type ResearchLint = {
+  scanned?: number;
+  matched?: number;
+  ignored?: number;
+  passed?: boolean;
+  issues?: ResearchIssue[];
+};
+
+/** Quality Gate 单项 */
+export type ResearchGateCheck = {
+  name: string;
+  passed: boolean;
+  detail: string;
+};
+
+/** 六项 Quality Gate 结果 */
+export type ResearchGate = {
+  passed?: boolean;
+  checks?: ResearchGateCheck[];
+  issues?: ResearchIssue[];
+};
+
+/** AI 定性研判三槽位（Opinion，非事实） */
+export type ResearchSynthesis = {
+  summary?: string;
+  trend?: string;
+  conclusion?: string;
+};
+
+/** metrics = Fact 区（确定性计算结果，按 section 组织） */
+export type ResearchMetrics = {
+  meta?: Record<string, unknown>;
+  price?: Record<string, number | null>;
+  volume?: Record<string, unknown>;
+  financial?: Record<string, unknown>;
+  events?: Record<string, unknown>;
+  capital?: Record<string, unknown>;
+  risk?: Record<string, unknown>;
+  scorecard?: {
+    overall?: number | null;
+    overall_label?: string;
+    dimensions?: {
+      dimension: string;
+      score: number | null;
+      reason: string;
+      unavailable: boolean;
+    }[];
+  };
+  [k: string]: unknown;
+};
+
+/** GET /api/v1/research-runs/:runId 单份报告全量 */
+export type ResearchRun = {
+  run_id: string;
+  code: string;
+  symbol: string;
+  profile: string;
+  as_of: string;
+  status: ResearchStatus;
+  metrics: ResearchMetrics;
+  synthesis: ResearchSynthesis;
+  markdown: string;
+  lint: ResearchLint;
+  gate: ResearchGate;
+  evidence: ResearchEvidence[];
+  error: string;
+  model: string;
+  tokens: number;
+  created_at: string;
+  updated_at: string;
+};
+
+/** 列表项（GET /api/v1/research-runs，不含 markdown/metrics 宽字段） */
+export type ResearchRunSummary = {
+  run_id: string;
+  code: string;
+  symbol: string;
+  profile: string;
+  as_of: string;
+  status: ResearchStatus;
+  lint_ok: boolean;
+  gate_ok: boolean;
+  error: string;
+  model: string;
+  tokens: number;
+};
+
+export type ResearchRunList = { runs: ResearchRunSummary[] };
+
+/** POST /api/v1/research-runs 触发响应 */
+export type ResearchTrigger = { run_id: string; status: ResearchStatus };

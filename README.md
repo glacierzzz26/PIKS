@@ -29,7 +29,7 @@ migrate → collector(东财 7x24 快讯) → worker(AI 抽取 events) → clust
 
 | 层 | 选型 |
 |---|---|
-| 语言 | Go 1.26(静态编译,`go mod vendor` 自包含构建) |
+| 语言 | Go 1.26(静态编译,依赖走 go.mod/go.sum + 模块代理,不入库) |
 | 数据源 | PostgreSQL 16(唯一 Source of Truth;11 个前向迁移) |
 | 界面 | Web(PG 直渲 HTML + 原生 SVG 图谱;Obsidian/GitHub 已下线,`PIKS-Vault/` 仅存档) |
 | AI | OpenCode Zen,OpenAI 兼容;**base URL 必须带 `/go` 路由**(`https://opencode.ai/zen/go/v1`);配置存 `app_config` 表(/settings 可编辑),模型分层 extract/reasoning/vision |
@@ -38,16 +38,45 @@ migrate → collector(东财 7x24 快讯) → worker(AI 抽取 events) → clust
 ## 仓库布局
 
 ```
-cmd/           12 个可执行命令(9 个管线:migrate/collector/worker/cluster/quote-collector/
-              entity-build/market-state/daily-review/reconcile + web 常驻服务 + probe 探针 + publisher 遗留)
-internal/      业务包(collector/web/store/config/model/...)
-migrations/    SQL 迁移(前向,无 down;0001~0011)
+cmd/           13 个可执行命令(9 个管线:migrate/collector/worker/cluster/quote-collector/
+              entity-build/market-state/daily-review/reconcile + web 常驻服务 + probe 探针
+              + publisher 遗留 + research-run 深研编排)
+internal/      业务包(collector/web/store/config/model/research/...)
+research/      个股深研 Python agent(独立运行时,见下「深研并入」;不自带 SQLite,产物落 PG)
+migrations/    SQL 迁移(前向,无 down;0001~0012)
 prompts/       AI 抽取提示词(extract.md)
 configs/       docker-compose(dev/prod)+ .env 模板
-scripts/       dev 侧 setup.sh/deploy.sh;lab 侧 pipeline.sh/backup.sh/health.sh
-vendor/        自包含构建依赖(镜像构建免网络)
+scripts/       dev 侧 setup.sh/deploy.sh/check-research-isolation.sh;lab 侧 pipeline.sh/backup.sh/health.sh
+(依赖不入库:go.sum 校验 + GOPROXY 模块代理,见 Dockerfile)
 docs/          项目详解、进度总表、各阶段设计定稿 + 实现归档
 PIKS-Vault/    Obsidian vault 存档(界面层已下线,不再更新)
+```
+
+## 深研并入(research,能力并入 P4)
+
+`research/`(自 `investment-research` 并入)是 Python 个股深研 agent;Go 侧 `internal/research`
+用 `os/exec` 调其 CLI 三命令(`research`/`synthesize`/`gate`),读产物落 `research_runs`。
+设计与验收见 `docs/phase4/{design,stages}/research-merge.md`。
+
+**独立迭代(代码级)**:Go 与前端**不依赖 research 源码**,只经「CLI 参数 + 产物契约」
+(冻结,`research/README.md` 契约表)交互 —— 由 `scripts/check-research-isolation.sh` 校验。
+
+**部署形态(2026-09-12 起,单镜像)**:`piks-tools` 底座为 `python:3.12-slim`,同时含
+nginx 网关 + Go bins + React dist + research(Python 运行时)。Go 编排在 web 进程内
+`os/exec python3` 触发 —— 故 UI「深研」按钮与 CLI 深研共用同一镜像、同一容器。
+
+```bash
+# 独立性 CI 检查(零共享状态 / 产物契约面)
+./scripts/check-research-isolation.sh
+
+# 两侧测试(可各自独立跑)
+go test ./internal/research/...                                 # fixture 状态机,不依赖 Python
+cd research && .venv/bin/python -m pytest tests                 # Python 单测,不依赖 PIKS
+#   依赖:requirements.txt(运行)+ requirements-dev.txt(测试;不进运行镜像)
+
+# 生产深研(单镜像,两种入口等价)
+#   UI:实体卡/持仓行「深研」按钮            CLI(容器内):
+docker compose exec web ./bin/research-run 000560 --profile short-term
 ```
 
 ## 快速开始(dev,本机)
@@ -60,7 +89,7 @@ docker compose -f configs/docker-compose.yml up -d
 set -a; source .env.local; set +a   # 键:PIKS_DATABASE_URL / PIKS_LISTEN_ADDR / PIKS_UPLOAD_DIR
 
 # 3. 构建并跑迁移(migrate 会种子 app_config 默认值)
-go build -mod=vendor -o bin/ ./cmd/...
+go build -o bin/ ./cmd/...
 ./bin/migrate
 
 # 4. 手动跑一次全链(或等生产 crontab 自动;命令均幂等)

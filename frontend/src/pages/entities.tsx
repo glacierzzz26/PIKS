@@ -9,6 +9,7 @@ import { ENDPOINTS } from "@/lib/api";
 import { ENTITY_TYPE_LABEL } from "@/lib/format";
 import Pagination from "@/components/ui/Pagination";
 import { LoadingBlock, EmptyState, ErrorState } from "@/components/ui/States";
+import DeepResearchButton from "@/components/research/DeepResearchButton";
 import type { Entity } from "@/lib/types";
 
 const TYPE_ST: Record<string, string> = {
@@ -115,9 +116,17 @@ function EntitiesInner() {
         <>
           <div className="ent-grid">
             {paged.map((e) => (
-              <button
+              <div
                 key={e.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => setFilter("id", e.id)}
+                onKeyDown={(ev) => {
+                  if (ev.key === "Enter" || ev.key === " ") {
+                    ev.preventDefault();
+                    setFilter("id", e.id);
+                  }
+                }}
                 className={`ent-card text-left ${
                   selectedId === e.id ? "border-accent" : ""
                 }`}
@@ -135,8 +144,14 @@ function EntitiesInner() {
                 <div className="desc">{e.description}</div>
                 <div className="efoot">
                   <span>更新 <b>{e.updated_at}</b></span>
+                  {/* 仅带股票代码的公司实体提供深研入口（detail.code 归一） */}
+                  {e.code && (
+                    <span onClick={(ev) => ev.stopPropagation()}>
+                      <DeepResearchButton code={e.code} />
+                    </span>
+                  )}
                 </div>
-              </button>
+              </div>
             ))}
           </div>
           <Pagination

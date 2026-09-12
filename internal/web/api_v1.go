@@ -53,6 +53,9 @@ type apiEntity struct {
 	Description string   `json:"description"`
 	Status      string   `json:"status"`
 	UpdatedAt   string   `json:"updated_at"`
+	// Code 6 位股票代码(仅 type=company 且有 detail.code 时非空):
+	// 前端据此决定是否显示「深研」按钮,并作为 POST /research-runs 的 code。
+	Code string `json:"code,omitempty"`
 }
 
 type apiRelationship struct {
@@ -462,7 +465,24 @@ func toEntity(e model.Entity) apiEntity {
 		Description: orStr(e.Description, ""),
 		Status:      st,
 		UpdatedAt:   fmtRFC3339(e.UpdatedAt),
+		Code:        entityCode(e),
 	}
+}
+
+// entityCode 从 entities.detail 取股票代码并归一为 6 位(与 research_runs.code 同口径)。
+// detail 里存的是 {code:"600519",…}(见 EnsureCompanyEntity);非公司实体或无限 code → 空串,
+// 前端据此隐藏「深研」按钮(不该给行业/概念挂个股深研入口)。
+func entityCode(e model.Entity) string {
+	if e.Type != "company" || len(e.Detail) == 0 {
+		return ""
+	}
+	var d struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal(e.Detail, &d); err != nil {
+		return ""
+	}
+	return store.NormalizeCode(d.Code)
 }
 
 func toSnapshot(snap *model.MarketSnapshot) apiMarketSnapshot {

@@ -1,0 +1,56 @@
+name: complete-stock
+version: "1.0.0"
+description: 完整个股研究报告（Phase 1 full 模式）
+
+mode: full
+
+period:
+  display:
+    price: 60d
+    volume: 60d
+    turnover: 60d
+    news: 30d
+    announcement: 30d
+    financial: 4q
+    valuation: 3y
+  compute:
+    price: 260d
+    turnover: 520d
+    valuation: 5y
+  unit:
+    price: trading
+    volume: trading
+    turnover: trading
+    news: calendar
+    announcement: calendar
+
+sections:
+  - company
+  - market
+  - volume
+  - turnover
+  - financial
+  - valuation
+  - events
+  - announcements
+  - industry        # Phase 1 降级：分类 + 同业对比
+  - risk
+  - conclusion
+
+# 评分卡维度
+scorecard:
+  dimensions:
+    - business_quality
+    - fundamental_trend
+    - market_trend
+    - valuation
+    - recent_events
+    - risk
+  overall_rule: simple_sum   # 简单加总，阈值映射
+  scale: [-2, -1, 0, +1, +2]
+
+# 异常阈值（待 M0.5 Spike 校准后填充）
+thresholds:
+  abnormal_volume_multiplier: 2.0
+  abnormal_volume_lookback: 20
+  turnover_percentile_window: 520

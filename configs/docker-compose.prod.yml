@@ -23,8 +23,9 @@ services:
     restart: unless-stopped
     networks: [piks]
 
-  # Web 网关(nginx :80,发布 :8090):React SPA 只读页 + 反代 /api/* 与 Go HTML 交互页。
-  # Go web 与 nginx 同容器,Go 只监听 127.0.0.1:8090(不直接暴露局域网),编辑页经 nginx。
+  # Web 网关(nginx :80,发布 :8090):React SPA + 反代 /api/*;同容器内含 Go web 与 Python 深研运行时。
+  # 单镜像(2026-09-12):Go web 与 nginx、research(Python)同容器 ——
+  # Go 只监听 127.0.0.1:8090(不直接暴露局域网),深研编排在 web 进程内 os/exec python3。
   web:
     image: piks-tools:latest
     container_name: piks-web
@@ -35,6 +36,7 @@ services:
       - TZ=Asia/Shanghai
       - PIKS_DATABASE_URL=postgres://piks:${PIKS_DB_PASSWORD:-piks_dev_password}@postgres:5432/piks?sslmode=disable
       - PIKS_UPLOAD_DIR=/data/uploads  # 迭代 5-3:/chat 截图落盘(piks_data 命名卷)
+      - PIKS_RESEARCH_OUT_DIR=/data/research  # 深研产物持久化:断点重跑可复用(容器内 /tmp 易失)
     volumes:
       - piks_data:/data
     depends_on:
@@ -43,6 +45,10 @@ services:
     restart: unless-stopped
     networks: [piks]
     command: ["sh", "-c", "./bin/web -listen 127.0.0.1:8090 & sleep 1; exec nginx -g 'daemon off;'"]
+
+  # 深研 CLI 入口已并入 web 容器(Python 运行时在 piks-tools 内):
+  #   `docker compose exec web ./bin/research-run 000560 --profile short-term`
+  # (原 piks-research 独立镜像/服务已随单镜像化移除。)
 
   tools:
     image: piks-tools:latest

@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+
+# 旧 SQLite(存储层已删,留忽略防残留)
+storage/
+*.sqlite
+*.db
+
+# 运行产物(由 cmd/research-run 写到共享 volume,不入库)
+out/

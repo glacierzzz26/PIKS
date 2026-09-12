@@ -1,0 +1,6 @@
+# research 测试依赖(不进 piks-research 运行镜像 —— 避免测试链污染生产产物)。
+# D-11 独立迭代:research/tests 可在本目录内独立跑,不依赖 PIKS 主程序。
+#
+#   python -m venv .venv && .venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+#   .venv/bin/python -m pytest tests
+pytest>=8.0

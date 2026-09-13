@@ -86,7 +86,7 @@ func (s *Server) aggregateWeek(ctx context.Context, start, end time.Time) ([]Wee
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
-	var ss []WeeklySnap
+	ss := []WeeklySnap{}
 	for _, sn := range snaps {
 		day := sn.TradeDate.In(cst)
 		if day.Before(start) || !day.Before(end) {
@@ -116,7 +116,7 @@ func (s *Server) aggregateWeek(ctx context.Context, start, end time.Time) ([]Wee
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
-	var ee []WeeklyEvent
+	ee := []WeeklyEvent{}
 	for _, e := range evs {
 		d := e.CreatedAt.In(cst).Format("01-02")
 		if e.OccurredAt != nil {
@@ -129,7 +129,7 @@ func (s *Server) aggregateWeek(ctx context.Context, start, end time.Time) ([]Wee
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
-	var nn []WeeklyNote
+	nn := []WeeklyNote{}
 	for _, n := range notes {
 		nn = append(nn, WeeklyNote{
 			ID: n.ID, Title: orStr(n.Title, n.Slug),
@@ -142,7 +142,7 @@ func (s *Server) aggregateWeek(ctx context.Context, start, end time.Time) ([]Wee
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
-	var tt []WeeklyTrade
+	tt := []WeeklyTrade{}
 	for _, t := range ts {
 		tt = append(tt, WeeklyTrade{
 			Date: t.TradeDate.Format("01-02"), Name: t.Name, Code: t.Code,
@@ -156,7 +156,7 @@ func (s *Server) aggregateWeek(ctx context.Context, start, end time.Time) ([]Wee
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
-	var pp []WeeklyPosition
+	pp := []WeeklyPosition{}
 	for _, p := range poss {
 		v := WeeklyPosition{
 			Date: p.SnapshotDate.Format("2006-01-02"), Code: p.Code, Name: p.Name, Qty: p.Qty,

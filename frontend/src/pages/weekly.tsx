@@ -67,6 +67,13 @@ export default function Page() {
     setParam("offset", offset + delta === 0 ? "" : String(offset + delta));
   };
 
+  // 后端空周聚合返回 null（Go nil slice）——统一兜底成空数组，避免 .length 崩页（同其它页）。
+  const snaps = data?.snaps ?? [];
+  const events = data?.events ?? [];
+  const notes = data?.notes ?? [];
+  const trades = data?.trades ?? [];
+  const positions = data?.positions ?? [];
+
   const generate = async () => {
     setGenerating(true);
     setGenMsg(null);
@@ -165,44 +172,44 @@ export default function Page() {
           </div>
 
           {/* 五段聚合 */}
-          <Card title="行情快照" count={data.snaps.length}>
-            {data.snaps.length === 0 ? (
+          <Card title="行情快照" count={snaps.length}>
+            {snaps.length === 0 ? (
               <Mini label="本周无行情快照" />
             ) : (
-              <SnapSection snaps={data.snaps} />
+              <SnapSection snaps={snaps} />
             )}
           </Card>
 
           <div className="grid gap-3.5 lg:grid-cols-2">
-            <Card title="本周事件" count={data.events.length}>
-              {data.events.length === 0 ? (
+            <Card title="本周事件" count={events.length}>
+              {events.length === 0 ? (
                 <Mini label="本周无结构化事件" />
               ) : (
-                <EventSection events={data.events} />
+                <EventSection events={events} />
               )}
             </Card>
-            <Card title="本周沉淀" count={data.notes.length}>
-              {data.notes.length === 0 ? (
+            <Card title="本周沉淀" count={notes.length}>
+              {notes.length === 0 ? (
                 <Mini label="本周无个人笔记沉淀" />
               ) : (
-                <NoteSection notes={data.notes} />
+                <NoteSection notes={notes} />
               )}
             </Card>
           </div>
 
-          <Card title="本周交易" count={data.trades.length}>
-            {data.trades.length === 0 ? (
+          <Card title="本周交易" count={trades.length}>
+            {trades.length === 0 ? (
               <Mini label="本周无成交记录" />
             ) : (
-              <TradeSection trades={data.trades} />
+              <TradeSection trades={trades} />
             )}
           </Card>
 
-          <Card title="周末持仓快照" count={data.positions.length}>
-            {data.positions.length === 0 ? (
+          <Card title="周末持仓快照" count={positions.length}>
+            {positions.length === 0 ? (
               <Mini label="本周末无持仓快照" />
             ) : (
-              <PositionSection positions={data.positions} />
+              <PositionSection positions={positions} />
             )}
           </Card>
         </div>

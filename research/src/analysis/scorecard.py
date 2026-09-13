@@ -1,6 +1,6 @@
 """评分卡引擎
 
-六维度评分 + overall 聚合规则。
+按 Profile 声明的维度评分（默认六维）+ overall 聚合规则。
 所有评分由确定性规则计算，LLM 只负责叙述。
 """
 from dataclasses import dataclass, field
@@ -31,6 +31,23 @@ class Scorecard:
     dimensions: List[DimensionScore]
     overall: int        # 简单加总分
     overall_label: str  # 偏正面 / 中性 / 偏负面 / 结论受限
+
+
+# 默认六维（完整档案）；档案可在 profile.scorecard.dimensions 里声明子集
+# （如 short-term 无财务/估值/风险章节，只保留 market_trend + recent_events）。
+DEFAULT_DIMENSIONS = [
+    "business_quality",
+    "fundamental_trend",
+    "market_trend",
+    "valuation",
+    "recent_events",
+    "risk",
+]
+# 缺失即判定「结论受限」的敏感维度（数据不足以支撑结论，宁可不下结论）
+SENSITIVE_DIMENSIONS = ("risk", "fundamental_trend")
+# 方向判定阈值：平均维度分 ≥ +2/3 偏正面、≤ -2/3 偏负面。
+# 六维时即原设计 §13 的「总分 ≥ +4 / ≤ -4」（4/6 = 2/3），维度更少时自动缩放。
+DIRECTION_AVG_THRESHOLD = 2 / 3
 
 
 def _business_quality(fin: Optional[FinancialMetrics]) -> DimensionScore:
@@ -251,42 +268,58 @@ def analyze_scorecard(
     events: Optional[EventMetrics],
     risk_metrics: Optional[RiskMetrics],
     as_of: date,
+    dimensions: Optional[List[str]] = None,
 ) -> Scorecard:
     """
-    计算六维度评分卡。
+    计算评分卡。
 
-    overall 聚合规则（设计文档 §13）：
-    - 六维度简单加总（范围 -12 ~ +12）
-    - overall ≥ +4 → 偏正面
-    - overall ≤ -4 → 偏负面
-    - 之间 → 中性
-    - 若任一权重敏感维度标记 unavailable 且影响判断，降级为「结论受限」
+    dimensions: Profile 声明的评分维度（顺序即展示顺序）。
+                空/None → 默认六维（完整档案）。
+                只评估声明维度：档案未纳入的字段（如 short-term 无 financial）
+                既不出现在结果里，也不触发「结论受限」——「不在本档案范围」≠「数据缺失」。
+
+    overall 聚合规则（设计文档 §13，按档案维度数自适应）：
+    - overall = 各可用维度简单加总
+    - 方向按「平均维度分」判定：≥ +2/3 → 偏正面，≤ -2/3 → 偏负面，之间 → 中性
+      （六维时 2/3 × 6 = +4，与原「总分 ≥ +4」阈值一致）
+    - 若任一敏感维度（risk / fundamental_trend）不可得 → 降级为「结论受限」
     """
-    dims = []
-    dims.append(_business_quality(financial))
-    dims.append(_fundamental_trend(financial))
-    dims.append(_market_trend(price) if price else DimensionScore("market_trend", 0, "价格数据缺失", unavailable=True))
-    dims.append(_valuation(financial))
-    dims.append(_recent_events(events))
-    dims.append(_risk(risk_metrics))
+    by_dim = {
+        "business_quality": _business_quality(financial),
+        "fundamental_trend": _fundamental_trend(financial),
+        "market_trend": (
+            _market_trend(price) if price
+            else DimensionScore("market_trend", 0, "价格数据缺失", unavailable=True)
+        ),
+        "valuation": _valuation(financial),
+        "recent_events": _recent_events(events),
+        "risk": _risk(risk_metrics),
+    }
+
+    wanted = [d for d in (dimensions or DEFAULT_DIMENSIONS) if d in by_dim]
+    if not wanted:  # 声明为空或全非法 → 回退默认六维，避免产出空评分卡
+        wanted = DEFAULT_DIMENSIONS
+    dims = [by_dim[d] for d in wanted]
 
     # 只计算有确定评分的维度
     valid_scores = [d.score for d in dims if not d.unavailable]
     overall = sum(valid_scores) if valid_scores else 0
 
-    # 判断是否有敏感维度 unavailable
+    # 敏感维度不可得（且在本档案范围内）→ 结论受限
     sensitive_unavailable = any(
-        d.unavailable for d in dims if d.dimension in ("risk", "fundamental_trend")
+        d.unavailable for d in dims if d.dimension in SENSITIVE_DIMENSIONS
     )
 
-    if sensitive_unavailable:
+    if sensitive_unavailable or not valid_scores:
         overall_label = "结论受限"
-    elif overall >= 4:
-        overall_label = "偏正面"
-    elif overall <= -4:
-        overall_label = "偏负面"
     else:
-        overall_label = "中性"
+        avg = overall / len(valid_scores)
+        if avg >= DIRECTION_AVG_THRESHOLD:
+            overall_label = "偏正面"
+        elif avg <= -DIRECTION_AVG_THRESHOLD:
+            overall_label = "偏负面"
+        else:
+            overall_label = "中性"
 
     symbol = price.symbol if price else (financial.symbol if financial else "")
     return Scorecard(

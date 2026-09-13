@@ -23,3 +23,13 @@ sections:
   - events
   - announcements
   - conclusion
+
+# 评分卡维度：express 档案无财务/估值/风险章节，只保留可确定性计算的量价与事件维度。
+# 未纳入的维度不参与打分、不显示 N/A，也不触发「结论受限」（那是「数据缺失」的语义）。
+scorecard:
+  dimensions:
+    - market_trend
+    - recent_events
+  overall_rule: simple_sum   # 方向按平均维度分判定（见 scorecard.py）
+  scale: [-2, -1, 0, +1, +2]
+

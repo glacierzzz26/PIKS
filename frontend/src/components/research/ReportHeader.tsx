@@ -3,13 +3,9 @@
 import { Link } from "react-router-dom";
 import { ArrowLeft, ShieldCheck, ShieldAlert, Loader2 } from "lucide-react";
 import { Chip } from "@/components/ui/Num";
+import { RESEARCH_PROFILE_LABEL } from "@/lib/constants";
 import type { ResearchStatus } from "@/lib/types";
 import { STATUS_LABEL } from "@/hooks/useResearchRun";
-
-const PROFILE_LABEL: Record<string, string> = {
-  "complete-stock": "全面深研",
-  "short-term": "短线视角",
-};
 
 /** 报告头：股票 + 代码 + as_of + profile + 机检徽标（§4.8）。 */
 export default function ReportHeader({
@@ -22,6 +18,8 @@ export default function ReportHeader({
   gateOK,
   model,
   tokens,
+  backTo = "/research",
+  backLabel = "返回个股分析师",
 }: {
   code: string;
   symbol: string;
@@ -32,21 +30,23 @@ export default function ReportHeader({
   gateOK: boolean;
   model: string;
   tokens: number;
+  backTo?: string;
+  backLabel?: string;
 }) {
   const passed = lintOK && gateOK;
   return (
     <div className="panel panel-pad">
       <Link
-        to="/entities"
+        to={backTo}
         className="mb-3 inline-flex items-center gap-1.5 text-[12px] text-muted no-underline hover:text-accent"
       >
         <ArrowLeft size={12} />
-        返回实体库
+        {backLabel}
       </Link>
       <div className="flex flex-wrap items-center gap-2.5">
         <h1 className="m-0 text-xl font-bold">{symbol}</h1>
         <span className="num text-sm text-muted">{code}</span>
-        <Chip tone="dim">{PROFILE_LABEL[profile] ?? profile}</Chip>
+        <Chip tone="dim">{RESEARCH_PROFILE_LABEL[profile] ?? profile}</Chip>
         {status !== "done" && (
           <Chip tone="amber">
             {status === "failed" ? (

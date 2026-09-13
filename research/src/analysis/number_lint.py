@@ -46,6 +46,12 @@ _NEWS_ITEM_RE = re.compile(
 # 数字 token：带千分位、正负号、小数
 _NUMBER_RE = re.compile(r"[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?")
 
+# 文本里的数字常以「万 / 亿」书写（更易读），而指标卡存原始单位（手 / 元）。
+# 对账时按这些倍率把文本值还原回原始量纲再比对，见 _is_known。
+# 例：卡片 avg_volume_20d=1861653.75 手，LLM 写「20日均量约186.17万手」，
+#     186.17 × 1e4 = 1861700 ≈ 1861653.75 → 应判为可溯源，而非「编造」。
+UNIT_SCALES: tuple = (1.0, 1e4, 1e8)
+
 # 行首序数：`1.` `2、` `3)` 等列表标记，不算数据数值
 _ORDINAL_RE = re.compile(r"^\s*\d+\s*[\.、)）]")
 
@@ -171,19 +177,29 @@ def lint_text(
     - rel_tol: 相对容差（容忍格式化差异，如 17.7 vs 17.70）
     - abs_tol: 最小绝对容差（容忍显示舍入，如 1.47 显示为 1.5）
     """
-    known = set(known_values or set())
-    known |= set(template_constants or TEMPLATE_CONSTANTS)
+    data_known = set(known_values or set())
+    tmpl_known = set(template_constants if template_constants is not None else TEMPLATE_CONSTANTS)
+
+    def _approx(a: float, b: float) -> bool:
+        # 描述性数字（“跌 5.15%”）常用绝对值，与基准符号相反时按绝对值对账
+        scale = max(abs(a), abs(b), 1.0)
+        return abs(abs(a) - abs(b)) <= max(rel_tol * scale, abs_tol)
 
     def _is_known(value: float) -> bool:
-        for k in known:
-            # 描述性数字（“跌 5.15%”）常用绝对值，与基准符号相反时按绝对值对账
-            scale = max(abs(value), abs(k), 1.0)
-            if abs(abs(value) - abs(k)) <= max(rel_tol * scale, abs_tol):
+        # 模板结构常量（窗口 5/10/60、条数 3/8…）：精确匹配。
+        # 不能带 2% 相对容差 —— 否则 262.01 会落进「260」的容差带被误放行。
+        for c in tmpl_known:
+            if abs(value - c) <= abs_tol:
                 return True
+        # 数据值：先按「万 / 亿」还原量纲，再与卡片原始数值对账。
+        for k in data_known:
+            for unit in UNIT_SCALES:
+                if _approx(value * unit, k):
+                    return True
         return False
 
 
-    if not known:
+    if not data_known and not tmpl_known:
         # 无基准时不误报，直接视为全通过（调用方应保证有基准）
         pass
 

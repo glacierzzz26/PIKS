@@ -1,21 +1,23 @@
 /**
  * 左侧导航项。全部为 SPA 页面（React Router 客户端路由），无 Go HTML 交互页。
- * 顺序按 2026-09 全站重设计定稿，把 13 项按用途分成 4 组平铺展示
- * （分组仅作视觉分隔，不可折叠 —— 保证任意页面一键直达）。
+ * 2026-09-13 个股轴心重排（设计 phase5/design/frontend-ia.md）：
+ *   自选（首页）/ 研究 / 发现 / 复盘 / 交易 / 系统。
+ * 分组仅作视觉分隔，不可折叠 —— 保证任意页面一键直达。
+ * 对账（/recon）降为设置页子入口，侧栏不再占位。
  */
 import type { LucideIcon } from "lucide-react";
 import {
-  LayoutDashboard,
+  Star,
   Newspaper,
   Boxes,
   Share2,
   TrendingUp,
   Zap,
+  LayoutDashboard,
   ClipboardCheck,
   FileText,
   NotebookPen,
   Wallet,
-  Scale,
   MessageSquare,
   Settings,
   Microscope,
@@ -24,11 +26,11 @@ import {
 export type NavItem = { href: string; label: string; icon: LucideIcon };
 export type NavGroup = { title: string; items: NavItem[] };
 
-/** 看板单独置顶，不归组 */
+/** 自选单独置顶（新首页），不归组 */
 export const PRIMARY_NAV: NavItem = {
   href: "/",
-  label: "看板",
-  icon: LayoutDashboard,
+  label: "自选",
+  icon: Star,
 };
 
 export const NAV_GROUPS: NavGroup[] = [
@@ -37,13 +39,14 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [{ href: "/research", label: "个股分析", icon: Microscope }],
   },
   {
-    title: "数据",
+    title: "发现",
     items: [
-      { href: "/events", label: "事件流", icon: Newspaper },
-      { href: "/entities", label: "实体库", icon: Boxes },
-      { href: "/graph", label: "图谱", icon: Share2 },
+      { href: "/market", label: "市场看板", icon: LayoutDashboard },
       { href: "/ladder", label: "涨停梯队", icon: TrendingUp },
       { href: "/flashes", label: "快讯流", icon: Zap },
+      { href: "/events", label: "事件流", icon: Newspaper },
+      { href: "/graph", label: "图谱", icon: Share2 },
+      { href: "/entities", label: "实体库", icon: Boxes },
     ],
   },
   {
@@ -56,10 +59,7 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     title: "交易",
-    items: [
-      { href: "/trades", label: "交易", icon: Wallet },
-      { href: "/recon", label: "对账", icon: Scale },
-    ],
+    items: [{ href: "/trades", label: "交易", icon: Wallet }],
   },
   {
     title: "系统",
@@ -70,7 +70,7 @@ export const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
-/** 平铺顺序（含看板），供命令面板等按序展示 */
+/** 平铺顺序（含自选），供命令面板等按序展示 */
 export const NAV_ITEMS: NavItem[] = [
   PRIMARY_NAV,
   ...NAV_GROUPS.flatMap((g) => g.items),

@@ -6,7 +6,7 @@ export type EventItem = {
   event_type: string;
   summary: string;
   facts: string[];
-  affected: { word: string; entity_id?: string; entity_name?: string }[];
+  affected: { word: string; entity_id?: string; entity_name?: string; code?: string }[];
   occurred_at: string;
   confidence: number;
   status: "confirmed" | "pending" | "archived";
@@ -135,11 +135,20 @@ export type PreviewPosition = {
   pl: string;
 };
 
+/** 自选镜像预览行：change=add 将加入 / remove 将移出 / keep 已在（不变）。 */
+export type PreviewWatch = {
+  include: boolean;
+  change: "add" | "remove" | "keep";
+  code: string;
+  name: string;
+};
+
 export type ImportPreview = {
   kind: string;
   attachment_id: string;
   trades: PreviewTrade[];
   positions: PreviewPosition[];
+  watch: PreviewWatch[];
 };
 
 export type TradeRow = {
@@ -427,3 +436,60 @@ export type ResearchRunList = { runs: ResearchRunSummary[] };
 
 /** POST /api/v1/research-runs 触发响应 */
 export type ResearchTrigger = { run_id: string; status: ResearchStatus };
+
+// ---- 个股中心（GET /api/v1/stock/:code，设计 frontend-ia §2.4）----
+
+/** 个股中心页头实体（可为 null：未建公司实体时，持仓/深研/涨停照常，事件/笔记/行业空） */
+export type StockEntity = {
+  id: string;
+  name: string;
+  status: string;
+  description: string;
+};
+
+export type StockIndustry = { id: string; name: string };
+
+export type StockEvent = {
+  id: string;
+  title: string;
+  event_type: string;
+  occurred_at: string;
+  confidence: number;
+  source: string;
+};
+
+export type StockNote = {
+  id: string;
+  type: string;
+  title: string;
+  status: string;
+  updated_at: string;
+};
+
+/** GET /api/v1/stock/:code 聚合响应 —— 一站看全一只票。 */
+export type StockHub = {
+  code: string;
+  symbol: string;
+  entity: StockEntity | null;
+  industry: StockIndustry | null;
+  position: PositionRow | null;
+  trades: TradeRow[];
+  research: ResearchRunSummary[];
+  events: StockEvent[];
+  notes: StockNote[];
+  limit_ups: string[];
+};
+
+// ---- 自选（GET /api/v1/watchlist，设计 frontend-ia §2.3）----
+
+/** 自选行：自选实体 + 是否持有（持仓快照命中时带现价/盈亏）。 */
+export type WatchItem = {
+  code: string;
+  entity_id: string;
+  name: string;
+  description: string;
+  held: boolean;
+  position: PositionRow | null;
+};
+
+export type Watchlist = { items: WatchItem[] };

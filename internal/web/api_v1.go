@@ -43,6 +43,7 @@ type apiAffected struct {
 	Word       string `json:"word"`
 	EntityID   string `json:"entity_id,omitempty"`
 	EntityName string `json:"entity_name,omitempty"`
+	Code       string `json:"code,omitempty"` // 公司实体 6 位代码 → 前端跳个股中心
 }
 
 type apiEntity struct {
@@ -176,13 +177,18 @@ func (s *Server) handleAPIEvents(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAPIEntities(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	typ := r.URL.Query().Get("type")
+	status := strings.TrimSpace(r.URL.Query().Get("status"))
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 
 	var ents []model.Entity
 	var err error
-	if typ != "" {
+	switch {
+	case status != "":
+		// 自选列表数据源(design frontend-ia §2.3):status=watch → 自选;archived → 已移出。
+		ents, err = s.store.ListEntitiesByStatus(ctx, status)
+	case typ != "":
 		ents, err = s.store.ListEntitiesByType(ctx, typ)
-	} else {
+	default:
 		ents, err = s.store.ListAllEntities(ctx)
 	}
 	if err != nil {
@@ -366,17 +372,19 @@ func (s *Server) handleAPINote(w http.ResponseWriter, r *http.Request) {
 // ---- 类型映射 ----
 
 // buildNameIndex 实体名/别名 → 实体索引(事件 affected 词 → 实体链接)。
-type nameRef struct{ id, name string }
+// code = 公司实体的 6 位代码(前端 affected 词可直接跳个股中心);非公司为空。
+type nameRef struct{ id, name, code string }
 
 func buildNameIndex(ents []model.Entity) map[string]nameRef {
 	idx := make(map[string]nameRef, len(ents)*2)
 	for _, e := range ents {
+		ref := nameRef{e.ID, e.Name, entityCode(e)}
 		add := func(k string) {
 			if k == "" {
 				return
 			}
 			if _, ok := idx[k]; !ok {
-				idx[k] = nameRef{e.ID, e.Name}
+				idx[k] = ref
 			}
 		}
 		add(e.Name)
@@ -404,6 +412,7 @@ func toEventItem(ev store.EventForAPI, idx map[string]nameRef) apiEventItem {
 		if ref, ok := idx[w]; ok {
 			af.EntityID = ref.id
 			af.EntityName = ref.name
+			af.Code = ref.code
 		}
 		affected = append(affected, af)
 	}
@@ -915,6 +924,48 @@ type apiTrades struct {
 	Positions []apiPosition `json:"positions"`
 }
 
+// toAPITrade 单条成交 → 前端 DTO(含 AI 复盘/复盘点解析)。交易页与个股中心共用。
+func toAPITrade(t model.Trade) apiTrade {
+	tr := apiTrade{
+		ID:     t.ID,
+		Date:   t.TradeDate.In(cst).Format("2006-01-02"),
+		Code:   t.Code,
+		Name:   t.Name,
+		Side:   t.Side,
+		Price:  t.Price,
+		Qty:    t.Qty,
+		Amount: t.Amount,
+		Source: t.Source,
+		Note:   orStr(t.Note, ""),
+	}
+	if rv := parseTradeReview(t.Review); rv != nil {
+		tr.Review = rv.Review
+		tr.Mistakes = make([]apiReviewPoint, 0, len(rv.Mistakes))
+		for _, m := range rv.Mistakes {
+			tr.Mistakes = append(tr.Mistakes, apiReviewPoint{Title: m.Title, Content: m.Content})
+		}
+	}
+	return tr
+}
+
+// toAPIPosition 单条持仓 → 前端 DTO(盈亏由成本/现价推导百分比)。交易页与个股中心共用。
+func toAPIPosition(p model.Position) apiPosition {
+	cost := fPtrVal(p.CostPrice)
+	last := fPtrVal(p.Price)
+	pnl := 0.0
+	if cost > 0 { // PL 存的是绝对盈亏额,前端展示百分比 → 由成本价/现价推导
+		pnl = (last - cost) / cost * 100
+	}
+	return apiPosition{
+		Code:   p.Code,
+		Name:   p.Name,
+		Qty:    p.Qty,
+		Cost:   cost,
+		Last:   last,
+		PnlPct: pnl,
+	}
+}
+
 // GET/POST /api/v1/trades —— 成交+持仓 / 手动录入。
 func (s *Server) handleAPITrades(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -939,42 +990,10 @@ func (s *Server) handleAPITrades(w http.ResponseWriter, r *http.Request) {
 	}
 	out := apiTrades{Trades: []apiTrade{}, Positions: []apiPosition{}}
 	for _, t := range ts {
-		tr := apiTrade{
-			ID:     t.ID,
-			Date:   t.TradeDate.In(cst).Format("2006-01-02"),
-			Code:   t.Code,
-			Name:   t.Name,
-			Side:   t.Side,
-			Price:  t.Price,
-			Qty:    t.Qty,
-			Amount: t.Amount,
-			Source: t.Source,
-			Note:   orStr(t.Note, ""),
-		}
-		if rv := parseTradeReview(t.Review); rv != nil {
-			tr.Review = rv.Review
-			tr.Mistakes = make([]apiReviewPoint, 0, len(rv.Mistakes))
-			for _, m := range rv.Mistakes {
-				tr.Mistakes = append(tr.Mistakes, apiReviewPoint{Title: m.Title, Content: m.Content})
-			}
-		}
-		out.Trades = append(out.Trades, tr)
+		out.Trades = append(out.Trades, toAPITrade(t))
 	}
 	for _, p := range ps {
-		cost := fPtrVal(p.CostPrice)
-		last := fPtrVal(p.Price)
-		pnl := 0.0
-		if cost > 0 { // PL 存的是绝对盈亏额,前端展示百分比 → 由成本价/现价推导
-			pnl = (last - cost) / cost * 100
-		}
-		out.Positions = append(out.Positions, apiPosition{
-			Code:   p.Code,
-			Name:   p.Name,
-			Qty:    p.Qty,
-			Cost:   cost,
-			Last:   last,
-			PnlPct: pnl,
-		})
+		out.Positions = append(out.Positions, toAPIPosition(p))
 	}
 	s.writeJSON(w, out)
 }

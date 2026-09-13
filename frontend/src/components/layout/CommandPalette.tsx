@@ -43,15 +43,17 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
         (e) =>
           !q ||
           e.name.toLowerCase().includes(q) ||
+          (e.code ?? "").includes(q) ||
           e.aliases.some((a) => a.toLowerCase().includes(q)) ||
           e.description.toLowerCase().includes(q)
       )
       .slice(0, 12)
       .map((e) => ({
         key: `ent:${e.id}`,
-        label: e.name,
-        hint: "实体",
-        run: () => navigate(`/entities?id=${e.id}`),
+        label: e.code ? `${e.name} · ${e.code}` : e.name,
+        hint: e.code ? "个股" : "实体",
+        // 带代码的公司实体直达个股中心；其余进实体库详情（规范第 8 条）
+        run: () => navigate(e.code ? `/stock/${e.code}` : `/entities?id=${e.id}`),
       }));
     const cmd: Item[] = [
       {

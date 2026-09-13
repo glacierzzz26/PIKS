@@ -1,17 +1,18 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Upload, X } from "lucide-react";
 import { apiPost, apiUpload, ENDPOINTS } from "@/lib/api";
-import { Chip } from "@/components/ui/Num";
-import type { ImportPreview, PreviewPosition, PreviewTrade } from "@/lib/types";
+import ImportControls from "@/components/trades/ImportControls";
+import TradePreviewTable from "@/components/trades/TradePreviewTable";
+import PositionPreviewTable from "@/components/trades/PositionPreviewTable";
+import WatchPreviewTable from "@/components/trades/WatchPreviewTable";
+import type { ImportPreview, PreviewPosition, PreviewTrade, PreviewWatch } from "@/lib/types";
 
-const INPUT =
-  "h-8 w-full min-w-0 rounded-[9px] border border-line bg-card px-2 text-sm text-ink outline-none focus:border-accent";
+type Kind = "" | "trade" | "position" | "watchlist";
 
-/** 截图导入：选类型 → 上传识别 → 预览可编辑表格(勾选) → 确认入库 */
+/** 截图导入：选类型 → 上传识别 → 预览可编辑(勾选) → 确认入库（含自选镜像） */
 export default function ImportFlow({ onDone }: { onDone: () => void }) {
-  const [kind, setKind] = useState<"" | "trade" | "position">("");
+  const [kind, setKind] = useState<Kind>("");
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -37,30 +38,39 @@ export default function ImportFlow({ onDone }: { onDone: () => void }) {
     }
   };
 
-  const patch = (
-    section: "trades" | "positions",
+  const patch = <S extends "trades" | "positions" | "watch", T>(
+    section: S,
     i: number,
-    p: Partial<PreviewTrade> | Partial<PreviewPosition>
-  ) => {
+    p: Partial<T>
+  ) =>
     setPreview((prev) => {
       if (!prev) return prev;
-      const arr = [...prev[section]];
-      arr[i] = { ...arr[i], ...p } as PreviewTrade & PreviewPosition;
+      const arr = [...(prev[section] as unknown as T[])];
+      arr[i] = { ...arr[i], ...p };
       return { ...prev, [section]: arr };
     });
-  };
+
+  // 整组取消/恢复移出勾选（仅影响 change==='remove' 行）
+  const toggleRemoveAll = (include: boolean) =>
+    setPreview((prev) =>
+      prev
+        ? {
+            ...prev,
+            watch: prev.watch.map((w) =>
+              w.change === "remove" ? { ...w, include } : w
+            ),
+          }
+        : prev
+    );
 
   const confirm = async () => {
     if (!preview) return;
     setBusy(true);
     setErr(null);
     try {
-      await apiPost<{ ok: boolean }>(ENDPOINTS.tradesConfirm, preview);
-      setMsg("已确认入库");
-      setPreview(null);
-      setFile(null);
-      setKind("");
-      if (inputRef.current) inputRef.current.value = "";
+      await apiPost<{ ok?: boolean; applied?: number }>(ENDPOINTS.tradesConfirm, preview);
+      setMsg(preview.kind === "watchlist" ? "自选已同步" : "已确认入库");
+      reset();
       onDone();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -72,8 +82,7 @@ export default function ImportFlow({ onDone }: { onDone: () => void }) {
   const reset = () => {
     setPreview(null);
     setFile(null);
-    setErr(null);
-    setMsg(null);
+    setKind("");
     if (inputRef.current) inputRef.current.value = "";
   };
 
@@ -82,151 +91,36 @@ export default function ImportFlow({ onDone }: { onDone: () => void }) {
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="mb-0 text-[15px] font-bold tracking-wide">截图导入</h2>
         <span className="text-xs text-faint">
-          同花顺今日交易 / 持仓截图，AI 视觉识别后预览确认
+          同花顺今日交易 / 持仓 / 自选截图，AI 视觉识别后预览确认
         </span>
-        {msg && (
-          <span className="text-xs" style={{ color: "var(--green)" }}>
-            {msg}
-          </span>
-        )}
-        {err && (
-          <span className="text-xs" style={{ color: "var(--red)" }}>
-            {err}
-          </span>
-        )}
+        {msg && <span className="text-xs" style={{ color: "var(--green)" }}>{msg}</span>}
+        {err && <span className="text-xs" style={{ color: "var(--red)" }}>{err}</span>}
       </div>
 
       {!preview && (
-        <div className="flex flex-wrap items-center gap-2">
-          {(
-            [
-              { k: "trade", label: "今日交易" },
-              { k: "position", label: "持仓" },
-            ] as const
-          ).map((o) => (
-            <button
-              key={o.k}
-              onClick={() => setKind(o.k)}
-              className={`chip-btn ${kind === o.k ? "on" : ""}`}
-            >
-              {o.label}
-            </button>
-          ))}
-          <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-[9px] bg-accent px-3 text-xs font-semibold text-white hover:opacity-90">
-            <Upload size={12} />
-            选择截图
-            <input
-              ref={inputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp,image/gif"
-              className="hidden"
-              onChange={(e) => {
-                setFile(e.target.files?.[0] ?? null);
-                setErr(null);
-              }}
-            />
-          </label>
-          {file && (
-            <span className="inline-flex items-center gap-1 text-xs text-faint">
-              {file.name}
-              <button
-                onClick={() => setFile(null)}
-                style={{ color: "var(--ink-faint)" }}
-              >
-                <X size={11} />
-              </button>
-            </span>
-          )}
-          <button
-            onClick={upload}
-            disabled={busy || !kind || !file}
-            className="inline-flex h-8 items-center rounded-[9px] border border-line bg-card px-3 text-xs text-muted hover:text-accent disabled:opacity-40"
-          >
-            {busy ? "识别中…" : "开始识别"}
-          </button>
-        </div>
+        <ImportControls
+          kind={kind}
+          file={file}
+          busy={busy}
+          inputRef={inputRef}
+          onKind={setKind}
+          onFile={(f) => {
+            setFile(f);
+            setErr(null);
+          }}
+          onClearFile={() => setFile(null)}
+          onUpload={upload}
+        />
       )}
 
       {preview && (
         <>
-          {preview.kind === "position" ? (
-            <div className="overflow-x-auto">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: "left" }}>选</th>
-                    <th style={{ textAlign: "left" }}>代码</th>
-                    <th style={{ textAlign: "left" }}>名称</th>
-                    <th>数量</th>
-                    <th>成本</th>
-                    <th>现价</th>
-                    <th>市值</th>
-                    <th>盈亏</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {preview.positions.map((r, i) => (
-                    <tr key={i}>
-                      <td className="px-2 py-1.5">
-                        <input type="checkbox" checked={r.include} onChange={(e) => patch("positions", i, { include: e.target.checked })} />
-                      </td>
-                      <td className="px-1 py-1.5"><input value={r.code} onChange={(e) => patch("positions", i, { code: e.target.value })} className={INPUT} /></td>
-                      <td className="px-1 py-1.5"><input value={r.name} onChange={(e) => patch("positions", i, { name: e.target.value })} className={INPUT} /></td>
-                      <td className="px-1 py-1.5"><input value={r.qty} onChange={(e) => patch("positions", i, { qty: e.target.value })} className={`${INPUT} num text-right`} /></td>
-                      <td className="px-1 py-1.5"><input value={r.cost_price} onChange={(e) => patch("positions", i, { cost_price: e.target.value })} className={`${INPUT} num text-right`} /></td>
-                      <td className="px-1 py-1.5"><input value={r.price} onChange={(e) => patch("positions", i, { price: e.target.value })} className={`${INPUT} num text-right`} /></td>
-                      <td className="px-1 py-1.5"><input value={r.market_value} onChange={(e) => patch("positions", i, { market_value: e.target.value })} className={`${INPUT} num text-right`} /></td>
-                      <td className="px-1 py-1.5"><input value={r.pl} onChange={(e) => patch("positions", i, { pl: e.target.value })} className={`${INPUT} num text-right`} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          {preview.kind === "watchlist" ? (
+            <WatchPreviewTable rows={preview.watch} onPatch={(i, p) => patch<"watch", PreviewWatch>("watch", i, p)} onToggleRemoveAll={toggleRemoveAll} />
+          ) : preview.kind === "position" ? (
+            <PositionPreviewTable rows={preview.positions} onPatch={(i, p) => patch<"positions", PreviewPosition>("positions", i, p)} />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: "left" }}>选</th>
-                    <th style={{ textAlign: "left" }}>日期</th>
-                    <th style={{ textAlign: "left" }}>代码</th>
-                    <th style={{ textAlign: "left" }}>名称</th>
-                    <th style={{ textAlign: "left" }}>方向</th>
-                    <th>价格</th>
-                    <th>数量</th>
-                    <th>金额</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {preview.trades.map((r, i) => (
-                    <tr key={i}>
-                      <td className="px-2 py-1.5">
-                        <input type="checkbox" checked={r.include} onChange={(e) => patch("trades", i, { include: e.target.checked })} />
-                      </td>
-                      <td className="px-1 py-1.5"><input value={r.date} onChange={(e) => patch("trades", i, { date: e.target.value })} className={`${INPUT} num`} /></td>
-                      <td className="px-1 py-1.5"><input value={r.code} onChange={(e) => patch("trades", i, { code: e.target.value })} className={INPUT} /></td>
-                      <td className="px-1 py-1.5">
-                        <span className="flex items-center gap-1">
-                          <input value={r.name} onChange={(e) => patch("trades", i, { name: e.target.value })} className={INPUT} />
-                          {r.exists && <Chip tone="amber">已存在</Chip>}
-                        </span>
-                      </td>
-                      <td className="px-1 py-1.5">
-                        <select value={r.side} onChange={(e) => patch("trades", i, { side: e.target.value })} className={INPUT}>
-                          <option value="buy">买入</option>
-                          <option value="sell">卖出</option>
-                        </select>
-                      </td>
-                      <td className="px-1 py-1.5"><input value={r.price} onChange={(e) => patch("trades", i, { price: e.target.value })} className={`${INPUT} num text-right`} /></td>
-                      <td className="px-1 py-1.5"><input value={r.qty} onChange={(e) => patch("trades", i, { qty: e.target.value })} className={`${INPUT} num text-right`} /></td>
-                      <td className="num-t" style={{ color: "var(--ink-faint)" }}>
-                        {r.amount}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <TradePreviewTable rows={preview.trades} onPatch={(i, p) => patch<"trades", PreviewTrade>("trades", i, p)} />
           )}
 
           <div className="flex items-center gap-2">
@@ -238,7 +132,11 @@ export default function ImportFlow({ onDone }: { onDone: () => void }) {
               {busy ? "确认中…" : "确认导入"}
             </button>
             <button
-              onClick={reset}
+              onClick={() => {
+                reset();
+                setErr(null);
+                setMsg(null);
+              }}
               className="inline-flex h-8 items-center rounded-[9px] border border-line bg-card px-3 text-xs text-muted hover:text-up"
             >
               取消

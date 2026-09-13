@@ -1,6 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
+import { Link } from "react-router-dom";
 import { X, ExternalLink } from "lucide-react";
 import type { EventItem } from "@/lib/types";
 import { EVENT_TYPE_LABEL } from "@/lib/format";
@@ -85,11 +86,17 @@ function EventBody({ event }: { event: EventItem }) {
 
       <Section title="影响实体">
         <div className="flex flex-wrap gap-1.5">
-          {event.affected.map((a, i) => (
-            <Chip key={i} tone="accent">
-              {a.entity_name ?? a.word}
-            </Chip>
-          ))}
+          {event.affected.map((a, i) =>
+            a.code ? (
+              <Link key={i} to={`/stock/${a.code}`} className="st st-accent no-underline">
+                {a.entity_name ?? a.word}
+              </Link>
+            ) : (
+              <Chip key={i} tone="accent">
+                {a.entity_name ?? a.word}
+              </Chip>
+            )
+          )}
         </div>
       </Section>
 

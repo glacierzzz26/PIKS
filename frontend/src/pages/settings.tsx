@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Save } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Save, Scale, ChevronRight } from "lucide-react";
 import { useData } from "@/hooks/useData";
 import { apiPost, ENDPOINTS } from "@/lib/api";
 import { LoadingBlock, ErrorState } from "@/components/ui/States";
@@ -187,6 +188,27 @@ export default function Page() {
               <Save size={13} className="mr-1.5 inline" />
               {saving ? "保存中…" : "保存设置"}
             </button>
+          </div>
+
+          {/* 对账：日常运维子入口（原侧栏项降级至此，个股轴心 IA） */}
+          <div className="form-card mt-4">
+            <h3>运维</h3>
+            <p className="fnote">管线巡检与对账</p>
+            <Link
+              to="/recon"
+              className="flex items-center justify-between rounded-[10px] border border-line px-3 py-2.5 text-[13px] no-underline hover:border-accent"
+            >
+              <span className="inline-flex items-center gap-2">
+                <Scale size={15} className="text-muted" />
+                <span>
+                  对账
+                  <span className="ml-2 text-[12px] text-faint">
+                    快讯 → 事件 → 实体 的链路巡检
+                  </span>
+                </span>
+              </span>
+              <ChevronRight size={14} className="text-faint" />
+            </Link>
           </div>
         </div>
       )}

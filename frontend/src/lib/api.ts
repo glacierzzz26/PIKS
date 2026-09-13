@@ -16,13 +16,14 @@ export const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api/v1";
 /** API 端点约定（供后端 cmd/web 增加只读投影接口时对齐） */
 export const ENDPOINTS = {
   events: "/events", // GET ?type=&status=&q=&from=&to=
-  entities: "/entities", // GET ?type=&q=
+  entities: "/entities", // GET ?type=&q=&status=
   relationships: "/relationships", // GET
   marketSnapshot: "/market/snapshot", // GET ?date=YYYY-MM-DD
   flashes: "/flashes", // GET ?q=&source=
   notes: "/notes", // GET
   note: "/notes/:id", // GET/PUT/DELETE
   dashboard: "/dashboard", // GET
+  watchlist: "/watchlist", // GET 自选聚合（设计 frontend-ia §2.3）
   recon: "/recon", // GET
   reviews: "/reviews", // GET
   trades: "/trades", // GET/POST
@@ -37,6 +38,7 @@ export const ENDPOINTS = {
   chatClear: "/chat/clear", // POST
   researchRuns: "/research-runs", // GET ?code=&entity=&limit= | POST {code,profile?,days?}
   researchRun: "/research-runs/:runId", // GET
+  stock: "/stock/:code", // GET 个股中心聚合（设计 frontend-ia §2.4）
 } as const;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

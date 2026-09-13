@@ -5,6 +5,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -147,4 +148,44 @@ func (s *Store) ListTradesBetween(ctx context.Context, start, end time.Time) ([]
 	}
 	defer rows.Close()
 	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Trade])
+}
+
+// ListTradesByCode 某股票代码的全部成交(个股中心用,设计 frontend-ia §2.4),
+// 按 trade_date 倒序,命中 idx_trades_code(迁移 0010);代码经 NormalizeCode 归一。
+func (s *Store) ListTradesByCode(ctx context.Context, code string, limit int) ([]model.Trade, error) {
+	q := `SELECT ` + tradeCols + ` FROM trades WHERE code=$1
+	      ORDER BY trade_date DESC, created_at DESC`
+	args := []any{NormalizeCode(code)}
+	if limit > 0 {
+		q += ` LIMIT $2`
+		args = append(args, limit)
+	}
+	rows, err := s.Pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Trade])
+}
+
+// LatestPositionByCode 某代码最近一次出现在持仓快照里的行(个股中心用)。
+// 注意语义区别于 LatestPositions:后者是"全组合最近快照日的所有持仓",
+// 本方法是"该股最近一次被快照到的持仓"。无则该股未持仓 → (nil, nil)。
+func (s *Store) LatestPositionByCode(ctx context.Context, code string) (*model.Position, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT `+positionCols+` FROM positions
+		WHERE code=$1
+		ORDER BY snapshot_date DESC, created_at DESC LIMIT 1`, NormalizeCode(code))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	p, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[model.Position])
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
 }

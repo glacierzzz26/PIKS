@@ -230,7 +230,8 @@ class WorkflowEngine:
             events = self.context.get("event_metrics")
             risk = self.context.get("risk_metrics")
             self.context["scorecard"] = analyze_scorecard(
-                price, volume, financial, events, risk, self.as_of
+                price, volume, financial, events, risk, self.as_of,
+                dimensions=self.profile.scorecard.dimensions,
             )
 
         # 统一分析引擎（生成 Evidence）

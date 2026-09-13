@@ -45,7 +45,12 @@ export default function ReportHeader({
       </Link>
       <div className="flex flex-wrap items-center gap-2.5">
         <h1 className="m-0 text-xl font-bold">{symbol}</h1>
-        <span className="num text-sm text-muted">{code}</span>
+        <Link
+          to={`/stock/${code}`}
+          className="num text-sm text-muted no-underline hover:text-accent"
+        >
+          {code}
+        </Link>
         <Chip tone="dim">{RESEARCH_PROFILE_LABEL[profile] ?? profile}</Chip>
         {status !== "done" && (
           <Chip tone="amber">

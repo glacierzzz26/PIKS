@@ -32,6 +32,8 @@ func (s *Server) Routes() http.Handler {
 	// /api/v1 只读投影(React 前端数据源,字段对齐 frontend/src/lib/types.ts)
 	mux.HandleFunc("/api/v1/events", s.handleAPIEvents)
 	mux.HandleFunc("/api/v1/entities", s.handleAPIEntities)
+	// 自选聚合(design frontend-ia §2.3):首页数据源,自选实体 + 持仓标记一次返回。
+	mux.HandleFunc("/api/v1/watchlist", s.handleAPIWatchlist)
 	mux.HandleFunc("/api/v1/relationships", s.handleAPIRelationships)
 	mux.HandleFunc("/api/v1/market/snapshot", s.handleAPIMarketSnapshot)
 	mux.HandleFunc("/api/v1/flashes", s.handleAPIFlashes)
@@ -42,6 +44,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/reviews", s.handleAPIReviews)
 	mux.HandleFunc("/api/v1/trades", s.handleAPITrades)
 	mux.HandleFunc("/api/v1/trades/", s.handleAPITradesSub)
+	// 个股中心聚合(design frontend-ia §2.4):?code 一站返回持仓/深研/事件/笔记/涨停。
+	mux.HandleFunc("/api/v1/stock/", s.handleAPIStock)
 	mux.HandleFunc("/api/v1/chat", s.handleAPIChat)
 	mux.HandleFunc("/api/v1/chat/clear", s.chatClearAPI)
 	mux.HandleFunc("/api/v1/settings", s.handleAPISettings)

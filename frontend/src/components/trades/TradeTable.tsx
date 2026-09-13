@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useState } from "react";
+import { Link } from "react-router-dom";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Chip } from "@/components/ui/Num";
 import TradeReview from "@/components/trades/TradeReview";
@@ -38,7 +39,9 @@ export default function TradeTable({
               <tr>
                 <td className="num-t">{t.date}</td>
                 <td>
-                  <span className="chip">{t.code}</span>
+                  <Link to={`/stock/${t.code}`} className="chip no-underline hover:border-accent">
+                    {t.code}
+                  </Link>
                   <span className="ml-2 font-semibold">{t.name}</span>
                 </td>
                 <td>

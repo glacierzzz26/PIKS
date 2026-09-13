@@ -113,6 +113,26 @@ func (s *Store) ListEventsForAPI(ctx context.Context) ([]EventForAPI, error) {
 	return pgx.CollectRows(rows, pgx.RowToStructByName[EventForAPI])
 }
 
+// ListEventsByIDs 按 id 批量取事件(完整投影行),个股中心「相关事件」用。
+// 顺序由调用方按需重排(本查询按 occurred_at/created_at 升序)。
+func (s *Store) ListEventsByIDs(ctx context.Context, ids []string) ([]EventForAPI, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := s.Pool.Query(ctx,
+		`SELECT e.id,e.title,e.event_type,e.summary,e.facts,e.affected,e.occurred_at,e.created_at,
+		        e.confidence,e.status, s.name AS source_name, rd.url AS source_url
+		 FROM events e
+		 JOIN sources s ON s.id=e.source_id
+		 LEFT JOIN raw_documents rd ON rd.id=e.raw_document_id
+		 WHERE e.id = ANY($1) AND e.status IN ('extracted','verified','published')
+		 ORDER BY e.occurred_at NULLS LAST, e.created_at`, ids)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByName[EventForAPI])
+}
+
 // MarkEventPublished 标记事件已发布:只设 published_at,不改 status。
 // status 恒表示知识状态(extracted/verified/merged),发布生命周期由 published_at 承载(设计 §3.4)。
 // 好处:卡片 front matter 稳定,已发布事件即使 updated_at 被触碰,内容未变时渲染逐字节相同 → hash 跳过 → git 零提交。

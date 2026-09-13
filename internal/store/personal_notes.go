@@ -164,6 +164,32 @@ type NoteRefDetail struct {
 	Target string `db:"target"`
 }
 
+// ReferencingNote 引用了某实体的笔记视图行(个股中心「我的笔记」用,设计 frontend-ia §2.4)。
+type ReferencingNote struct {
+	ID        string    `db:"id"`
+	Type      string    `db:"type"`
+	Title     string    `db:"title"`
+	Status    string    `db:"status"`
+	UpdatedAt time.Time `db:"updated_at"`
+}
+
+// ListNotesReferencingEntity 反向查引用了指定实体的笔记(ListNoteRefs 的反向:
+// 笔记 → 实体 references 边)。个股中心用,按 updated_at 倒序。
+func (s *Store) ListNotesReferencingEntity(ctx context.Context, entityID string) ([]ReferencingNote, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT n.id, n.type, COALESCE(n.title,'') AS title, n.status, n.updated_at
+		FROM relationships r
+		JOIN personal_notes n ON n.id = r.from_id
+		WHERE r.from_type='personal_note' AND r.to_type='entity' AND r.to_id=$1
+		  AND r.rel_type='references'
+		ORDER BY n.updated_at DESC`, entityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[ReferencingNote])
+}
+
 // ReplaceNoteRefs 替换笔记的事件/实体引用(编辑时整组重建,幂等)。
 func (s *Store) ReplaceNoteRefs(ctx context.Context, noteID string, refs []NoteRef) error {
 	tx, err := s.Pool.Begin(ctx)

@@ -49,10 +49,14 @@ PIKS 是 A 股投资知识系统：快讯/涨停池 → 结构化事件与实体
 9. 所有异步操作必须处理 loading / error / empty 三态
 10. 禁止紫粉渐变、禁止 playful 字体、禁止 AI 套话文案
 
-## 页面模块（2026-08-30 起：全部页面由 React SPA 提供，无 Go HTML）
-- **全部页面（`frontend/src/pages/`，React Router 注册）**：看板 / 事件流（含 `/events/:id` 详情抽屉兜底）/ 实体库（含 `/entities/:id` → `?id=` 重定向）/ 图谱 / 涨停梯队 / 快讯流 / 笔记（列表 + 新建 `/notes/new` + 阅读 `/notes/:id` + 编辑 `/notes/:id/edit`）/ 周报（周导航 + AI 综述生成）/ 对账 / 交易（手动录入 + 截图导入 + AI 解读 + 组合诊断）/ 复盘 / AI 对话 / 设置
+## 页面模块（2026-08-30 起：全部页面由 React SPA 提供，无 Go HTML；2026-09-13 个股轴心重排）
+- **导航骨架（`frontend/src/components/layout/navItems.ts`，单一真源）**：自选（首页 `/`，Star）/ 研究（个股分析 `/research`）/ 发现（市场看板 `/market` · 涨停梯队 `/ladder` · 快讯流 `/flashes` · 事件流 `/events` · 图谱 `/graph` · 实体库 `/entities`）/ 复盘（复盘 `/reviews` · 周报 `/weekly` · 笔记 `/notes`）/ 交易（`/trades`）/ 系统（AI 对话 `/chat` · 设置 `/settings`）。对账 `/recon` 降为设置页子入口，侧栏不再占位。分组仅视觉分隔、不可折叠。
+- **个股中心 `/stock/:code`**（不进侧栏，⌘K 可直达）：以 `code` 为主键、`entity` 为可选富化，聚合持仓/成交/深研/事件/笔记/行业/涨停；数据源 `GET /api/v1/stock/:code`。所有带 code 的入口（涨停梯队/交易表/持仓表/实体库/事件 affected/报告头/⌘K）导流至此。
+- **自选（`entities.status`）**：`watch` = 在自选 / `active` = 库中有不在自选 / `archived` = 曾自选已移出（保留历史/深研/笔记）。自选首页数据源 `GET /api/v1/watchlist`；引入/移出**只经同花顺自选截图镜像同步**（`/trades` 页截图导入 `kind='watchlist'`，服务端 diff add/keep/remove，无手动星标）。
+- **全部页面（`frontend/src/pages/`，React Router 注册）**：自选 `/` / 市场看板 `/market` / 事件流（含 `/events/:id` 详情抽屉兜底）/ 实体库（含 `/entities/:id` → `?id=` 重定向）/ 图谱 / 涨停梯队 / 快讯流 / 笔记（列表 + 新建 `/notes/new` + 阅读 `/notes/:id` + 编辑 `/notes/:id/edit`）/ 周报（周导航 + AI 综述生成）/ 对账 / 交易（手动录入 + 截图导入 + AI 解读 + 组合诊断）/ 复盘 / AI 对话 / 设置 / 个股中心 `/stock/:code`
 - 写操作经 `/api/v1` JSON 写接口（`internal/web/api_write.go`）；nginx 仅反代 `/api/*` + 服务 SPA 静态文件，无交互页反代
 - 分流规则见 `configs/nginx.conf`（生产）与 `frontend/vite.config.ts`（dev proxy 复刻）
+- ⚠️ **`UpsertEntity` 状态语义**：空 `Status` = 保持既有（entity-build 每日 upsert 不带 status，若把空当 `active` 会清空自选）
 
 ## 禁用清单
 - 禁止直接改 PostgreSQL schema（前端重构不涉及）

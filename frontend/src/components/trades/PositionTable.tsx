@@ -1,5 +1,6 @@
 "use client";
 
+import { Link } from "react-router-dom";
 import DeepResearchButton from "@/components/research/DeepResearchButton";
 import type { PositionRow } from "@/lib/types";
 
@@ -22,7 +23,9 @@ export default function PositionTable({ positions }: { positions: PositionRow[] 
           {positions.map((p) => (
             <tr key={p.code}>
               <td>
-                <span className="chip">{p.code}</span>
+                <Link to={`/stock/${p.code}`} className="chip no-underline hover:border-accent">
+                  {p.code}
+                </Link>
                 <span className="ml-2 font-semibold">{p.name}</span>
               </td>
               <td className="num-t">{p.qty}</td>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { Link } from "react-router-dom";
 import { useData } from "@/hooks/useData";
 import { ENDPOINTS } from "@/lib/api";
 import { fmtYi, fmtWan } from "@/lib/format";
@@ -101,7 +102,9 @@ function LadderTable({ market }: { market: MarketSnapshot }) {
           {rows.map((s) => (
             <tr key={s.code}>
               <td style={{ textAlign: "left" }}>
-                <span className="chip">{s.code}</span>
+                <Link to={`/stock/${s.code}`} className="chip no-underline hover:border-accent">
+                  {s.code}
+                </Link>
                 <span className="ml-2 font-semibold">{s.name}</span>
               </td>
               <td className="num-t">

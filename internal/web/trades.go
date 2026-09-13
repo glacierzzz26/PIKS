@@ -22,32 +22,41 @@ const tradeMaxUpload = 5 << 20 // 5MB
 
 // ImportPreview 截图抽取预览(确认前不落库)。
 type ImportPreview struct {
-	Kind         string // trade / position
+	Kind         string // trade / position / watchlist
 	AttachmentID string
 	Trades       []PreviewTrade
 	Positions    []PreviewPosition
+	Watch        []PreviewWatch
 }
 
 type PreviewTrade struct {
-	Include bool
+	Include                bool
 	Date, Code, Name, Side string
 	Price, Qty, Amount     string
 	Exists                 bool // 与既有交易重复提示
 }
 
 type PreviewPosition struct {
-	Include   bool
+	Include                                            bool
 	Code, Name, Qty, CostPrice, Price, MarketValue, PL string
+}
+
+// PreviewWatch 自选镜像行(设计 frontend-ia §2.4):Change = add(将加入)/ remove(将移出)/ keep(已有,不变)。
+type PreviewWatch struct {
+	Include bool
+	Change  string // add / remove / keep
+	Code    string
+	Name    string
 }
 
 // tradeReview 复盘 JSONB 结构(与模板/存储契约)。
 type tradeReview struct {
-	Review   string        `json:"review"`
-	Refs     tradeRefs     `json:"refs"`
+	Review   string         `json:"review"`
+	Refs     tradeRefs      `json:"refs"`
 	Mistakes []tradeMistake `json:"mistakes"`
-	Model    string        `json:"model"`
-	Tokens   int64         `json:"tokens"`
-	GenAt    string        `json:"generated_at"`
+	Model    string         `json:"model"`
+	Tokens   int64          `json:"tokens"`
+	GenAt    string         `json:"generated_at"`
 }
 
 type tradeRefs struct {
@@ -82,6 +91,18 @@ func parseTradeReview(raw json.RawMessage) *tradeReview {
 
 // importPrompt 返回截图抽取的 system/user/schema(与 design trades.md §2.2 一致)。
 func importPrompt(kind string) (system, user, schema string) {
+	if kind == "watchlist" {
+		system = `你是 PIKS 的自选股截图识别助手。识别同花顺 App「自选」列表截图,只抽取其中的 A 股个股。
+规则:
+- 只抽取截图中明确出现的个股;字段缺失标 null,禁止推断或补全;
+- code 用截图标注的 6 位数字代码;名称放 name;
+- 忽略指数(如上证指数/深证成指/创业板指)、基金/ETF、板块/概念/行业等非个股条目;
+- 若图片不是自选列表截图,返回空数组 {"stocks":[]},不要编造;
+- 仅输出 JSON。`
+		user = "识别这张自选股截图,输出其中的 A 股个股列表。"
+		schema = `{"type":"object","properties":{"stocks":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"name":{"type":"string"}}}}}}`
+		return
+	}
 	if kind == "position" {
 		system = `你是 PIKS 的交易截图识别助手。识别同花顺 App「持仓」截图,抽取结构化持仓数据。
 规则:
@@ -108,6 +129,9 @@ func importPrompt(kind string) (system, user, schema string) {
 // buildImportPreview 把抽取 JSON → 预览行(去重标记 TradeExists)。
 func buildImportPreview(ctx context.Context, st *store.Store, kind, attID string, data json.RawMessage) (*ImportPreview, error) {
 	prev := &ImportPreview{Kind: kind, AttachmentID: attID}
+	if kind == "watchlist" {
+		return buildWatchPreview(ctx, st, prev, data)
+	}
 	// 注意:此处必须用带 json 标签的内联 struct。model.Position 只有 db 标签,
 	// encoding/json 无法把 cost_price/market_value 这类 snake_case 键匹配到
 	// CostPrice/MarketValue 字段(会静默丢弃),交易路径同样用内联 struct。
@@ -188,6 +212,66 @@ func buildImportPreview(ctx context.Context, st *store.Store, kind, attID string
 			Price: price, Qty: qty, Amount: amt,
 		})
 	}
+	return prev, nil
+}
+
+// buildWatchPreview 自选镜像的核心:识别行 × 现有 status='watch' 做服务端 diff(设计 frontend-ia §2.4)。
+// 识别到 → add/keep;现有自选未出现在截图 → remove(默认勾选,镜像语义:截图即权威快照)。
+// 缺 code 的名称无法用作主键,如实丢弃(不臆测代码);识别不到任何个股 → 空 Watch,上层据此 422。
+func buildWatchPreview(ctx context.Context, st *store.Store, prev *ImportPreview, data json.RawMessage) (*ImportPreview, error) {
+	var out struct {
+		Stocks []struct {
+			Code string `json:"code"`
+			Name string `json:"name"`
+		} `json:"stocks"`
+	}
+	if err := json.Unmarshal(data, &out); err != nil {
+		return nil, err
+	}
+	seen := map[string]string{} // code → name(截图内去重,后出现覆盖)
+	for _, s := range out.Stocks {
+		code := store.NormalizeCode(strings.TrimSpace(s.Code))
+		if code == "" || strings.TrimSpace(s.Name) == "" {
+			continue
+		}
+		seen[code] = strings.TrimSpace(s.Name)
+	}
+	existing, err := st.ListEntitiesByStatus(ctx, "watch")
+	if err != nil {
+		return nil, err
+	}
+	watchCodes := map[string]bool{}
+	for _, e := range existing {
+		if code := entityCode(e); code != "" {
+			watchCodes[code] = true
+		}
+	}
+	// 截图中出现的:add(当前不在自选) 或 keep(已在)
+	for code, name := range seen {
+		change := "add"
+		if watchCodes[code] {
+			change = "keep"
+		}
+		prev.Watch = append(prev.Watch, PreviewWatch{Include: change == "add", Change: change, Code: code, Name: name})
+	}
+	// 现有自选未出现在截图:remove(镜像移出)
+	for _, e := range existing {
+		code := entityCode(e)
+		if code == "" {
+			continue
+		}
+		if _, inShot := seen[code]; inShot {
+			continue
+		}
+		prev.Watch = append(prev.Watch, PreviewWatch{Include: true, Change: "remove", Code: code, Name: e.Name})
+	}
+	sort.Slice(prev.Watch, func(i, j int) bool {
+		ri, rj := prev.Watch[i].Change == "remove", prev.Watch[j].Change == "remove"
+		if ri != rj {
+			return !ri // add/keep 在前,remove 在后
+		}
+		return prev.Watch[i].Code < prev.Watch[j].Code
+	})
 	return prev, nil
 }
 
@@ -495,8 +579,8 @@ type PositionAggRow struct {
 	Cost, Price  float64
 	MV, PL       float64 // 可用则算,缺数据为 0
 	HasMV        bool
-	MVShare      float64 // 市值占比 %
-	PlPct        float64 // 单只盈亏率 %
+	MVShare      float64  // 市值占比 %
+	PlPct        float64  // 单只盈亏率 %
 	RecentTrades []string // 近14天交易描述,如 "08-28 买入 100股"
 }
 
@@ -759,4 +843,3 @@ func (s *Server) positionSaveRiskCore(ctx context.Context, n int) (bool, string)
 	}
 	return true, "✅ 已存为个人笔记。"
 }
-

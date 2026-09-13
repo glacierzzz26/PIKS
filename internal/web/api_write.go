@@ -255,15 +255,23 @@ type apiPreviewPosition struct {
 	PL          string `json:"pl"`
 }
 
+type apiPreviewWatch struct {
+	Include bool   `json:"include"`
+	Change  string `json:"change"` // add / remove / keep
+	Code    string `json:"code"`
+	Name    string `json:"name"`
+}
+
 type apiImportPreview struct {
 	Kind         string               `json:"kind"`
 	AttachmentID string               `json:"attachment_id"`
 	Trades       []apiPreviewTrade    `json:"trades"`
 	Positions    []apiPreviewPosition `json:"positions"`
+	Watch        []apiPreviewWatch    `json:"watch"`
 }
 
 func toAPIImportPreview(p *ImportPreview) apiImportPreview {
-	out := apiImportPreview{Kind: p.Kind, AttachmentID: p.AttachmentID, Trades: []apiPreviewTrade{}, Positions: []apiPreviewPosition{}}
+	out := apiImportPreview{Kind: p.Kind, AttachmentID: p.AttachmentID, Trades: []apiPreviewTrade{}, Positions: []apiPreviewPosition{}, Watch: []apiPreviewWatch{}}
 	for _, t := range p.Trades {
 		out.Trades = append(out.Trades, apiPreviewTrade{
 			Include: t.Include, Exists: t.Exists, Date: t.Date, Code: t.Code,
@@ -276,14 +284,19 @@ func toAPIImportPreview(p *ImportPreview) apiImportPreview {
 			CostPrice: pv.CostPrice, Price: pv.Price, MarketValue: pv.MarketValue, PL: pv.PL,
 		})
 	}
+	for _, w := range p.Watch {
+		out.Watch = append(out.Watch, apiPreviewWatch{
+			Include: w.Include, Change: w.Change, Code: w.Code, Name: w.Name,
+		})
+	}
 	return out
 }
 
 // POST /api/v1/trades/import —— 截图导入:视觉抽取 → 预览(不落库)。
 func (s *Server) tradeImportAPI(w http.ResponseWriter, r *http.Request) {
 	kind := r.FormValue("type")
-	if kind != "trade" && kind != "position" {
-		apiErrJSON(w, http.StatusBadRequest, "请选择截图类型(今日交易 / 持仓)。")
+	if kind != "trade" && kind != "position" && kind != "watchlist" {
+		apiErrJSON(w, http.StatusBadRequest, "请选择截图类型(今日交易 / 持仓 / 自选)。")
 		return
 	}
 	if err := r.ParseMultipartForm(tradeMaxUpload + 1<<20); err != nil {
@@ -357,8 +370,8 @@ func (s *Server) tradeImportAPI(w http.ResponseWriter, r *http.Request) {
 		apiErrJSON(w, http.StatusInternalServerError, "识别结果解析失败: "+perr.Error())
 		return
 	}
-	if preview == nil || (len(preview.Trades) == 0 && len(preview.Positions) == 0) {
-		apiErrJSON(w, http.StatusUnprocessableEntity, "未识别到交易/持仓,请检查截图是否为同花顺今日交易/持仓页,或手动录入。")
+	if preview == nil || (len(preview.Trades) == 0 && len(preview.Positions) == 0 && len(preview.Watch) == 0) {
+		apiErrJSON(w, http.StatusUnprocessableEntity, "未识别到交易/持仓/自选股,请检查截图是否为同花顺对应页面,或手动录入。")
 		return
 	}
 	s.writeJSON(w, toAPIImportPreview(preview))
@@ -370,6 +383,10 @@ func (s *Server) tradeConfirmAPI(w http.ResponseWriter, r *http.Request) {
 	var p apiImportPreview
 	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
 		apiErrJSON(w, http.StatusBadRequest, "请求体解析失败: "+err.Error())
+		return
+	}
+	if p.Kind == "watchlist" {
+		s.tradeConfirmWatchlist(w, r, &p)
 		return
 	}
 	if p.Kind == "position" {
@@ -451,6 +468,37 @@ func (s *Server) tradeConfirmAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeJSON(w, map[string]bool{"ok": true})
+}
+
+// tradeConfirmWatchlist 应用自选镜像(设计 frontend-ia §2.4):请求体即用户编辑过的 diff,confirm 不重算,
+// 尊重用户取消选择。add/keep → 确保实体 + status='watch';remove → status='archived'(不删,保留历史/深研/笔记)。
+func (s *Server) tradeConfirmWatchlist(w http.ResponseWriter, r *http.Request, p *apiImportPreview) {
+	ctx := r.Context()
+	applied := 0
+	for _, row := range p.Watch {
+		if !row.Include || strings.TrimSpace(row.Name) == "" || strings.TrimSpace(row.Code) == "" {
+			continue
+		}
+		code := store.NormalizeCode(strings.TrimSpace(row.Code))
+		if code == "" {
+			continue
+		}
+		id, err := s.store.EnsureCompanyEntity(ctx, code, strings.TrimSpace(row.Name))
+		if err != nil {
+			apiErrJSON(w, http.StatusInternalServerError, "实体补全失败: "+err.Error())
+			return
+		}
+		status := "watch"
+		if row.Change == "remove" {
+			status = "archived"
+		}
+		if _, err := s.store.SetEntityStatus(ctx, id, status); err != nil {
+			apiErrJSON(w, http.StatusInternalServerError, "更新自选状态失败: "+err.Error())
+			return
+		}
+		applied++
+	}
+	s.writeJSON(w, map[string]int{"applied": applied})
 }
 
 // ---- 交易/持仓 AI 复盘(核心逻辑抽在 trades.go,这里仅转 JSON) ----

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, Suspense, useState } from "react";
+import { Link } from "react-router-dom";
 import { Search, X } from "lucide-react";
 import { useData } from "@/hooks/useData";
 import { usePagedQuery } from "@/hooks/usePagedQuery";
@@ -144,11 +145,20 @@ function EntitiesInner() {
                 <div className="desc">{e.description}</div>
                 <div className="efoot">
                   <span>更新 <b>{e.updated_at}</b></span>
-                  {/* 仅带股票代码的公司实体提供深研入口（detail.code 归一） */}
+                  {/* 带股票代码的公司实体：代码跳个股中心，另提供深研入口（detail.code 归一） */}
                   {e.code && (
-                    <span onClick={(ev) => ev.stopPropagation()}>
-                      <DeepResearchButton code={e.code} />
-                    </span>
+                    <>
+                      <Link
+                        to={`/stock/${e.code}`}
+                        onClick={(ev) => ev.stopPropagation()}
+                        className="num no-underline hover:text-accent"
+                      >
+                        {e.code}
+                      </Link>
+                      <span onClick={(ev) => ev.stopPropagation()}>
+                        <DeepResearchButton code={e.code} />
+                      </span>
+                    </>
                   )}
                 </div>
               </div>

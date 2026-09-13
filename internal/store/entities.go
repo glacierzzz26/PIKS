@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
@@ -13,6 +14,28 @@ import (
 )
 
 const entityCols = `id,type,name,aliases,description,detail,status,created_at,updated_at`
+
+// GetCompanyEntityByCode 按 6 位代码取公司实体(设计 frontend-ia §2.4)。
+// 代码经 NormalizeCode 归一(与 research_runs/交易补全对齐)。同 code 多实体时取最早创建的一行。
+// 未建实体返回 (nil, nil) —— 个股中心以 code 为主键,entity 是可选的富化,不因缺实体报错。
+func (s *Store) GetCompanyEntityByCode(ctx context.Context, code string) (*model.Entity, error) {
+	rows, err := s.Pool.Query(ctx,
+		`SELECT `+entityCols+` FROM entities
+		 WHERE type='company' AND detail->>'code'=$1
+		 ORDER BY created_at LIMIT 1`, NormalizeCode(code))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	e, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[model.Entity])
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &e, nil
+}
 
 // EnsureCompanyEntity 交易股票实体补全(design trades.md §2.3):按 name 或 detail->>code
 // 查 type='company';缺则建(detail={code,source:'trade-import'} 标注来源,不编造描述)。返回实体 id。
@@ -41,6 +64,8 @@ func (s *Store) EnsureCompanyEntity(ctx context.Context, code, name string) (str
 }
 
 // UpsertEntity 按 (type,name) upsert(设计 §2.1 UNIQUE)。aliases/detail 用新值覆盖。
+// 状态语义:显式传 status 才写 state;空 status = 「保持既有」(新建时落 'active')。
+// ⚠️ entity-build 构造实体不设 status,若把空当 'active' 会每日清空自选(watch)——见设计 frontend-ia §2.3。
 // 严格幂等:已存在且字段全同 → 不写库(零变更,重跑零 churn)。返回 (id, created bool, err)。
 func (s *Store) UpsertEntity(ctx context.Context, e *model.Entity) (string, bool, error) {
 	aliases := e.Aliases
@@ -51,7 +76,8 @@ func (s *Store) UpsertEntity(ctx context.Context, e *model.Entity) (string, bool
 	if len(detail) == 0 {
 		detail = json.RawMessage(`{}`)
 	}
-	status := defaultStr(e.Status, "active")
+	explicitStatus := strings.TrimSpace(e.Status) != ""
+	insertStatus := defaultStr(e.Status, "active")
 
 	var existing struct {
 		ID      string
@@ -65,20 +91,29 @@ func (s *Store) UpsertEntity(ctx context.Context, e *model.Entity) (string, bool
 		Scan(&existing.ID, &existing.Aliases, &existing.Detail, &existing.Status)
 	switch {
 	case err == nil:
-		if jsonEqual(existing.Aliases, aliases) && jsonEqual(existing.Detail, detail) && existing.Status == status {
+		// 空 status 不下发 status 列(保留用户态 watch/archived);churn 比较仅看显式 status。
+		if jsonEqual(existing.Aliases, aliases) && jsonEqual(existing.Detail, detail) &&
+			(!explicitStatus || existing.Status == e.Status) {
 			return existing.ID, false, nil // 无变更,跳过写
 		}
-		_, err = s.Pool.Exec(ctx,
-			`UPDATE entities SET aliases=$2, description=$3, detail=$4, status=$5, updated_at=now()
-			 WHERE id=$1`,
-			existing.ID, aliases, e.Description, detail, status)
+		if explicitStatus {
+			_, err = s.Pool.Exec(ctx,
+				`UPDATE entities SET aliases=$2, description=$3, detail=$4, status=$5, updated_at=now()
+				 WHERE id=$1`,
+				existing.ID, aliases, e.Description, detail, e.Status)
+		} else {
+			_, err = s.Pool.Exec(ctx,
+				`UPDATE entities SET aliases=$2, description=$3, detail=$4, updated_at=now()
+				 WHERE id=$1`,
+				existing.ID, aliases, e.Description, detail)
+		}
 		return existing.ID, false, err
 	case errors.Is(err, pgx.ErrNoRows):
 		var id string
 		err = s.Pool.QueryRow(ctx, `
 			INSERT INTO entities (type, name, aliases, description, detail, status)
 			VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-			e.Type, e.Name, aliases, e.Description, detail, status).Scan(&id)
+			e.Type, e.Name, aliases, e.Description, detail, insertStatus).Scan(&id)
 		return id, true, err
 	default:
 		return "", false, err
@@ -171,12 +206,33 @@ func (s *Store) ListEntitiesByIDs(ctx context.Context, ids []string) ([]model.En
 
 // ListAllEntities 全部实体(实体构建/发布 in-memory 索引用)。
 func (s *Store) ListAllEntities(ctx context.Context) ([]model.Entity, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT ` + entityCols + ` FROM entities ORDER BY type, name`)
+	rows, err := s.Pool.Query(ctx, `SELECT `+entityCols+` FROM entities ORDER BY type, name`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Entity])
+}
+
+// ListEntitiesByStatus 按状态取实体(设计 frontend-ia §2.3:自选 = status='watch')。
+func (s *Store) ListEntitiesByStatus(ctx context.Context, status string) ([]model.Entity, error) {
+	rows, err := s.Pool.Query(ctx,
+		`SELECT `+entityCols+` FROM entities WHERE status=$1 ORDER BY name`, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Entity])
+}
+
+// SetEntityStatus 显式置状态(自选镜像:watch 加入 / archived 移出)。返回是否命中实体。
+func (s *Store) SetEntityStatus(ctx context.Context, id, status string) (bool, error) {
+	tag, err := s.Pool.Exec(ctx,
+		`UPDATE entities SET status=$2, updated_at=now() WHERE id=$1`, id, status)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
 }
 
 // ListAllEntityNames 全部实体名+别名(实体构建 dedup 用,零 AI 种子去重)。

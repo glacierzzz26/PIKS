@@ -21,6 +21,9 @@ data/
 *.db
 *.sqlite
 
+# AI 网关自签 CA(仅 lab 放置,不进 git;compose 挂 ./certs:/certs:ro)
+certs/
+
 # Windows 残留
 *:Zone.Identifier
 

@@ -37,8 +37,13 @@ services:
       - PIKS_DATABASE_URL=postgres://piks:${PIKS_DB_PASSWORD:-piks_dev_password}@postgres:5432/piks?sslmode=disable
       - PIKS_UPLOAD_DIR=/data/uploads  # 迭代 5-3:/chat 截图落盘(piks_data 命名卷)
       - PIKS_RESEARCH_OUT_DIR=/data/research  # 深研产物持久化:断点重跑可复用(容器内 /tmp 易失)
+      # AI 网关自签 CA:Go(crypto/x509)读 SSL_CERT_DIR,语义为「并集」——
+      # /etc/ssl/certs(公共根,debian ca-certificates)+ 网关 CA 目录,既信任自签网关又保留公共根。
+      # (dev 侧 ~/.zshrc 因曾受 SSL_CERT_FILE 替换语义所苦而手动合并 bundle;此处无需合并。)
+      - SSL_CERT_DIR=/etc/ssl/certs:/certs
     volumes:
       - piks_data:/data
+      - ./certs:/certs:ro              # 网关自签 CA(仅 lab,不进 git)
     depends_on:
       postgres:
         condition: service_healthy
@@ -57,7 +62,11 @@ services:
     env_file: [".env"]                 # /home/rguo/piks/.env(真实密钥,0600)
     environment:
       - TZ=Asia/Shanghai               # 非交易日判定/复盘日期均为北京时间
+      # AI 网关自签 CA(与 web 同):pipeline 各命令调 LLM 亦需信任(worker/entity-build/…)
+      - SSL_CERT_DIR=/etc/ssl/certs:/certs
       # 迭代 5-2:vault/GitHub 下线,不再挂载 vault 卷(Web 直读 PG)。
+    volumes:
+      - ./certs:/certs:ro              # 网关自签 CA(仅 lab,不进 git)
     networks: [piks]
     command: ["sh", "-c", "true"]
 

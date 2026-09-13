@@ -1,7 +1,7 @@
 # 前端信息架构重组设计文档（个股轴心的个人投研平台）
 
-> 状态:**已实现(Phase 1–4 落地于 dev,2026-09-13)**。范围:把 Web 信息架构从「按后端产物类型平铺」重组为**以个股为轴心**的个人投研平台——首页=自选列表,个股中心一站看全,市场数据退为「发现」辅助;引入自选股并以**同花顺自选截图镜像同步**。实现情况与偏差见 §7。
-> **约束:只做 dev 验证,不部署 lab**——代码改动仅随未来 lab 镜像重建生效,本次未部署、prod DB 无新迁移、生产行为不变。
+> 状态:**已实现并上生产(Phase 1–4,2026-09-13)**。范围:把 Web 信息架构从「按后端产物类型平铺」重组为**以个股为轴心**的个人投研平台——首页=自选列表,个股中心一站看全,市场数据退为「发现」辅助;引入自选股并以**同花顺自选截图镜像同步**。实现情况与偏差见 §7。
+> **部署**:2026-09-13 经 master 发布线(`1cde70e` → merge → 空提交 `c81c6d2`)上生产 lab,migrate 0(无 schema 变更),15 页 + 新端点全 200;回滚镜像保留 lab `piks-tools:rollback-pre-ia`。⚠️ 生产 `ai_model_vision` 为空 → 截图导入暂不可用(自选/交易均然),待网关出视觉模型。
 > 契约依据:`frontend/src/components/layout/navItems.ts`(导航单一真源)、`frontend/src/App.tsx`(路由表)、`internal/web/api_v1.go:668`(handleAPIDashboard 聚合先例)、`internal/web/api_write.go:283/368`(截图导入两段式 tradeImportAPI/tradeConfirmAPI)、`internal/web/trades.go:84/108`(importPrompt/buildImportPreview)、`internal/store/{entities,relationships,research_runs,trades,personal_notes,market_snapshots}.go`、`internal/model/model.go`(Entity.Status)、`migrations/0004_entities.sql`。
 
 ---
@@ -327,9 +327,13 @@ type ImportPreview struct {
 
 ---
 
-## 7. 实现记录(2026-09-13,dev)
+## 7. 实现记录(2026-09-13,dev → 上生产)
 
-四阶段全部落地于 dev 分支,**未部署 lab**;遵循「API key 不进 git」「禁改 PG schema」「禁破坏性 API 变更」红线。
+四阶段全部落地于 dev 分支;遵循「API key 不进 git」「禁改 PG schema」「禁破坏性 API 变更」红线。
+
+**部署记录(2026-09-13)**:dev `1cde70e`(含 b5baca4/efcfa9c research 两修)→ merge dev→master `82f3176` → 空提交 marker `c81c6d2`;`./scripts/deploy.sh` 上线。migrate 0。验收:15 页全 200(含新 `/market`、`/stock/600519`、`/stock/300750` 深链);`/api/v1/watchlist`(`{items:[]}`)、`/api/v1/stock/:code`、`/api/v1/entities?status=watch` 全 200;`/api/v1/stock/600371`(万向德农)entity+industry(种植业)+limit_ups 6 渲染正常(实体分支);生产 bundle `index-CtxiwP8_.js` 含新 IA 文案。回滚镜像 `piks-tools:rollback-pre-ia`(旧 `511f951`)留存 lab。
+
+**遗留(部署后)**:生产 `ai_model_vision` 为空 → **自选/交易截图导入暂不可用**(需先补视觉模型,`app_config` 改后须 `docker compose restart web` 生效)。
 
 ### 7.1 后端
 

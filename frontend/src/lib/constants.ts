@@ -26,6 +26,17 @@ export const ENTITY_TYPES = [
   { key: "person", label: "人物" },
 ];
 
+/** 个股深研报告类型（profile）。key 与 research/profiles/*.yaml 的 name 一致 */
+export const RESEARCH_PROFILES = [
+  { key: "complete-stock", label: "全面深研" },
+  { key: "short-term", label: "短线视角" },
+];
+
+/** profile key → 中文标签（未知 key 原样回显） */
+export const RESEARCH_PROFILE_LABEL: Record<string, string> = Object.fromEntries(
+  RESEARCH_PROFILES.map((p) => [p.key, p.label])
+);
+
 export const FLASH_SOURCES = [
   { key: "", label: "全部来源" },
   { key: "东财快讯", label: "东财快讯" },

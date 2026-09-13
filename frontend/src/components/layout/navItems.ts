@@ -18,6 +18,7 @@ import {
   Scale,
   MessageSquare,
   Settings,
+  Microscope,
 } from "lucide-react";
 
 export type NavItem = { href: string; label: string; icon: LucideIcon };
@@ -31,6 +32,10 @@ export const PRIMARY_NAV: NavItem = {
 };
 
 export const NAV_GROUPS: NavGroup[] = [
+  {
+    title: "研究",
+    items: [{ href: "/research", label: "个股分析", icon: Microscope }],
+  },
   {
     title: "数据",
     items: [

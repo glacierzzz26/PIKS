@@ -10,6 +10,7 @@ from ..analysis.events import EventMetrics
 from ..analysis.risk import RiskMetrics
 from ..analysis.capital import CapitalMetrics
 from ..analysis.scorecard import Scorecard
+from ..analysis.patterns import PatternMetrics
 from ..models.financial import FinancialSnapshot
 
 
@@ -25,6 +26,7 @@ def generate_json(
     capital_metrics: Optional[CapitalMetrics] = None,
     scorecard: Optional[Scorecard] = None,
     industry: Optional[Any] = None,
+    patterns: Optional[PatternMetrics] = None,
 ) -> Dict[str, Any]:
     """生成 JSON 结构化报告"""
     result = {
@@ -79,6 +81,9 @@ def generate_json(
 
     if capital_metrics:
         result["capital"] = asdict(capital_metrics)
+
+    if patterns:
+        result["patterns"] = asdict(patterns)
 
     if scorecard:
         result["scorecard"] = {

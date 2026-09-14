@@ -392,6 +392,62 @@ export type ResearchSynthesis = {
   conclusion?: string;
 };
 
+/** 量价形态逐日一点（双轴图数据源） */
+export type PatternPoint = {
+  date: string;
+  close: number;
+  turnover: number;
+  volume: number;
+};
+
+/** 量价形态标签（规则判定 = Inference，非遗事实；每条带 evidence 可核对） */
+export type PatternLabel = {
+  code: string;
+  label: string;
+  date: string;
+  evidence: string;
+};
+
+/** 换手率峰值与股价高点的对齐关系（辅助事实） */
+export type PatternDivergence = {
+  peak_date?: string;
+  peak_turnover?: number;
+  high_date?: string;
+  high_close?: number;
+  peak_high_gap_days?: number;
+  peak_high_coincide?: boolean;
+  turnover_price_corr?: number | null;
+  after_peak_return_pct?: number;
+};
+
+/** 量价形态指标卡（metrics.patterns）—— 换手率仅流通口径，形态是规则判定 */
+export type ResearchPatterns = {
+  symbol?: string;
+  as_of?: string;
+  window_days?: number;
+  series?: PatternPoint[];
+  labels?: PatternLabel[];
+  divergence?: PatternDivergence;
+  note?: string;
+};
+
+/** 单项风险（规则判定，metrics.risk.items[]） */
+export type ResearchRiskItem = {
+  category: string;
+  level: string; // low / medium / high
+  evidence: string;
+  description: string;
+};
+
+/** 风险指标卡（metrics.risk）—— overall_level + veto_buy（一票否决）为确定性结论 */
+export type ResearchRisk = {
+  symbol?: string;
+  as_of?: string;
+  overall_level?: string;
+  items?: ResearchRiskItem[];
+  veto_buy?: boolean;
+};
+
 /** metrics = Fact 区（确定性计算结果，按 section 组织） */
 export type ResearchMetrics = {
   meta?: Record<string, unknown>;
@@ -400,7 +456,8 @@ export type ResearchMetrics = {
   financial?: Record<string, unknown>;
   events?: Record<string, unknown>;
   capital?: Record<string, unknown>;
-  risk?: Record<string, unknown>;
+  risk?: ResearchRisk;
+  patterns?: ResearchPatterns;
   scorecard?: {
     overall?: number | null;
     overall_label?: string;
@@ -455,6 +512,14 @@ export type ResearchRunList = { runs: ResearchRunSummary[] };
 
 /** POST /api/v1/research-runs 触发响应 */
 export type ResearchTrigger = { run_id: string; status: ResearchStatus };
+
+/** POST /api/v1/research-runs 请求体（quick = 快速模式：合成可选，无 AI 也出确定性结论） */
+export type ResearchTriggerBody = {
+  code: string;
+  profile?: string;
+  days?: number;
+  quick?: boolean;
+};
 
 // ---- 个股中心（GET /api/v1/stock/:code，设计 frontend-ia §2.4）----
 

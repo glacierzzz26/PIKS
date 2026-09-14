@@ -5,6 +5,7 @@ import { useData } from "@/hooks/useData";
 import { ENDPOINTS } from "@/lib/api";
 import { LoadingBlock, ErrorState } from "@/components/ui/States";
 import StockHeader from "@/components/stock/StockHeader";
+import StockPrebuy from "@/components/stock/StockPrebuy";
 import StockPosition from "@/components/stock/StockPosition";
 import StockDecisions from "@/components/stock/StockDecisions";
 import StockResearch from "@/components/stock/StockResearch";
@@ -46,6 +47,15 @@ export default function Page() {
         entity={d.entity}
         industry={d.industry}
       />
+
+      <section className="section">
+        <div className="section-head">
+          <span className="bar" />
+          <h2>买入前速评</h2>
+          <span className="hint">现场跑一份新鲜体检：风险红线 · 评分卡 · 财务估值 · 量价形态 · AI</span>
+        </div>
+        <StockPrebuy code={d.code} />
+      </section>
 
       <section className="section">
         <div className="section-head">

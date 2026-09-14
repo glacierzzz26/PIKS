@@ -55,6 +55,7 @@ SECTION_REQUIREMENTS = {
     "announcements": {"providers": ["announcement"], "analysis": []},
     "industry": {"providers": ["industry"], "analysis": []},
     "risk": {"providers": [], "analysis": ["risk"]},
+    "patterns": {"providers": ["market"], "analysis": ["patterns"]},
     "conclusion": {"providers": [], "analysis": ["scorecard"]},
 }
 

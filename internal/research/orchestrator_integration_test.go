@@ -166,3 +166,69 @@ type gatherBoom struct{}
 func (gatherBoom) Error() string { return "akshare 连接超时(注入)" }
 
 var errGatherBoom = gatherBoom{}
+
+// TestOrchestratorQuickNoProvider 快速模式(RequireSynthesis=false)+ 无 AI provider:
+// 合成步不 fail,以骨架报告收口 → status=done,synthesis 空、markdown=骨架。
+// 对照深研(RequireSynthesis=true)同条件应 failed。
+func TestOrchestratorQuickNoProvider(t *testing.T) {
+	if os.Getenv("PIKS_TEST_INTEGRATION") == "" {
+		t.Skip("PIKS_TEST_INTEGRATION not set (integration off by default)")
+	}
+	dsn := os.Getenv("PIKS_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("PIKS_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	pool, err := store.Open(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := store.New(pool)
+	t.Cleanup(func() { pool.Close() })
+
+	dir := t.TempDir()
+	runID := "fixture-quick-" + time.Now().Format("20060102150405.000000")
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM research_runs WHERE run_id=$1`, runID)
+		_, _ = pool.Exec(ctx, `DELETE FROM task_runs WHERE command LIKE 'research-run:%' AND created_at > now() - interval '1 minute'`)
+	})
+
+	cli := &fakeCLI{files: map[string]string{
+		"run_meta.json": `{"run_id":"` + runID + `","symbol":"sz000560","profile":"prebuy",` +
+			`"as_of":"2026-09-12","sections":["price"],"contract":1}`,
+		"{code}_metrics.json": `{"meta":{"symbol":"sz000560","as_of":"2026-09-12"},` +
+			`"price":{"end_price":2.74},` +
+			`"patterns":{"series":[{"date":"2026-09-12","close":2.74,"turnover":1.0,"volume":100}],"labels":[],"divergence":{}}}`,
+		"{code}_synthesis_prompt.txt": "你是一名 A 股研究分析师…",
+		"{code}_skeleton.md":          "# 骨架报告\n\n确定性结论",
+	}}
+
+	// provider 为 nil:深研语义下合成必失败;快速模式应降级。
+	o := New(s, nil, 0)
+	o.runner = cli
+
+	if _, err := s.CreateResearchRun(ctx, &store.ResearchRun{
+		RunID: runID, Code: "000560", Symbol: "sz000560",
+		Profile: "prebuy", AsOf: time.Now(), Status: StatusPending,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := o.Run(ctx, Options{RunID: runID, Code: "000560", OutDir: dir, RequireSynthesis: false})
+	if err != nil {
+		t.Fatalf("编排应自行收口: %v", err)
+	}
+	if res.Status != StatusDone {
+		t.Fatalf("快速模式无 provider 应 done,实际 status=%s error=%s", res.Status, res.Error)
+	}
+	row, _ := s.GetResearchRun(ctx, runID)
+	if row == nil || row.Status != StatusDone {
+		t.Fatalf("应如实落 done,实际: %+v", row)
+	}
+	if row.Markdown == nil || len(*row.Markdown) == 0 {
+		t.Error("应有骨架 markdown")
+	}
+	if len(row.Metrics) == 0 {
+		t.Error("确定性指标卡应落库(不受合成降级影响)")
+	}
+}

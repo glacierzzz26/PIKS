@@ -17,6 +17,7 @@ from ..analysis.financial import analyze_financial
 from ..analysis.events import analyze_events
 from ..analysis.risk import analyze_risk
 from ..analysis.scorecard import analyze_scorecard
+from ..analysis.patterns import analyze_patterns
 from ..analysis.number_lint import lint_markdown_report, NumberLintReport
 from ..report.markdown import generate_markdown
 from ..report.json_report import generate_json
@@ -223,6 +224,13 @@ class WorkflowEngine:
             else:
                 self.context["risk_metrics"] = None
 
+        elif analysis_name == "patterns":
+            # 量价形态（规则判定）；无 bars 时留空，不阻断
+            if bars:
+                self.context["pattern_metrics"] = analyze_patterns(bars, self.as_of)
+            else:
+                self.context["pattern_metrics"] = None
+
         elif analysis_name == "scorecard":
             price = self.context.get("price_metrics")
             volume = self.context.get("volume_metrics")
@@ -235,7 +243,7 @@ class WorkflowEngine:
             )
 
         # 统一分析引擎（生成 Evidence）
-        if analysis_name in ("price", "volume", "financial", "events", "risk"):
+        if analysis_name in ("price", "volume", "financial", "events", "risk", "patterns"):
             # 当所有核心分析完成后再跑统一引擎
             # 简化：每次分析后都尝试更新 evidence_store
             self._refresh_evidence()
@@ -308,6 +316,7 @@ class WorkflowEngine:
             capital,
             scorecard,
             industry=self.context.get("industry"),
+            patterns=self.context.get("pattern_metrics"),
         )
 
         evidence = self.context.get("evidence_store")

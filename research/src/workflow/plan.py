@@ -142,6 +142,14 @@ class PlanGenerator:
                 depends_on=["collect_market"],
             ))
 
+        if "patterns" in needed_analysis:
+            tasks.append(Task(
+                name="analyze_patterns",
+                task_type=TaskType.ANALYZE,
+                analysis="patterns",
+                depends_on=["collect_market"],
+            ))
+
         if "financial" in needed_analysis:
             tasks.append(Task(
                 name="analyze_financial",

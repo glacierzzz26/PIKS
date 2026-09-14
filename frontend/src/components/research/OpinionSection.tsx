@@ -14,16 +14,18 @@ export default function OpinionSection({
   synthesis,
   model,
   tokens,
+  heading = "二、AI 研判（仅供参考）",
 }: {
   synthesis: ResearchSynthesis;
   model: string;
   tokens: number;
+  heading?: string;
 }) {
   const hasAny = SLOTS.some((s) => (synthesis[s.key] ?? "").trim() !== "");
   return (
     <section className="mt-5">
       <div className="mb-2 flex items-baseline gap-2">
-        <h2 className="m-0 text-[15px] font-bold tracking-wide">二、AI 研判（仅供参考）</h2>
+        <h2 className="m-0 text-[15px] font-bold tracking-wide">{heading}</h2>
         <span className="inline-flex items-center gap-1 rounded-sm bg-bg-soft px-1.5 py-0.5 text-[11px] text-muted">
           <Sparkles size={10} />
           AI 定性研判，非事实

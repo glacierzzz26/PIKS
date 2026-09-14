@@ -136,6 +136,9 @@ func (s *Server) researchRunTrigger(w http.ResponseWriter, r *http.Request) {
 		Code    string `json:"code"`
 		Profile string `json:"profile"`
 		Days    int    `json:"days"`
+		// Quick 快速模式:合成可选(无 AI 也 done,结论取确定性评分卡+风险规则)。
+		// 供「买入前速评」使用;默认 false = 深研(必须有 AI)。
+		Quick bool `json:"quick"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apiErrJSON(w, http.StatusBadRequest, "请求体解析失败: "+err.Error())
@@ -175,7 +178,7 @@ func (s *Server) researchRunTrigger(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		defer cancel()
-		if _, err := o.Run(ctx, research.Options{RunID: runID, Code: code, Profile: profile, Days: req.Days}); err != nil {
+		if _, err := o.Run(ctx, research.Options{RunID: runID, Code: code, Profile: profile, Days: req.Days, RequireSynthesis: !req.Quick}); err != nil {
 			// 编排自身的失败已落 research_runs.error;此处只记服务端日志。
 			log.Printf("research-run %s 编排失败: %v", runID, err)
 		}

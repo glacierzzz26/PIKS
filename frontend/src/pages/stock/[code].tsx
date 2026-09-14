@@ -6,6 +6,7 @@ import { ENDPOINTS } from "@/lib/api";
 import { LoadingBlock, ErrorState } from "@/components/ui/States";
 import StockHeader from "@/components/stock/StockHeader";
 import StockPosition from "@/components/stock/StockPosition";
+import StockDecisions from "@/components/stock/StockDecisions";
 import StockResearch from "@/components/stock/StockResearch";
 import StockNotes from "@/components/stock/StockNotes";
 import StockEvents from "@/components/stock/StockEvents";
@@ -44,6 +45,17 @@ export default function Page() {
         entity={d.entity}
         industry={d.industry}
       />
+
+      <section className="section">
+        <div className="section-head">
+          <span className="bar" />
+          <h2>当时在看什么</h2>
+          <span className="hint">每笔买入关联的研报 / 消息 / 笔记 —— 我为什么买它</span>
+        </div>
+        <div className="panel panel-pad">
+          <StockDecisions trades={d.trades} />
+        </div>
+      </section>
 
       <section className="section">
         <div className="section-head">

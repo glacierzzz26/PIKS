@@ -7,6 +7,7 @@ package web
 // 列表端点返回全量,分页由前端客户端完成(page/size 只在 URL)。
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -913,6 +914,15 @@ type apiReviewPoint struct {
 	Content string `json:"content"`
 }
 
+// apiDecisionRef 决策关联目标(买入时在看什么,P6-4):研报 / 事件 / 笔记。
+type apiDecisionRef struct {
+	Kind  string `json:"kind"` // research | event | note
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Date  string `json:"date,omitempty"` // 研报 as_of / 事件发生日;笔记无
+	URL   string `json:"url,omitempty"`  // 深链
+}
+
 type apiTrade struct {
 	ID       string           `json:"id"`
 	Date     string           `json:"date"`
@@ -926,6 +936,7 @@ type apiTrade struct {
 	Note     string           `json:"note,omitempty"`
 	Review   string           `json:"review,omitempty"`
 	Mistakes []apiReviewPoint `json:"mistakes,omitempty"`
+	BasedOn  []apiDecisionRef `json:"based_on,omitempty"`
 }
 
 type apiPosition struct {
@@ -964,6 +975,88 @@ func toAPITrade(t model.Trade) apiTrade {
 		}
 	}
 	return tr
+}
+
+// decisionRefsForTrades 批量取交易决策边并解析为可渲染引用(P6-4 一次查询,免 N 次往返)。
+// 悬空边(目标已删/状态不符)诚实跳过,不渲染无名空节点。
+func (s *Server) decisionRefsForTrades(ctx context.Context, tradeIDs []string) (map[string][]apiDecisionRef, error) {
+	out := map[string][]apiDecisionRef{}
+	if len(tradeIDs) == 0 {
+		return out, nil
+	}
+	rels, err := s.store.ListRelationshipsFromIDs(ctx, "trade", tradeIDs, "based_on")
+	if err != nil {
+		return nil, err
+	}
+	// 收集三类目标 id,各自批量取标题。
+	var runIDs, eventIDs, noteIDs []string
+	for _, r := range rels {
+		switch r.ToType {
+		case "research_run":
+			runIDs = append(runIDs, r.ToID)
+		case "event":
+			eventIDs = append(eventIDs, r.ToID)
+		case "personal_note":
+			noteIDs = append(noteIDs, r.ToID)
+		}
+	}
+	runMeta := map[string]struct {
+		Title, Date, RunID string
+	}{}
+	runs, err := s.store.ListResearchRunsByIDs(ctx, runIDs)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range runs {
+		runMeta[r.ID] = struct {
+			Title, Date, RunID string
+		}{runTitle(r), fmtDate(r.AsOf.In(cst)), r.RunID}
+	}
+	evTitle := map[string]string{}
+	evDate := map[string]string{}
+	evs, err := s.store.ListEventsByIDs(ctx, eventIDs)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range evs {
+		evTitle[e.ID] = e.Title
+		evDate[e.ID] = eventTime(e).In(cst).Format("2006-01-02")
+	}
+	noteTitle := map[string]string{}
+	ns, err := s.store.ListPersonalNotesByIDs(ctx, noteIDs)
+	if err != nil {
+		return nil, err
+	}
+	for _, n := range ns {
+		noteTitle[n.ID] = orStr(n.Title, "")
+	}
+	for _, r := range rels {
+		var ref apiDecisionRef
+		switch r.ToType {
+		case "research_run":
+			m, ok := runMeta[r.ToID]
+			if !ok {
+				continue // 报告非 done 或已删 → 不渲染
+			}
+			ref = apiDecisionRef{Kind: "research", ID: r.ToID, Title: m.Title, Date: m.Date, URL: "/research/" + m.RunID}
+		case "event":
+			t, ok := evTitle[r.ToID]
+			if !ok {
+				continue
+			}
+			ref = apiDecisionRef{Kind: "event", ID: r.ToID, Title: t, Date: evDate[r.ToID], URL: "/events/" + r.ToID}
+		case "personal_note":
+			t, ok := noteTitle[r.ToID]
+			if !ok {
+				continue
+			}
+			ref = apiDecisionRef{Kind: "note", ID: r.ToID, Title: t, URL: "/notes/" + r.ToID}
+		default:
+			continue
+		}
+		out[r.FromID] = append(out[r.FromID], ref)
+	}
+	return out, nil
 }
 
 // toAPIPosition 单条持仓 → 前端 DTO(盈亏由成本/现价推导百分比)。交易页与个股中心共用。
@@ -1007,8 +1100,19 @@ func (s *Server) handleAPITrades(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := apiTrades{Trades: []apiTrade{}, Positions: []apiPosition{}}
+	ids := make([]string, 0, len(ts))
 	for _, t := range ts {
-		out.Trades = append(out.Trades, toAPITrade(t))
+		ids = append(ids, t.ID)
+	}
+	refs, err := s.decisionRefsForTrades(ctx, ids)
+	if err != nil {
+		s.apiErr(w, "trades", err)
+		return
+	}
+	for _, t := range ts {
+		tr := toAPITrade(t)
+		tr.BasedOn = refs[t.ID]
+		out.Trades = append(out.Trades, tr)
 	}
 	for _, p := range ps {
 		out.Positions = append(out.Positions, toAPIPosition(p))

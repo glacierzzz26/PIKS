@@ -42,7 +42,9 @@ type apiResearchRun struct {
 }
 
 // apiResearchRunSummary 列表项(不带宽字段 markdown/metrics,列表页只要元信息 + 机检徽标)。
+// ID = research_runs.id(UUID,供决策边 to_id 用);RunID = 业务键(TEXT,前端深链/轮询用)。
 type apiResearchRunSummary struct {
+	ID      string `json:"id"`
 	RunID   string `json:"run_id"`
 	Code    string `json:"code"`
 	Symbol  string `json:"symbol"`
@@ -223,10 +225,24 @@ func toAPIResearchRun(r *store.ResearchRun) apiResearchRun {
 
 func toSummary(r *store.ResearchRun) apiResearchRunSummary {
 	return apiResearchRunSummary{
-		RunID: r.RunID, Code: r.Code, Symbol: r.Symbol, Profile: r.Profile,
+		ID:    r.ID,
+		RunID: r.RunID,
+		Code:  r.Code, Symbol: r.Symbol, Profile: r.Profile,
 		AsOf: fmtDate(r.AsOf.In(cst)), Status: r.Status,
 		LintOK: research.JSONPassed(r.Lint),
 		GateOK: research.JSONPassed(r.Gate),
 		Error:  orStr(r.Error, ""), Model: r.Model, Tokens: r.Tokens,
 	}
+}
+
+// runTitle 决策记录引用用的可读标题:code + profile(研报无自有 title 字段)。
+func runTitle(r store.ResearchRun) string {
+	code := r.Code
+	if r.Symbol != "" {
+		code = r.Symbol
+	}
+	if r.Profile != "" {
+		return code + " · " + r.Profile
+	}
+	return code
 }

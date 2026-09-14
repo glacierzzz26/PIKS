@@ -2,10 +2,13 @@
 
 import { useState } from "react";
 import { apiPost, ENDPOINTS } from "@/lib/api";
+import TradeBasedOnPicker, { EMPTY_BASED_ON } from "@/components/trades/TradeBasedOnPicker";
+import type { TradeBasedOn } from "@/lib/types";
 
 const INPUT = "input";
 
-/** 手动录入一笔交易（POST /api/v1/trades，成功后回调刷新列表） */
+/** 手动录入一笔交易（POST /api/v1/trades，成功后回调刷新列表）。
+ *  P6-4：可选「当时在看什么」——把买入决策关联到研报/消息/笔记，闭环「我为什么买它」。 */
 export default function TradeAddForm({ onDone }: { onDone: () => void }) {
   const [f, setF] = useState({
     name: "",
@@ -16,6 +19,7 @@ export default function TradeAddForm({ onDone }: { onDone: () => void }) {
     trade_date: new Date().toISOString().slice(0, 10),
     note: "",
   });
+  const [basedOn, setBasedOn] = useState<TradeBasedOn>(EMPTY_BASED_ON);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -28,7 +32,7 @@ export default function TradeAddForm({ onDone }: { onDone: () => void }) {
     setSaving(true);
     setMsg(null);
     try {
-      await apiPost<{ ok: boolean }>(ENDPOINTS.trades, {
+      await apiPost<{ ok: boolean; linked?: number }>(ENDPOINTS.trades, {
         name: f.name.trim(),
         code: f.code.trim(),
         side: f.side,
@@ -36,8 +40,10 @@ export default function TradeAddForm({ onDone }: { onDone: () => void }) {
         qty: Number(f.qty),
         trade_date: f.trade_date || undefined,
         note: f.note.trim(),
+        based_on: basedOn,
       });
       setF((v) => ({ ...v, name: "", code: "", price: "", qty: "", note: "" }));
+      setBasedOn(EMPTY_BASED_ON);
       setMsg("已录入");
       onDone();
     } catch (e) {
@@ -79,6 +85,7 @@ export default function TradeAddForm({ onDone }: { onDone: () => void }) {
           {saving ? "录入中…" : "录入"}
         </button>
       </div>
+      <TradeBasedOnPicker code={f.code.trim()} value={basedOn} onChange={setBasedOn} />
     </div>
   );
 }

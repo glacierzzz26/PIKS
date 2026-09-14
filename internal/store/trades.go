@@ -16,6 +16,10 @@ import (
 const tradeCols = `id,trade_date,code,name,side,price,qty,amount,source,attachment_id,note,review,created_at,updated_at`
 const positionCols = `id,snapshot_date,code,name,qty,cost_price,price,market_value,pl,source,attachment_id,created_at`
 
+const insertTradeSQL = `
+	INSERT INTO trades (trade_date, code, name, side, price, qty, amount, source, attachment_id, note)
+	VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`
+
 // InsertTrades 批量入库交易(事务内逐条 INSERT)。
 func (s *Store) InsertTrades(ctx context.Context, ts []model.Trade) error {
 	if len(ts) == 0 {
@@ -27,15 +31,24 @@ func (s *Store) InsertTrades(ctx context.Context, ts []model.Trade) error {
 	}
 	defer tx.Rollback(ctx)
 	for _, t := range ts {
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO trades (trade_date, code, name, side, price, qty, amount, source, attachment_id, note)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		if _, err := tx.Exec(ctx, insertTradeSQL,
 			t.TradeDate, t.Code, t.Name, t.Side, t.Price, t.Qty, t.Amount,
 			t.Source, t.AttachmentID, t.Note); err != nil {
 			return err
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+// InsertTradeReturningID 单条入库并返回新行 id —— 决策记录(P6-4)建边需要 from_id。
+func (s *Store) InsertTradeReturningID(ctx context.Context, t model.Trade) (string, error) {
+	var id string
+	if err := s.Pool.QueryRow(ctx, insertTradeSQL+` RETURNING id`,
+		t.TradeDate, t.Code, t.Name, t.Side, t.Price, t.Qty, t.Amount,
+		t.Source, t.AttachmentID, t.Note).Scan(&id); err != nil {
+		return "", err
+	}
+	return id, nil
 }
 
 // ListTrades 交易列表(按交易日期倒序,同日期按创建倒序)。

@@ -164,6 +164,23 @@ export type TradeRow = {
   note?: string;
   review?: string; // AI 复盘 Markdown（已生成时）
   mistakes?: ReviewPoint[]; // 复盘点（存为笔记用）
+  based_on?: DecisionRef[]; // 决策关联：买入时在看什么（P6-4）
+};
+
+/** 决策关联目标（P6-4）：kind 决定图标与跳转。 */
+export type DecisionRef = {
+  kind: "research" | "event" | "note";
+  id: string;
+  title: string;
+  date?: string; // research as_of / event 发生日
+  url?: string; // 深链
+};
+
+/** POST /api/v1/trades 的决策关联入参（to_id 用各表 UUID）。 */
+export type TradeBasedOn = {
+  run_ids: string[]; // research_runs.id（UUID，绝不用 run_id）
+  event_ids: string[];
+  note_ids: string[];
 };
 
 export type PositionRow = {
@@ -420,7 +437,8 @@ export type ResearchRun = {
 
 /** 列表项（GET /api/v1/research-runs，不含 markdown/metrics 宽字段） */
 export type ResearchRunSummary = {
-  run_id: string;
+  id: string; // research_runs.id（UUID，决策关联用）
+  run_id: string; // 业务键（深链 /research/:runId、轮询用）
   code: string;
   symbol: string;
   profile: string;
@@ -479,6 +497,8 @@ export type StockHub = {
   events: StockEvent[];
   notes: StockNote[];
   limit_ups: string[];
+  /** 每笔交易的决策关联（P6-4「当时在看什么」）：trade_id → 引用列表。 */
+  decisions: Record<string, DecisionRef[]>;
 };
 
 // ---- 自选（GET /api/v1/watchlist，设计 frontend-ia §2.3 / phase6 ux-ia §2）----

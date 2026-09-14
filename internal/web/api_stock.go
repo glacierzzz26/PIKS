@@ -58,6 +58,9 @@ type apiStockHub struct {
 	Events   []apiStockEvent         `json:"events"`
 	Notes    []apiStockNote          `json:"notes"`
 	LimitUps []string                `json:"limit_ups"`
+	// Decisions 每笔交易的决策关联(P6-4「当时在看什么」):trade_id → 研报/事件/笔记。
+	// 只含有边且目标可解析的交易;无关联的交易不出现在此 map(前端如实空态)。
+	Decisions map[string][]apiDecisionRef `json:"decisions"`
 }
 
 // ==================== 路由 ====================
@@ -76,13 +79,14 @@ func (s *Server) handleAPIStock(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	out := apiStockHub{
-		Code:     code,
-		Symbol:   stockSymbol(code),
-		Trades:   []apiTrade{},
-		Research: []apiResearchRunSummary{},
-		Events:   []apiStockEvent{},
-		Notes:    []apiStockNote{},
-		LimitUps: []string{},
+		Code:      code,
+		Symbol:    stockSymbol(code),
+		Trades:    []apiTrade{},
+		Research:  []apiResearchRunSummary{},
+		Events:    []apiStockEvent{},
+		Notes:     []apiStockNote{},
+		LimitUps:  []string{},
+		Decisions: map[string][]apiDecisionRef{},
 	}
 
 	// 1. 公司实体(code → entity;可为空,后续事件/笔记/行业依赖它)。
@@ -175,8 +179,22 @@ func (s *Server) handleAPIStock(w http.ResponseWriter, r *http.Request) {
 		s.apiErr(w, "stock", err)
 		return
 	}
+	tids := make([]string, 0, len(trades))
 	for _, t := range trades {
-		out.Trades = append(out.Trades, toAPITrade(t))
+		tids = append(tids, t.ID)
+	}
+	decisions, err := s.decisionRefsForTrades(ctx, tids)
+	if err != nil {
+		s.apiErr(w, "stock", err)
+		return
+	}
+	for _, t := range trades {
+		tr := toAPITrade(t)
+		if refs := decisions[t.ID]; len(refs) > 0 {
+			tr.BasedOn = refs
+			out.Decisions[t.ID] = refs
+		}
+		out.Trades = append(out.Trades, tr)
 	}
 
 	// 4. 涨停记录(只依赖 code)。

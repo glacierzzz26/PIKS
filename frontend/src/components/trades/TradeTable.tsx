@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Chip } from "@/components/ui/Num";
 import TradeReview from "@/components/trades/TradeReview";
+import { DecisionRefList } from "@/components/trades/DecisionRefs";
 import type { TradeRow } from "@/lib/types";
 
 /** 成交记录表：行展开 → AI 解读 / 复盘点存为笔记 */
@@ -71,6 +72,14 @@ export default function TradeTable({
               {openId === t.id && (
                 <tr>
                   <td colSpan={9} className="bg-card-soft px-4 py-3">
+                    {(t.based_on?.length ?? 0) > 0 && (
+                      <div className="mb-3 flex items-center gap-2">
+                        <span className="shrink-0 text-[12.5px] font-semibold text-muted">
+                          当时在看什么
+                        </span>
+                        <DecisionRefList refs={t.based_on ?? []} />
+                      </div>
+                    )}
                     <TradeReview trade={t} refresh={refresh} />
                   </td>
                 </tr>

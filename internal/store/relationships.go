@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"github.com/jackc/pgx/v5"
@@ -11,12 +12,17 @@ import (
 )
 
 // CreateRelationship 幂等写入;唯一约束重复时静默忽略。
+// properties 为 NOT NULL:调用方未设置时以 '{}' 落库(而非 NULL,否则违反约束)。
 func (s *Store) CreateRelationship(ctx context.Context, rel *model.Relationship) error {
+	props := rel.Properties
+	if len(props) == 0 || string(props) == "null" {
+		props = json.RawMessage(`{}`)
+	}
 	_, err := s.Pool.Exec(ctx,
 		`INSERT INTO relationships(from_type,from_id,to_type,to_id,rel_type,properties,confidence,source,valid_from,valid_to)
 		 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
 		 ON CONFLICT (from_type, from_id, to_type, to_id, rel_type) DO NOTHING`,
-		rel.FromType, rel.FromID, rel.ToType, rel.ToID, rel.RelType, rel.Properties,
+		rel.FromType, rel.FromID, rel.ToType, rel.ToID, rel.RelType, props,
 		rel.Confidence, rel.Source, rel.ValidFrom, rel.ValidTo)
 	if err == nil {
 		return nil
@@ -56,11 +62,55 @@ func (s *Store) ListRelationshipsFromTo(ctx context.Context, fromType, toType, r
 	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Relationship])
 }
 
+// graphExcludedRelTypes 不进关系图谱的边类型(P6-4)。
+// 决策边(from_type='trade')属于"我的决策"链,不是实体关系网络的一环;
+// 若不过滤会以无名节点混入图谱统计。图谱投影与图谱端点共用此过滤。
+const graphRelFilter = `rel_type NOT IN ('decided_by','based_on')`
+
 // ListAllRelationships 全部关系(前端关系图谱投影,api_v1)。
-// 端点类型(event→entity / entity→entity)由前端按节点 id 集合自行过滤。
+// 端点类型(event→entity / entity→entity)由前端按节点 id 集合自行过滤;
+// 决策边(decided_by/based_on)由服务端在此排除(P6-4,见 graphRelFilter)。
 func (s *Store) ListAllRelationships(ctx context.Context) ([]model.Relationship, error) {
 	rows, err := s.Pool.Query(ctx,
-		`SELECT `+relCols+` FROM relationships ORDER BY from_id, to_id`)
+		`SELECT `+relCols+` FROM relationships WHERE `+graphRelFilter+` ORDER BY from_id, to_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Relationship])
+}
+
+// ListRelationshipsFrom 某 from 源的全部出边(决策记录 P6-4:trade → 研报/事件/笔记)。
+// types 为空取全部 rel_type;非空时仅取指定类型。
+func (s *Store) ListRelationshipsFrom(ctx context.Context, fromType, fromID string, types ...string) ([]model.Relationship, error) {
+	q := `SELECT ` + relCols + ` FROM relationships WHERE from_type=$1 AND from_id=$2`
+	args := []any{fromType, fromID}
+	if len(types) > 0 {
+		q += ` AND rel_type = ANY($3)`
+		args = append(args, types)
+	}
+	q += ` ORDER BY rel_type`
+	rows, err := s.Pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Relationship])
+}
+
+// ListRelationshipsFromIDs 批量出边(个股中心一次取全部交易的决策边,免 N 次往返)。
+func (s *Store) ListRelationshipsFromIDs(ctx context.Context, fromType string, fromIDs []string, types ...string) ([]model.Relationship, error) {
+	if len(fromIDs) == 0 {
+		return nil, nil
+	}
+	q := `SELECT ` + relCols + ` FROM relationships WHERE from_type=$1 AND from_id = ANY($2)`
+	args := []any{fromType, fromIDs}
+	if len(types) > 0 {
+		q += ` AND rel_type = ANY($3)`
+		args = append(args, types)
+	}
+	q += ` ORDER BY from_id, rel_type`
+	rows, err := s.Pool.Query(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}

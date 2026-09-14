@@ -23,8 +23,8 @@ export default function OpinionSection({
   return (
     <section className="mt-5">
       <div className="mb-2 flex items-baseline gap-2">
-        <h2 className="m-0 text-[15px] font-bold tracking-wide">二、Opinion 区</h2>
-        <span className="inline-flex items-center gap-1 rounded bg-bg-soft px-1.5 py-0.5 text-[11px] text-muted">
+        <h2 className="m-0 text-[15px] font-bold tracking-wide">二、AI 研判（仅供参考）</h2>
+        <span className="inline-flex items-center gap-1 rounded-sm bg-bg-soft px-1.5 py-0.5 text-[11px] text-muted">
           <Sparkles size={10} />
           AI 定性研判，非事实
         </span>
@@ -36,7 +36,7 @@ export default function OpinionSection({
         </div>
         {!hasAny ? (
           <div className="py-4 text-center text-[13px] text-faint italic">
-            本轮未产出 AI 研判（应以 Fact 区确定性结论为准）
+            本轮没有 AI 研判，请看上面「事实」区的确定性结论
           </div>
         ) : (
           <div className="space-y-4">

@@ -68,7 +68,7 @@ export function Composer({
   return (
     <div className="border-t border-line bg-card-soft p-3">
       {file && (
-        <span className="mb-2 inline-flex items-center gap-1.5 rounded-[9px] border border-line bg-card px-2 py-1 text-xs text-faint">
+        <span className="mb-2 inline-flex items-center gap-1.5 rounded-[10px] border border-line bg-card px-2 py-1 text-xs text-faint">
           <Paperclip size={11} />
           {file.name}
           <button onClick={() => setFile(null)} className="text-faint hover:text-up">
@@ -77,7 +77,7 @@ export function Composer({
         </span>
       )}
       <div className="flex items-center gap-2">
-        <label className="inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-[9px] border border-line bg-card text-muted hover:text-accent">
+        <label className="inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-[10px] border border-line bg-card text-muted hover:text-accent">
           <Paperclip size={14} />
           <input
             type="file"
@@ -98,7 +98,7 @@ export function Composer({
         <button
           onClick={send}
           disabled={disabled}
-          className="inline-flex h-9 items-center gap-1.5 rounded-[9px] bg-accent px-3 text-xs font-semibold text-white disabled:opacity-40"
+          className="inline-flex h-9 items-center gap-1.5 rounded-[10px] bg-accent px-3 text-xs font-semibold text-white disabled:opacity-40"
         >
           <Send size={12} />
           发送

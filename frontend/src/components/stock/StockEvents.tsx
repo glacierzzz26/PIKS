@@ -19,11 +19,11 @@ export default function StockEvents({ events }: { events: StockEvent[] }) {
       <table className="table">
         <thead>
           <tr>
-            <th style={{ textAlign: "left" }}>时间</th>
-            <th style={{ textAlign: "left" }}>类型</th>
-            <th style={{ textAlign: "left" }}>标题</th>
-            <th style={{ textAlign: "left" }}>来源</th>
-            <th style={{ textAlign: "left" }}>置信</th>
+            <th className="text-left">时间</th>
+            <th className="text-left">类型</th>
+            <th className="text-left">标题</th>
+            <th className="text-left">来源</th>
+            <th className="text-left">置信</th>
           </tr>
         </thead>
         <tbody>
@@ -49,10 +49,10 @@ export default function StockEvents({ events }: { events: StockEvent[] }) {
                   {EVENT_TYPE_LABEL[e.event_type] ?? e.event_type}
                 </span>
               </td>
-              <td style={{ textAlign: "left" }} className="font-medium">
+              <td className="text-left font-medium">
                 {e.title}
               </td>
-              <td className="text-[12.5px] text-faint" style={{ textAlign: "left" }}>
+              <td className="text-[12.5px] text-faint text-left">
                 {e.source}
               </td>
               <td>

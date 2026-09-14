@@ -59,7 +59,7 @@ export default function TradeReview({
                   </div>
                   <button
                     onClick={() => save(i)}
-                    className="shrink-0 rounded-[9px] border border-line bg-card px-2 py-1 text-xs text-muted hover:text-accent"
+                    className="shrink-0 rounded-[10px] border border-line bg-card px-2 py-1 text-xs text-muted hover:text-accent"
                   >
                     存为笔记
                   </button>
@@ -74,7 +74,7 @@ export default function TradeReview({
       <button
         onClick={review}
         disabled={busy}
-        className="inline-flex h-7 w-fit items-center gap-1.5 rounded-[9px] border border-line bg-card px-2.5 text-xs text-muted hover:text-accent disabled:opacity-50"
+        className="inline-flex h-7 w-fit items-center gap-1.5 rounded-[10px] border border-line bg-card px-2.5 text-xs text-muted hover:text-accent disabled:opacity-50"
       >
         <Wand2 size={12} />
         {busy ? "解读中…" : trade.review ? "重新解读" : "AI 解读"}

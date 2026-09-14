@@ -149,6 +149,21 @@ func (s *Store) ListResearchRuns(ctx context.Context, code string, limit int) ([
 	return pgx.CollectRows(rows, pgx.RowToStructByName[ResearchRun])
 }
 
+// ListResearchRunsByIDs 按 research_runs.id(UUID)批量取报告 —— 决策记录 P6-4 回读用。
+// 只取 done 状态:决策关联的应是已产出的报告,半成品/失败的不该出现在"当时在看什么"。
+func (s *Store) ListResearchRunsByIDs(ctx context.Context, ids []string) ([]ResearchRun, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := s.Pool.Query(ctx,
+		`SELECT `+researchRunCols+` FROM research_runs WHERE id = ANY($1) AND status='done'`, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[ResearchRun])
+}
+
 // ListResearchRunsByEntity 实体 → 报告列表(设计 §4.6 join:归一 code 对齐 entities.detail->>'code')。
 func (s *Store) ListResearchRunsByEntity(ctx context.Context, entityID string) ([]ResearchRun, error) {
 	rows, err := s.Pool.Query(ctx, `

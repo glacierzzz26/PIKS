@@ -1,13 +1,12 @@
 "use client";
 
-import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
 import { X, ExternalLink } from "lucide-react";
 import type { EventItem } from "@/lib/types";
 import { EVENT_TYPE_LABEL } from "@/lib/format";
 import { Chip, ConfidenceBar } from "@/components/ui/Num";
 
-/** 事件详情抽屉：事实 / 影响 / 来源（Fact ≠ Inference 分域展示，只读） */
+/** 事件详情抽屉：事实 / 影响 / 来源（机器事实与 AI 推断分开展示，只读） */
 export default function EventDetail({
   event,
   onClose,
@@ -15,38 +14,23 @@ export default function EventDetail({
   event: EventItem | null;
   onClose: () => void;
 }) {
+  if (!event) return null;
   return (
-    <AnimatePresence>
-      {event && (
-        <>
-          <motion.div
-            className="fixed inset-0 z-40 bg-black/25"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+    <>
+      <div className="drawer-scrim fixed inset-0 z-40 bg-black/25" onClick={onClose} />
+      <aside className="drawer-panel fixed right-0 top-0 z-50 flex h-full w-[460px] max-w-[92vw] flex-col border-l border-line bg-card shadow-pop">
+        <div className="flex h-[58px] shrink-0 items-center justify-between border-b border-line px-5">
+          <span className="text-[15px] font-bold">事件详情</span>
+          <button
             onClick={onClose}
-          />
-          <motion.aside
-            className="fixed right-0 top-0 z-50 flex h-full w-[460px] max-w-[92vw] flex-col border-l border-line bg-card shadow-pop"
-            initial={{ x: 460 }}
-            animate={{ x: 0 }}
-            exit={{ x: 460 }}
-            transition={{ type: "tween", duration: 0.2 }}
+            className="flex h-8 w-8 items-center justify-center rounded-[10px] txt-faint hover:bg-bg-soft"
           >
-            <div className="flex h-[58px] shrink-0 items-center justify-between border-b border-line px-5">
-              <span className="text-[15px] font-bold">事件详情</span>
-              <button
-                onClick={onClose}
-                className="flex h-8 w-8 items-center justify-center rounded-[9px] text-faint hover:bg-bg-soft"
-              >
-                <X size={16} />
-              </button>
-            </div>
-            <EventBody event={event} />
-          </motion.aside>
-        </>
-      )}
-    </AnimatePresence>
+            <X size={16} />
+          </button>
+        </div>
+        <EventBody event={event} />
+      </aside>
+    </>
   );
 }
 

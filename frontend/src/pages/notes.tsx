@@ -44,13 +44,13 @@ function NotesInner() {
       <div className="page-head">
         <div>
           <h1>笔记</h1>
-          <div className="psub">个人判断层 · 事实（机器）与推断（自己）严格分域</div>
+          <div className="psub">你的判断层 · 机器给的事实与你自己的推断分开记</div>
         </div>
         <div className="meta">
           <span className="st st-accent">共 {data.length} 篇</span>
           <Link
             to="/notes/new"
-            className="inline-flex h-8 items-center gap-1.5 rounded-[9px] border border-line bg-card px-3 text-xs font-semibold text-muted no-underline hover:text-accent"
+            className="inline-flex h-8 items-center gap-1.5 rounded-[10px] border border-line bg-card px-3 text-xs font-semibold text-muted no-underline hover:text-accent"
           >
             <Plus size={13} />
             新建笔记

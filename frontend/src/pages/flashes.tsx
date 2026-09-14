@@ -1,6 +1,5 @@
 "use client";
 
-import { Suspense } from "react";
 import { Link } from "react-router-dom";
 import { useData } from "@/hooks/useData";
 import { usePagedQuery } from "@/hooks/usePagedQuery";
@@ -11,16 +10,8 @@ import { Chip } from "@/components/ui/Num";
 import { LoadingBlock, EmptyState, ErrorState } from "@/components/ui/States";
 import type { Flash } from "@/lib/types";
 
-/** 快讯流：来源筛选 + 分页（默认 20/页，URL 驱动），重要快讯高亮 */
-export default function Page() {
-  return (
-    <Suspense fallback={<div className="panel mt-6"><LoadingBlock rows={8} /></div>}>
-      <FlashesInner />
-    </Suspense>
-  );
-}
-
-function FlashesInner() {
+/** 快讯 tab：来源筛选 + 分页（默认 20/页，URL 驱动），重要快讯高亮。 */
+export default function FlashesTab() {
   const { query, setFilter, page, size, setPage, setSize, paginate } =
     usePagedQuery();
   const flashes = useData<Flash[]>({
@@ -38,18 +29,6 @@ function FlashesInner() {
 
   return (
     <div>
-      <div className="page-head">
-        <div>
-          <h1>快讯流</h1>
-          <div className="psub">东财 7×24 快讯原始流 · 重要快讯高亮 · 可关联事件</div>
-        </div>
-        <div className="meta">
-          <span className="st st-accent">
-            共 {flashes.loading ? "…" : data.length} 条
-          </span>
-        </div>
-      </div>
-
       <div className="filter-bar">
         {FLASH_SOURCES.map((s) => (
           <button
@@ -81,7 +60,7 @@ function FlashesInner() {
                       i < list.length - 1 ? "border-b border-line" : ""
                     }`}
                   >
-                    <span className="num w-10 shrink-0 pt-0.5 text-xs text-faint">
+                    <span className="num w-10 shrink-0 pt-0.5 text-xs txt-faint">
                       {f.time.slice(11)}
                     </span>
                     <span
@@ -118,3 +97,4 @@ function FlashesInner() {
     </div>
   );
 }
+

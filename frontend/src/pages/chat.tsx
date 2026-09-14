@@ -76,12 +76,12 @@ export default function Page() {
       <div className="page-head">
         <div>
           <h1>AI 对话</h1>
-          <div className="psub">问答带知识库引用 · 支持截图提问</div>
+          <div className="psub">带知识库引用作答 · 可截图提问</div>
         </div>
         <div className="meta">
           <button
             onClick={clear}
-            className="inline-flex h-8 items-center gap-1.5 rounded-[9px] border border-line bg-card px-3 text-xs text-muted hover:text-up"
+            className="inline-flex h-8 items-center gap-1.5 rounded-[10px] border border-line bg-card px-3 text-xs text-muted hover:text-up"
           >
             <Eraser size={12} />
             清空会话

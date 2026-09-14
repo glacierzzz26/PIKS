@@ -44,7 +44,7 @@ export default function PosReview() {
         <button
           onClick={run}
           disabled={busy}
-          className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-[9px] border border-line bg-card px-3 text-xs text-muted hover:text-accent disabled:opacity-50"
+          className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-[10px] border border-line bg-card px-3 text-xs text-muted hover:text-accent disabled:opacity-50"
         >
           <Wand2 size={12} />
           {busy ? "诊断中…" : latest ? "重新诊断" : "生成诊断"}
@@ -70,7 +70,7 @@ export default function PosReview() {
                     </div>
                     <button
                       onClick={() => save(i)}
-                      className="shrink-0 rounded-[9px] border border-line bg-card px-2 py-1 text-xs text-muted hover:text-accent"
+                      className="shrink-0 rounded-[10px] border border-line bg-card px-2 py-1 text-xs text-muted hover:text-accent"
                     >
                       存为笔记
                     </button>

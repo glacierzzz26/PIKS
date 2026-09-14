@@ -33,7 +33,7 @@ export default function StockPosition({
           <table className="table">
             <thead>
               <tr>
-                <th style={{ textAlign: "left" }}>标的</th>
+                <th className="text-left">标的</th>
                 <th>数量</th>
                 <th>成本</th>
                 <th>现价</th>
@@ -65,12 +65,12 @@ export default function StockPosition({
           <table className="table">
             <thead>
               <tr>
-                <th style={{ textAlign: "left" }}>日期</th>
-                <th style={{ textAlign: "left" }}>方向</th>
+                <th className="text-left">日期</th>
+                <th className="text-left">方向</th>
                 <th>价格</th>
                 <th>数量</th>
                 <th>金额</th>
-                <th style={{ textAlign: "left" }}>来源</th>
+                <th className="text-left">来源</th>
               </tr>
             </thead>
             <tbody>
@@ -85,7 +85,7 @@ export default function StockPosition({
                   <td className="num-t">{t.price.toFixed(2)}</td>
                   <td className="num-t">{t.qty}</td>
                   <td className="num-t">{t.amount.toLocaleString()}</td>
-                  <td className="text-[12.5px] text-faint" style={{ textAlign: "left" }}>
+                  <td className="text-[12.5px] text-faint text-left">
                     {t.source === "screenshot" ? "截图识别" : "手动"}
                   </td>
                 </tr>

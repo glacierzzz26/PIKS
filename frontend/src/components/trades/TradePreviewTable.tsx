@@ -17,11 +17,11 @@ export default function TradePreviewTable({
       <table className="table">
         <thead>
           <tr>
-            <th style={{ textAlign: "left" }}>选</th>
-            <th style={{ textAlign: "left" }}>日期</th>
-            <th style={{ textAlign: "left" }}>代码</th>
-            <th style={{ textAlign: "left" }}>名称</th>
-            <th style={{ textAlign: "left" }}>方向</th>
+            <th className="text-left">选</th>
+            <th className="text-left">日期</th>
+            <th className="text-left">代码</th>
+            <th className="text-left">名称</th>
+            <th className="text-left">方向</th>
             <th>价格</th>
             <th>数量</th>
             <th>金额</th>
@@ -49,7 +49,7 @@ export default function TradePreviewTable({
               </td>
               <td className="px-1 py-1.5"><input value={r.price} onChange={(e) => onPatch(i, { price: e.target.value })} className={`${PREVIEW_INPUT} num text-right`} /></td>
               <td className="px-1 py-1.5"><input value={r.qty} onChange={(e) => onPatch(i, { qty: e.target.value })} className={`${PREVIEW_INPUT} num text-right`} /></td>
-              <td className="num-t" style={{ color: "var(--ink-faint)" }}>{r.amount}</td>
+              <td className="num-t txt-faint">{r.amount}</td>
             </tr>
           ))}
         </tbody>

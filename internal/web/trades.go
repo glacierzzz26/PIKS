@@ -319,11 +319,11 @@ func optStr(v string) *string {
 func (s *Server) tradeSaveMistakeCore(ctx context.Context, id string, n int) (bool, string) {
 	t, err := s.store.GetTrade(ctx, id)
 	if err != nil {
-		return false, "⚠️ 交易不存在: " + err.Error()
+		return false, "交易不存在: " + err.Error()
 	}
 	rv := parseTradeReview(t.Review)
 	if rv == nil || n < 0 || n >= len(rv.Mistakes) {
-		return false, "⚠️ 复盘点不存在(复盘可能已更新,请重新解读)。"
+		return false, "复盘点不存在(复盘可能已更新,请重新解读)。"
 	}
 	m := rv.Mistakes[n]
 	title := m.Title
@@ -332,17 +332,76 @@ func (s *Server) tradeSaveMistakeCore(ctx context.Context, id string, n int) (bo
 	}
 	slug := fmt.Sprintf("trade-%s-%d", id, n)
 	if existing, err := s.store.GetPersonalNoteBySlug(ctx, "mistake", slug); err == nil && existing != nil {
-		return true, "✅ 该复盘点已存为笔记,未重复创建。"
+		return true, "该复盘点已存为笔记,未重复创建。"
 	} else if err != nil {
-		return false, "⚠️ 查重失败: " + err.Error()
+		return false, "查重失败: " + err.Error()
 	}
-	if _, err := s.store.CreatePersonalNote(ctx, &model.PersonalNote{
+	noteID, err := s.store.CreatePersonalNote(ctx, &model.PersonalNote{
 		Type: "mistake", Slug: slug, Title: &title,
 		Status: "hypothesis", Content: &m.Content,
-	}); err != nil {
-		return false, "⚠️ 存为笔记失败: " + err.Error()
+	})
+	if err != nil {
+		return false, "存为笔记失败: " + err.Error()
 	}
-	return true, "✅ 已存为个人笔记。"
+	// 沉淀回流(P6-5):建 references 边,使该笔记出现在个股页「我的笔记」与 /notes。
+	// 回流失败不回滚笔记(已入库有效),但如实告知——否则「存了却查不到」最难排查。
+	if err := s.linkSavedNote(ctx, noteID, t.Code, "", rv.Refs); err != nil {
+		return true, "已存为个人笔记,但关联回流失败: " + err.Error()
+	}
+	return true, "已存为个人笔记。"
+}
+
+// linkSavedNote 为「存为笔记」的复盘结论建 references 边(P6-5 沉淀回流,零 schema):
+// 笔记 → 公司实体(个股页「我的笔记」按 entity 边查,personal_notes.go ListNotesReferencingEntity)。
+// code 非空则解析公司实体;若给事件 id(单条)亦关联。refs = AI 复盘白名单过滤后的真实引用,
+// 全部补建实体/事件边(它们本就是该笔记的论据)。失败即返回错误(不静默丢链)。
+func (s *Server) linkSavedNote(ctx context.Context, noteID, code, eventID string, refs tradeRefs) error {
+	linked := map[string]bool{} // 去重 to_type|to_id
+	link := func(toType, toID string) error {
+		if strings.TrimSpace(toID) == "" {
+			return nil
+		}
+		key := toType + "|" + toID
+		if linked[key] {
+			return nil
+		}
+		if err := s.store.CreateRelationship(ctx, &model.Relationship{
+			FromType: "personal_note", FromID: noteID,
+			ToType: toType, ToID: toID,
+			RelType: "references", Source: strPtr("review-save"),
+		}); err != nil {
+			return err
+		}
+		linked[key] = true
+		return nil
+	}
+	if code != "" {
+		ent, err := s.store.GetCompanyEntityByCode(ctx, store.NormalizeCode(code))
+		if err != nil {
+			return err
+		}
+		if ent != nil {
+			if err := link("entity", ent.ID); err != nil {
+				return err
+			}
+		}
+	}
+	if eventID != "" {
+		if err := link("event", eventID); err != nil {
+			return err
+		}
+	}
+	for _, e := range refs.Events {
+		if err := link("event", e.ID); err != nil {
+			return err
+		}
+	}
+	for _, e := range refs.Entities {
+		if err := link("entity", e.ID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // tradeReviewCore 交易 AI 复盘并入库(带引用,手动触发)。
@@ -350,11 +409,11 @@ func (s *Server) tradeSaveMistakeCore(ctx context.Context, id string, n int) (bo
 func (s *Server) tradeReviewCore(ctx context.Context, id string) string {
 	t, err := s.store.GetTrade(ctx, id)
 	if err != nil {
-		return "⚠️ 交易不存在: " + err.Error()
+		return "交易不存在: " + err.Error()
 	}
 	cfgMap, err := s.store.ListAppConfig(ctx)
 	if err != nil {
-		return "⚠️ 读 AI 配置失败: " + err.Error()
+		return "读 AI 配置失败: " + err.Error()
 	}
 	base, key := cfgMap["ai_service_base_url"], cfgMap["ai_api_key"]
 	model := cfgMap["ai_model_reasoning"]
@@ -362,11 +421,11 @@ func (s *Server) tradeReviewCore(ctx context.Context, id string) string {
 		model = cfgMap["ai_model_extract"]
 	}
 	if base == "" || key == "" || model == "" {
-		return "⚠️ AI 未配置,复盘暂缺(请到设置页配置)。"
+		return "AI 未配置,复盘暂缺(请到设置页配置)。"
 	}
 	if budget, _ := strconv.ParseInt(cfgMap["ai_daily_token_budget"], 10, 64); budget > 0 {
 		if today, err := s.store.TokensSince(ctx, time.Now().Truncate(24*time.Hour)); err == nil && today >= budget {
-			return "⚠️ 今日 AI 预算已用尽,复盘暂缺(预算恢复后重试)。"
+			return "今日 AI 预算已用尽,复盘暂缺(预算恢复后重试)。"
 		}
 	}
 
@@ -378,7 +437,7 @@ func (s *Server) tradeReviewCore(ctx context.Context, id string) string {
 	extra, _ := s.expandQuery(ctx, cfgMap, q)
 	events, entities, err := s.store.SearchKnowledgeExpanded(ctx, q, extra, 8, 8)
 	if err != nil {
-		return "⚠️ 检索知识库失败: " + err.Error()
+		return "检索知识库失败: " + err.Error()
 	}
 	// 防未来函数:历史交易只含 trade_date 及之前的语境。
 	cutoff := t.TradeDate.AddDate(0, 0, 1)
@@ -391,29 +450,29 @@ func (s *Server) tradeReviewCore(ctx context.Context, id string) string {
 	events = kept
 	notes, err := s.store.ListPersonalNotesByText(ctx, t.Name, 8)
 	if err != nil {
-		return "⚠️ 检索个人笔记失败: " + err.Error()
+		return "检索个人笔记失败: " + err.Error()
 	}
 
 	runID, err := s.store.StartTaskRun(ctx, "trade-review")
 	if err != nil {
-		return "⚠️ 记账失败: " + err.Error()
+		return "记账失败: " + err.Error()
 	}
 	system, user := reviewPrompt(t, events, entities, notes)
 	c := ai.NewOpenAICompat(base, key, model)
 	resp, err := c.StructuredOutput(ctx, ai.StructuredRequest{System: system, User: user})
 	if err != nil {
 		_ = s.store.FinishTaskRun(ctx, runID, "failed", err.Error(), map[string]any{"trade_id": id})
-		return "⚠️ 复盘生成失败: " + err.Error()
+		return "复盘生成失败: " + err.Error()
 	}
 	rv, verr := validateTradeReview(resp.Data, events, entities, notes, model, resp.Usage.Total())
 	if verr != nil {
 		_ = s.store.FinishTaskRun(ctx, runID, "failed", verr.Error(), map[string]any{"trade_id": id})
-		return "⚠️ 复盘解析失败: " + verr.Error()
+		return "复盘解析失败: " + verr.Error()
 	}
 	_ = s.store.FinishTaskRun(ctx, runID, "success", "", map[string]any{"trade_id": id, "model": model, "ai_tokens": resp.Usage.Total()})
 	raw, _ := json.Marshal(rv)
 	if err := s.store.SetTradeReview(ctx, id, raw); err != nil {
-		return "⚠️ 复盘入库失败: " + err.Error()
+		return "复盘入库失败: " + err.Error()
 	}
 	return ""
 }
@@ -715,15 +774,15 @@ func positionReviewPrompt(agg PositionAgg, events []model.Event, entities []mode
 func (s *Server) positionDiagnoseCore(ctx context.Context) string {
 	ps, err := s.store.LatestPositions(ctx)
 	if err != nil {
-		return "⚠️ 读持仓失败: " + err.Error()
+		return "读持仓失败: " + err.Error()
 	}
 	if len(ps) == 0 {
-		return "⚠️ 暂无持仓快照,先导入持仓再诊断。"
+		return "暂无持仓快照,先导入持仓再诊断。"
 	}
 	snapshot := ps[0].SnapshotDate
 	cfgMap, err := s.store.ListAppConfig(ctx)
 	if err != nil {
-		return "⚠️ 读 AI 配置失败: " + err.Error()
+		return "读 AI 配置失败: " + err.Error()
 	}
 	base, key := cfgMap["ai_service_base_url"], cfgMap["ai_api_key"]
 	mname := cfgMap["ai_model_reasoning"]
@@ -731,11 +790,11 @@ func (s *Server) positionDiagnoseCore(ctx context.Context) string {
 		mname = cfgMap["ai_model_extract"]
 	}
 	if base == "" || key == "" || mname == "" {
-		return "⚠️ AI 未配置,诊断暂缺(请到设置页配置)。"
+		return "AI 未配置,诊断暂缺(请到设置页配置)。"
 	}
 	if budget, _ := strconv.ParseInt(cfgMap["ai_daily_token_budget"], 10, 64); budget > 0 {
 		if today, err := s.store.TokensSince(ctx, time.Now().Truncate(24*time.Hour)); err == nil && today >= budget {
-			return "⚠️ 今日 AI 预算已用尽,诊断暂缺(预算恢复后重试)。"
+			return "今日 AI 预算已用尽,诊断暂缺(预算恢复后重试)。"
 		}
 	}
 
@@ -743,7 +802,7 @@ func (s *Server) positionDiagnoseCore(ctx context.Context) string {
 	cutoff := snapshot.AddDate(0, 0, 1)
 	recent, err := s.store.ListTradesBetween(ctx, snapshot.AddDate(0, 0, -14), cutoff)
 	if err != nil {
-		return "⚠️ 读交易联动失败: " + err.Error()
+		return "读交易联动失败: " + err.Error()
 	}
 	agg := aggPositions(ps, recent)
 
@@ -756,7 +815,7 @@ func (s *Server) positionDiagnoseCore(ctx context.Context) string {
 	extra, _ := s.expandQuery(ctx, cfgMap, q)
 	events, entities, err := s.store.SearchKnowledgeExpanded(ctx, q, extra, 10, 10)
 	if err != nil {
-		return "⚠️ 检索知识库失败: " + err.Error()
+		return "检索知识库失败: " + err.Error()
 	}
 	kept := events[:0]
 	for _, e := range events {
@@ -785,44 +844,48 @@ func (s *Server) positionDiagnoseCore(ctx context.Context) string {
 
 	runID, err := s.store.StartTaskRun(ctx, "position-review")
 	if err != nil {
-		return "⚠️ 记账失败: " + err.Error()
+		return "记账失败: " + err.Error()
 	}
 	system, user := positionReviewPrompt(agg, events, entities, notes)
 	c := ai.NewOpenAICompat(base, key, mname)
 	resp, err := c.StructuredOutput(ctx, ai.StructuredRequest{System: system, User: user})
 	if err != nil {
 		_ = s.store.FinishTaskRun(ctx, runID, "failed", err.Error(), map[string]any{"snapshot": agg.SnapshotDate})
-		return "⚠️ 诊断生成失败: " + err.Error()
+		return "诊断生成失败: " + err.Error()
 	}
 	rv, verr := validatePositionReview(resp.Data, events, entities, notes, mname, resp.Usage.Total())
 	if verr != nil {
 		_ = s.store.FinishTaskRun(ctx, runID, "failed", verr.Error(), map[string]any{"snapshot": agg.SnapshotDate})
-		return "⚠️ 诊断解析失败: " + verr.Error()
+		return "诊断解析失败: " + verr.Error()
 	}
 	_ = s.store.FinishTaskRun(ctx, runID, "success", "", map[string]any{"snapshot": agg.SnapshotDate, "model": mname, "ai_tokens": resp.Usage.Total()})
 	raw, _ := json.Marshal(rv)
 	if err := s.store.UpsertPositionReview(ctx, snapshot, raw, mname, resp.Usage.Total()); err != nil {
-		return "⚠️ 诊断入库失败: " + err.Error()
+		return "诊断入库失败: " + err.Error()
 	}
 	return ""
 }
 
 // positionSaveRiskCore 把诊断候选 risk 存为个人笔记(type=mistake, status=hypothesis)。
 // iter4 单向 harvest 语义:AI 提议、用户确认;已存过(同 slug)如实提示不重复建。
+// snapshot 为该诊断所属快照日;零值 = 取最新(既有调用不变)。/reviews 可点旧期,必须按行传入,
+// 否则会把旧期的风险条目从最新期索引取错(静默存错内容)。
 // 返回 (成功与否, 用户可见消息);JSON 与 HTML 两条路径共用。
-func (s *Server) positionSaveRiskCore(ctx context.Context, n int) (bool, string) {
-	ps, err := s.store.LatestPositions(ctx)
-	if err != nil || len(ps) == 0 {
-		return false, "⚠️ 暂无持仓快照。"
+func (s *Server) positionSaveRiskCore(ctx context.Context, snapshot time.Time, n int) (bool, string) {
+	if snapshot.IsZero() {
+		ps, err := s.store.LatestPositions(ctx)
+		if err != nil || len(ps) == 0 {
+			return false, "暂无持仓快照。"
+		}
+		snapshot = ps[0].SnapshotDate
 	}
-	snapshot := ps[0].SnapshotDate
 	pr, err := s.store.GetPositionReview(ctx, snapshot)
 	if err != nil || pr == nil {
-		return false, "⚠️ 诊断不存在(请先生成持仓诊断)。"
+		return false, "诊断不存在(请先生成持仓诊断)。"
 	}
 	rv := parsePositionReview(pr.Review)
 	if rv == nil || n < 0 || n >= len(rv.Risks) {
-		return false, "⚠️ 风险候选不存在(诊断可能已更新,请重新诊断)。"
+		return false, "风险候选不存在(诊断可能已更新,请重新诊断)。"
 	}
 	m := rv.Risks[n]
 	title := m.Title
@@ -831,15 +894,20 @@ func (s *Server) positionSaveRiskCore(ctx context.Context, n int) (bool, string)
 	}
 	slug := fmt.Sprintf("posrev-%s-%d", snapshot.Format("20060102"), n)
 	if existing, err := s.store.GetPersonalNoteBySlug(ctx, "mistake", slug); err == nil && existing != nil {
-		return true, "✅ 该风险候选已存为笔记,未重复创建。"
+		return true, "该风险候选已存为笔记,未重复创建。"
 	} else if err != nil {
-		return false, "⚠️ 查重失败: " + err.Error()
+		return false, "查重失败: " + err.Error()
 	}
-	if _, err := s.store.CreatePersonalNote(ctx, &model.PersonalNote{
+	noteID, err := s.store.CreatePersonalNote(ctx, &model.PersonalNote{
 		Type: "mistake", Slug: slug, Title: &title,
 		Status: "hypothesis", Content: &m.Content,
-	}); err != nil {
-		return false, "⚠️ 存为笔记失败: " + err.Error()
+	})
+	if err != nil {
+		return false, "存为笔记失败: " + err.Error()
 	}
-	return true, "✅ 已存为个人笔记。"
+	// 沉淀回流(P6-5):组合级诊断无单一 code,只关联诊断引用的实体/事件(该笔记的论据)。
+	if err := s.linkSavedNote(ctx, noteID, "", "", rv.Refs); err != nil {
+		return true, "已存为个人笔记,但关联回流失败: " + err.Error()
+	}
+	return true, "已存为个人笔记。"
 }

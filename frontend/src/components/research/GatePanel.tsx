@@ -34,7 +34,7 @@ export default function GatePanel({
   return (
     <section className="mt-5">
       <div className="mb-2 flex items-baseline gap-2">
-        <h2 className="m-0 text-[15px] font-bold tracking-wide">三、机检详情</h2>
+        <h2 className="m-0 text-[15px] font-bold tracking-wide">三、数字机检详情</h2>
       </div>
       <div className="panel">
         <button
@@ -75,10 +75,10 @@ export default function GatePanel({
                         <X size={13} className="text-up" />
                       )}
                     </td>
-                    <td style={{ textAlign: "left" }} className="text-muted">
+                    <td className="text-left text-muted">
                       {c.name}
                     </td>
-                    <td style={{ textAlign: "left" }} className="text-[12px] text-faint">
+                    <td className="text-left text-[12px] text-faint">
                       {c.detail}
                     </td>
                   </tr>

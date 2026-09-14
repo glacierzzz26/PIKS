@@ -82,7 +82,7 @@ export default function Page() {
           <span className="ml-auto flex items-center gap-2">
             <Link
               to={`/notes/${doc.id}/edit`}
-              className="inline-flex h-8 items-center gap-1.5 rounded-[9px] border border-line bg-card px-3 text-xs text-muted no-underline hover:text-accent"
+              className="inline-flex h-8 items-center gap-1.5 rounded-[10px] border border-line bg-card px-3 text-xs text-muted no-underline hover:text-accent"
             >
               <Pencil size={12} />
               编辑
@@ -90,7 +90,7 @@ export default function Page() {
             <button
               onClick={archive}
               disabled={archiving}
-              className="inline-flex h-8 items-center gap-1.5 rounded-[9px] border border-line bg-card px-3 text-xs text-muted hover:text-up disabled:opacity-50"
+              className="inline-flex h-8 items-center gap-1.5 rounded-[10px] border border-line bg-card px-3 text-xs text-muted hover:text-up disabled:opacity-50"
             >
               <Archive size={12} />
               {archiving ? "归档中…" : "归档"}

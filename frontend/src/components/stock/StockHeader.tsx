@@ -37,7 +37,7 @@ export default function StockHeader({
           {entity?.status === "watch" && <span className="st st-amber">自选</span>}
         </h1>
         <div className="psub">
-          {symbol} · {entity ? "已建实体" : "未建实体，事件/笔记/行业暂无关联"}
+          {symbol} · {entity ? "已建档案" : "暂无档案，消息 / 笔记 / 行业还没关联"}
         </div>
       </div>
       <div className="meta">

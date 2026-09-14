@@ -95,6 +95,19 @@ func (s *Store) ListPersonalNotes(ctx context.Context, noteType string) ([]model
 	return pgx.CollectRows(rows, pgx.RowToStructByName[model.PersonalNote])
 }
 
+// ListPersonalNotesByIDs 按 id 批量取笔记(决策记录 P6-4 回读标题用)。
+func (s *Store) ListPersonalNotesByIDs(ctx context.Context, ids []string) ([]model.PersonalNote, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT `+noteCols+` FROM personal_notes WHERE id = ANY($1)`, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[model.PersonalNote])
+}
+
 // ListPersonalNotesByText 按文本匹配 title/content 的笔记(交易解读引用,design trades.md §2.4)。
 // 非 archived 优先、按 updated_at 倒序。q 为空返回空列表。
 func (s *Store) ListPersonalNotesByText(ctx context.Context, q string, limit int) ([]model.PersonalNote, error) {

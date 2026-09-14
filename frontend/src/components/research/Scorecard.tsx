@@ -20,7 +20,7 @@ export default function Scorecard({ metrics }: { metrics: ResearchMetrics }) {
         <tbody>
           {sc.dimensions.map((d) => (
             <tr key={d.dimension} className="h-[38px]">
-              <td style={{ textAlign: "left" }} className="text-muted">
+              <td className="text-left text-muted">
                 {DIM_LABEL[d.dimension] ?? d.dimension}
               </td>
               <td className="num-t font-semibold">
@@ -32,7 +32,7 @@ export default function Scorecard({ metrics }: { metrics: ResearchMetrics }) {
                   </span>
                 )}
               </td>
-              <td style={{ textAlign: "left" }} className="text-[12px] text-faint">
+              <td className="text-left text-[12px] text-faint">
                 {d.reason}
               </td>
             </tr>

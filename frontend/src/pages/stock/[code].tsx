@@ -6,7 +6,9 @@ import { ENDPOINTS } from "@/lib/api";
 import { LoadingBlock, ErrorState } from "@/components/ui/States";
 import StockHeader from "@/components/stock/StockHeader";
 import StockPosition from "@/components/stock/StockPosition";
+import StockDecisions from "@/components/stock/StockDecisions";
 import StockResearch from "@/components/stock/StockResearch";
+import StockResearchDelta from "@/components/stock/StockResearchDelta";
 import StockNotes from "@/components/stock/StockNotes";
 import StockEvents from "@/components/stock/StockEvents";
 import StockLimitUps from "@/components/stock/StockLimitUps";
@@ -48,6 +50,17 @@ export default function Page() {
       <section className="section">
         <div className="section-head">
           <span className="bar" />
+          <h2>当时在看什么</h2>
+          <span className="hint">每笔买入关联的研报 / 消息 / 笔记 —— 我为什么买它</span>
+        </div>
+        <div className="panel panel-pad">
+          <StockDecisions trades={d.trades} />
+        </div>
+      </section>
+
+      <section className="section">
+        <div className="section-head">
+          <span className="bar" />
           <h2>我的持仓与交易</h2>
           <span className="hint">最新持仓快照 + 该股全部成交</span>
         </div>
@@ -59,8 +72,19 @@ export default function Page() {
       <section className="section">
         <div className="section-head">
           <span className="bar" />
+          <h2>研究变化</h2>
+          <span className="hint">最近两份深研的关键指标对比 —— 我的判断在变好还是变差</span>
+        </div>
+        <div className="panel panel-pad">
+          <StockResearchDelta runs={d.research} />
+        </div>
+      </section>
+
+      <section className="section">
+        <div className="section-head">
+          <span className="bar" />
           <h2>深研报告</h2>
-          <span className="hint">research · 点右上「深研」发起新分析</span>
+          <span className="hint">点右上「深研」发起一次新的 AI 分析</span>
         </div>
         <div className="panel panel-pad">
           <StockResearch runs={d.research} />
@@ -92,7 +116,7 @@ export default function Page() {
         <div className="section-head">
           <span className="bar" />
           <h2>相关事件</h2>
-          <span className="hint">affects 到该股的事件 · 时间倒序</span>
+          <span className="hint">与这只票相关的消息 · 时间倒序</span>
         </div>
         <div className="panel">
           <StockEvents events={d.events} />

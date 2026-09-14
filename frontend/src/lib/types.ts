@@ -164,6 +164,23 @@ export type TradeRow = {
   note?: string;
   review?: string; // AI 复盘 Markdown（已生成时）
   mistakes?: ReviewPoint[]; // 复盘点（存为笔记用）
+  based_on?: DecisionRef[]; // 决策关联：买入时在看什么（P6-4）
+};
+
+/** 决策关联目标（P6-4）：kind 决定图标与跳转。 */
+export type DecisionRef = {
+  kind: "research" | "event" | "note";
+  id: string;
+  title: string;
+  date?: string; // research as_of / event 发生日
+  url?: string; // 深链
+};
+
+/** POST /api/v1/trades 的决策关联入参（to_id 用各表 UUID）。 */
+export type TradeBasedOn = {
+  run_ids: string[]; // research_runs.id（UUID，绝不用 run_id）
+  event_ids: string[];
+  note_ids: string[];
 };
 
 export type PositionRow = {
@@ -182,6 +199,7 @@ export type ReviewRow = {
   refs: number;
   state: "positive" | "negative" | "neutral";
   risks?: ReviewPoint[];
+  mistakes?: ReviewPoint[]; // 复盘点（诊断时识别出的操作失误）
 };
 
 export type SnapRow = {
@@ -419,7 +437,8 @@ export type ResearchRun = {
 
 /** 列表项（GET /api/v1/research-runs，不含 markdown/metrics 宽字段） */
 export type ResearchRunSummary = {
-  run_id: string;
+  id: string; // research_runs.id（UUID，决策关联用）
+  run_id: string; // 业务键（深链 /research/:runId、轮询用）
   code: string;
   symbol: string;
   profile: string;
@@ -478,11 +497,21 @@ export type StockHub = {
   events: StockEvent[];
   notes: StockNote[];
   limit_ups: string[];
+  /** 每笔交易的决策关联（P6-4「当时在看什么」）：trade_id → 引用列表。 */
+  decisions: Record<string, DecisionRef[]>;
 };
 
-// ---- 自选（GET /api/v1/watchlist，设计 frontend-ia §2.3）----
+// ---- 自选（GET /api/v1/watchlist，设计 frontend-ia §2.3 / phase6 ux-ia §2）----
 
-/** 自选行：自选实体 + 是否持有（持仓快照命中时带现价/盈亏）。 */
+/** 自选项最近一条 affects 事件（P6-3 富化）。 */
+export type WatchEvent = {
+  title: string;
+  date: string; // 事件发生日 YYYY-MM-DD
+  count: number; // affects 到该实体的累计事件数
+  latest_id: string; // 最近事件 id（深链 /events/:id）
+};
+
+/** 自选行：自选实体 + 是否持有（持仓快照命中时带现价/盈亏）+ 富化徽标。 */
 export type WatchItem = {
   code: string;
   entity_id: string;
@@ -490,6 +519,15 @@ export type WatchItem = {
   description: string;
   held: boolean;
   position: PositionRow | null;
+  // 富化（P6-3）
+  latest_event: WatchEvent | null;
+  position_date: string; // 持仓快照日（空 = 无持仓）
+  has_research: boolean;
+  latest_research_asof: string; // YYYY-MM-DD（空 = 未深研）
 };
 
-export type Watchlist = { items: WatchItem[] };
+export type Watchlist = {
+  items: WatchItem[];
+  position_date: string; // 全部持仓共用的最新快照日（空 = 无持仓）
+  researched: number; // 自选中做过深研的数量（覆盖率）
+};

@@ -1,18 +1,17 @@
 /**
  * 左侧导航项。全部为 SPA 页面（React Router 客户端路由），无 Go HTML 交互页。
- * 2026-09-13 个股轴心重排（设计 phase5/design/frontend-ia.md）：
- *   自选（首页）/ 研究 / 发现 / 复盘 / 交易 / 系统。
+ * 2026-09-14 P6-2 白话导航重排（设计 phase6/design/ux-ia.md §1）：
+ *   按「用户的闭环」分组、标签去黑话 —— 我的 / 发现 / 研究 / 交易 / 复盘 / 系统。
  * 分组仅作视觉分隔，不可折叠 —— 保证任意页面一键直达。
- * 对账（/recon）降为设置页子入口，侧栏不再占位。
+ * 隐藏管线内部：实体库 /graph 与图谱 /entities **移出侧栏**（路由保留，并入设置页
+ *   「数据与运维」卡；⌘K 仍经 /entities 做实体名→个股跳转）；快讯 /flashes 并为
+ *   「消息」页的一个 tab，不再占侧栏位。
  */
 import type { LucideIcon } from "lucide-react";
 import {
-  Star,
+  Sun,
   Newspaper,
-  Boxes,
-  Share2,
   TrendingUp,
-  Zap,
   LayoutDashboard,
   ClipboardCheck,
   FileText,
@@ -26,51 +25,48 @@ import {
 export type NavItem = { href: string; label: string; icon: LucideIcon };
 export type NavGroup = { title: string; items: NavItem[] };
 
-/** 自选单独置顶（新首页），不归组 */
+/** 今天（新首页）单独置顶，不归组 */
 export const PRIMARY_NAV: NavItem = {
   href: "/",
-  label: "自选",
-  icon: Star,
+  label: "今天",
+  icon: Sun,
 };
 
 export const NAV_GROUPS: NavGroup[] = [
   {
-    title: "研究",
-    items: [{ href: "/research", label: "个股分析", icon: Microscope }],
-  },
-  {
     title: "发现",
     items: [
-      { href: "/market", label: "市场看板", icon: LayoutDashboard },
-      { href: "/ladder", label: "涨停梯队", icon: TrendingUp },
-      { href: "/flashes", label: "快讯流", icon: Zap },
-      { href: "/events", label: "事件流", icon: Newspaper },
-      { href: "/graph", label: "图谱", icon: Share2 },
-      { href: "/entities", label: "实体库", icon: Boxes },
+      { href: "/market", label: "市场概况", icon: LayoutDashboard },
+      { href: "/ladder", label: "涨停股", icon: TrendingUp },
+      { href: "/events", label: "消息", icon: Newspaper },
     ],
+  },
+  {
+    title: "研究",
+    items: [
+      { href: "/research", label: "研究报告", icon: Microscope },
+      { href: "/chat", label: "问 AI", icon: MessageSquare },
+    ],
+  },
+  {
+    title: "交易",
+    items: [{ href: "/trades", label: "交易与持仓", icon: Wallet }],
   },
   {
     title: "复盘",
     items: [
-      { href: "/reviews", label: "复盘", icon: ClipboardCheck },
+      { href: "/reviews", label: "持仓诊断", icon: ClipboardCheck },
       { href: "/weekly", label: "周报", icon: FileText },
       { href: "/notes", label: "笔记", icon: NotebookPen },
     ],
   },
   {
-    title: "交易",
-    items: [{ href: "/trades", label: "交易", icon: Wallet }],
-  },
-  {
     title: "系统",
-    items: [
-      { href: "/chat", label: "AI 对话", icon: MessageSquare },
-      { href: "/settings", label: "设置", icon: Settings },
-    ],
+    items: [{ href: "/settings", label: "设置", icon: Settings }],
   },
 ];
 
-/** 平铺顺序（含自选），供命令面板等按序展示 */
+/** 平铺顺序（含今天），供命令面板等按序展示 */
 export const NAV_ITEMS: NavItem[] = [
   PRIMARY_NAV,
   ...NAV_GROUPS.flatMap((g) => g.items),

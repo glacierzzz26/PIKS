@@ -18,7 +18,7 @@ export default function FactSection({
   return (
     <section>
       <div className="mb-2 flex items-baseline gap-2">
-        <h2 className="m-0 text-[15px] font-bold tracking-wide">一、Fact 区</h2>
+        <h2 className="m-0 text-[15px] font-bold tracking-wide">一、事实（机器算的）</h2>
         <span className="text-[12px] text-faint">
           确定性计算，非 AI 生成；每个数字可溯源到 Evidence
         </span>

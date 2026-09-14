@@ -24,6 +24,14 @@ export function fmtYuan(v: number): string {
   return `¥${v.toLocaleString("zh-CN")}`;
 }
 
+/** 从 YYYY-MM-DD 到今天的天数差；无法解析返回 null（如实留空，不猜）。 */
+export function daysAgo(date: string): number | null {
+  if (!date) return null;
+  const t = Date.parse(`${date}T00:00:00`);
+  if (Number.isNaN(t)) return null;
+  return Math.floor((Date.now() - t) / 86_400_000);
+}
+
 export const ENTITY_TYPE_LABEL: Record<string, string> = {
   company: "公司",
   industry: "行业",
@@ -46,6 +54,8 @@ export const EVENT_TYPE_LABEL: Record<string, string> = {
 export const DOC_TYPE_LABEL: Record<string, string> = {
   "daily-review": "每日复盘",
   note: "笔记",
-  weekly: "周报",
+  belief: "信念",
+  case: "案例",
   mistake: "错题",
+  weekly: "周报",
 };

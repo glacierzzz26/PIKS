@@ -13,7 +13,7 @@ import { PRIMARY_NAV, NAV_GROUPS, type NavItem } from "./navItems";
 
 const COLLAPSE_KEY = "piks-nav-collapsed";
 
-/** 侧边导航：分组平铺 13 页 + 搜索/主题/折叠，可折叠给宽表格/图谱让宽 */
+/** 侧边导航：今天置顶 + 分组平铺 10 页 + 搜索/主题/折叠，可折叠给宽表格/图谱让宽 */
 export default function SideNav({ onOpenPalette }: { onOpenPalette: () => void }) {
   const { pathname } = useLocation();
   const [dark, setDark] = useState(false);
@@ -83,11 +83,11 @@ export default function SideNav({ onOpenPalette }: { onOpenPalette: () => void }
       <div className="side-actions">
         <button
           onClick={onOpenPalette}
-          title="搜索 / 跳转（⌘K）"
+          title="查个股 / 搜索（⌘K）"
           className={`side-icon-btn ${collapsed ? "justify-center px-0" : "flex-1 justify-start gap-2 px-2.5"}`}
         >
           <Search size={14} />
-          {!collapsed && <span className="text-[12px]">搜索</span>}
+          {!collapsed && <span className="text-[12px]">查个股 / 搜索</span>}
           {!collapsed && <kbd className="side-kbd">⌘K</kbd>}
         </button>
         <button onClick={toggleTheme} aria-label="切换主题" className="side-icon-btn">

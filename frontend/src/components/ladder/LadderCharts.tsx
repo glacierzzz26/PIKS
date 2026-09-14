@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import EChart from "@/components/charts/EChart";
 import { useChartTheme } from "@/lib/chartTheme";
 import type { MarketSnapshot } from "@/lib/types";
-import type { EChartsOption } from "echarts";
+import type { PiksChartOption } from "@/components/charts/EChart";
 
 /** 涨停梯队两个图表。色值经 useChartTheme 解析，暗色模式下自动同步。 */
 export default function LadderCharts({ market }: { market: MarketSnapshot }) {
@@ -27,7 +27,7 @@ export default function LadderCharts({ market }: { market: MarketSnapshot }) {
 
 function buildLadder(
   market: MarketSnapshot,
-  c: ReturnType<typeof useChartTheme>): EChartsOption {
+  c: ReturnType<typeof useChartTheme>): PiksChartOption {
   const groups = new Map<number, string[]>();
   for (const s of market.ladder) {
     (groups.get(s.boards) ?? groups.set(s.boards, []).get(s.boards)!).push(
@@ -69,7 +69,7 @@ function buildLadder(
 
 function buildDist(
   market: MarketSnapshot,
-  c: ReturnType<typeof useChartTheme>): EChartsOption {
+  c: ReturnType<typeof useChartTheme>): PiksChartOption {
   const rows = [...market.industry_dist].reverse();
   return {
     grid: { left: 70, right: 30, top: 10, bottom: 20 },

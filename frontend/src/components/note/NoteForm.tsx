@@ -111,7 +111,7 @@ export default function NoteForm({
         </div>
         <div>
           <label className="mb-1.5 block text-[12.5px] font-semibold text-muted">
-            标题 <span style={{ color: "var(--red)" }}>*</span>
+标题 <span className="text-up">*</span>
           </label>
           <input
             value={title}
@@ -161,7 +161,7 @@ export default function NoteForm({
       </div>
       <div>
         <label className="mb-1.5 block text-[12.5px] font-semibold text-muted">
-          内容（Markdown）<span style={{ color: "var(--red)" }}>*</span>
+内容（Markdown）<span className="text-up">*</span>
         </label>
         <textarea
           value={content}
@@ -190,7 +190,7 @@ export default function NoteForm({
         <button
           onClick={submit}
           disabled={saving}
-          className="h-9 rounded-[9px] bg-accent px-5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+          className="h-9 rounded-[10px] bg-accent px-5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
         >
           {saving ? "保存中…" : submitLabel}
         </button>

@@ -59,7 +59,7 @@ export default function DeepResearchButton({
       <button
         onClick={trigger}
         title={error ?? undefined}
-        className="inline-flex h-7 items-center gap-1 rounded-[7px] border border-line bg-card px-2 text-[11px] text-muted hover:border-accent hover:text-accent"
+        className="inline-flex h-7 items-center gap-1 rounded-sm border border-line bg-card px-2 text-[11px] text-muted hover:border-accent hover:text-accent"
       >
         <Microscope size={11} />
         深研
@@ -67,7 +67,7 @@ export default function DeepResearchButton({
       {latest && (
         <button
           onClick={() => navigate(`/research/${latest}`)}
-          className="inline-flex h-7 items-center gap-1 rounded-[7px] border border-line bg-card px-2 text-[11px] text-muted hover:border-accent hover:text-accent"
+          className="inline-flex h-7 items-center gap-1 rounded-sm border border-line bg-card px-2 text-[11px] text-muted hover:border-accent hover:text-accent"
         >
           <FileText size={11} />
           查看报告

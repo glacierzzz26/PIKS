@@ -67,7 +67,7 @@ export default function Pagination({
         <select
           value={pageSize}
           onChange={(e) => onPageSize(Number(e.target.value))}
-          className="rounded-[7px] border border-line bg-card px-1.5 py-0.5 text-[12.5px] text-muted outline-none focus:border-accent"
+          className="rounded-sm border border-line bg-card px-1.5 py-0.5 text-[12.5px] text-muted outline-none focus:border-accent"
         >
           {PAGE_SIZES.map((s) => (
             <option key={s} value={s}>

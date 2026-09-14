@@ -1,7 +1,26 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import * as echarts from "echarts";
+import * as echarts from "echarts/core";
+import { BarChart } from "echarts/charts";
+import type { BarSeriesOption } from "echarts/charts";
+import {
+  GridComponent,
+  TooltipComponent,
+  type GridComponentOption,
+  type TooltipComponentOption,
+} from "echarts/components";
+import { LabelLayout } from "echarts/features";
+import { CanvasRenderer } from "echarts/renderers";
+import type { ComposeOption } from "echarts/core";
+
+// 只注册本应用实际用到的图表与组件（柱状图 + 直角坐标系 + 提示框），
+// 其余 echarts 模块由 tree-shaking 剔除，显著缩小体积。
+echarts.use([BarChart, GridComponent, TooltipComponent, LabelLayout, CanvasRenderer]);
+
+export type PiksChartOption = ComposeOption<
+  BarSeriesOption | GridComponentOption | TooltipComponentOption
+>;
 
 /**
  * ECharts 轻封装：声明式 option，容器自适应。
@@ -11,7 +30,7 @@ export default function EChart({
   option,
   height = 300,
 }: {
-  option: echarts.EChartsOption;
+  option: PiksChartOption;
   height?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);

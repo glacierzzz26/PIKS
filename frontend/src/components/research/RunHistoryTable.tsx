@@ -78,12 +78,12 @@ export default function RunHistoryTable({
         <table className="table">
           <thead>
             <tr>
-              <th style={{ textAlign: "left" }}>标的</th>
-              <th style={{ textAlign: "left" }}>类型</th>
-              <th style={{ textAlign: "left" }}>数据截止</th>
-              <th style={{ textAlign: "left" }}>状态</th>
-              <th style={{ textAlign: "left" }}>机检</th>
-              <th style={{ textAlign: "right" }}>报告</th>
+              <th className="text-left">标的</th>
+              <th className="text-left">类型</th>
+              <th className="text-left">数据截止</th>
+              <th className="text-left">状态</th>
+              <th className="text-left">机检</th>
+              <th className="text-right" >报告</th>
             </tr>
           </thead>
           <tbody>
@@ -115,7 +115,7 @@ export default function RunHistoryTable({
                 <td>
                   <LintBadge s={r} />
                 </td>
-                <td style={{ textAlign: "right" }}>
+                <td className="text-right" >
                   <span className="inline-flex items-center gap-1 text-[12px] text-accent">
                     查看 <ArrowRight size={12} />
                   </span>

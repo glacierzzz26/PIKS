@@ -178,6 +178,8 @@ func (s *Server) weeklyGenerateAPI(w http.ResponseWriter, r *http.Request) {
 // ==================== 交易 ====================
 
 // POST /api/v1/trades —— 手动录入一笔交易。
+// 可选 based_on:记下"买入时在看什么"(决策记录 P6-4),逐条建 relationships 边,
+// 使个体投资者的研究→决策链可回溯(设计 phase6 ux-ia §3.1)。
 func (s *Server) tradeAddAPI(w http.ResponseWriter, r *http.Request) {
 	var p struct {
 		Name      string  `json:"name"`
@@ -187,6 +189,11 @@ func (s *Server) tradeAddAPI(w http.ResponseWriter, r *http.Request) {
 		Qty       int     `json:"qty"`
 		TradeDate string  `json:"trade_date"`
 		Note      string  `json:"note"`
+		BasedOn   struct {
+			RunIDs   []string `json:"run_ids"`
+			EventIDs []string `json:"event_ids"`
+			NoteIDs  []string `json:"note_ids"`
+		} `json:"based_on"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
 		apiErrJSON(w, http.StatusBadRequest, "请求体解析失败: "+err.Error())
@@ -217,18 +224,60 @@ func (s *Server) tradeAddAPI(w http.ResponseWriter, r *http.Request) {
 	if n := strings.TrimSpace(p.Note); n != "" {
 		note = &n
 	}
-	if err := s.store.InsertTrades(r.Context(), []model.Trade{{
+	tradeID, err := s.store.InsertTradeReturningID(r.Context(), model.Trade{
 		TradeDate: date, Code: code, Name: name, Side: p.Side,
 		Price: p.Price, Qty: p.Qty, Amount: p.Price * float64(p.Qty), Source: "manual", Note: note,
-	}}); err != nil {
+	})
+	if err != nil {
 		apiErrJSON(w, http.StatusInternalServerError, "入库失败: "+err.Error())
+		return
+	}
+	// 决策边:先落交易再建边(需 trade UUID 作 from_id);建边失败不回滚交易,
+	// 但如实告知——决策关联丢了,交易本身仍有效,不该假装全成功。
+	linked, derr := s.linkTradeDecisions(r.Context(), tradeID, p.BasedOn.RunIDs, p.BasedOn.EventIDs, p.BasedOn.NoteIDs)
+	if derr != nil {
+		apiErrJSON(w, http.StatusInternalServerError, "交易已入库,但决策关联失败: "+derr.Error())
 		return
 	}
 	if _, err := s.store.EnsureCompanyEntity(r.Context(), code, name); err != nil {
 		apiErrJSON(w, http.StatusInternalServerError, "交易已入库,但实体补全失败: "+err.Error())
 		return
 	}
-	s.writeJSON(w, map[string]bool{"ok": true})
+	s.writeJSON(w, map[string]any{"ok": true, "linked": linked, "trade_id": tradeID})
+}
+
+// linkTradeDecisions 为一笔交易建决策边:trade →(research_run|event|personal_note)。
+// to_id 必须是各表主键 UUID(绝不能用 research_runs.run_id 这种 TEXT 业务键)。
+// 返回成功建边数;空输入 → 0。单条失败即中止并返回错误(不静默丢链)。
+func (s *Server) linkTradeDecisions(ctx context.Context, tradeID string, runIDs, eventIDs, noteIDs []string) (int, error) {
+	type edge struct {
+		toType, toID string
+	}
+	edges := make([]edge, 0, len(runIDs)+len(eventIDs)+len(noteIDs))
+	for _, id := range runIDs {
+		edges = append(edges, edge{"research_run", id})
+	}
+	for _, id := range eventIDs {
+		edges = append(edges, edge{"event", id})
+	}
+	for _, id := range noteIDs {
+		edges = append(edges, edge{"personal_note", id})
+	}
+	linked := 0
+	for _, e := range edges {
+		if strings.TrimSpace(e.toID) == "" {
+			continue
+		}
+		if err := s.store.CreateRelationship(ctx, &model.Relationship{
+			FromType: "trade", FromID: tradeID,
+			ToType: e.toType, ToID: e.toID,
+			RelType: "based_on", Source: strPtr("manual"),
+		}); err != nil {
+			return linked, err
+		}
+		linked++
+	}
+	return linked, nil
 }
 
 // 截图导入预览行(确认前不落库,带可编辑字段)。
@@ -332,7 +381,7 @@ func (s *Server) tradeImportAPI(w http.ResponseWriter, r *http.Request) {
 	base, key := cfgMap["ai_service_base_url"], cfgMap["ai_api_key"]
 	vision := cfgMap["ai_model_vision"]
 	if base == "" || key == "" || vision == "" {
-		apiErrJSON(w, http.StatusBadRequest, "AI 未配置或视觉模型未配置(请到设置页配置 `ai_model_vision`),可用手动录入兜底。")
+		apiErrJSON(w, http.StatusBadRequest, "截图识别需要先在「设置」里配置 AI 与视觉模型。也可以先用「手动录入」。")
 		return
 	}
 	if budget, _ := strconv.ParseInt(cfgMap["ai_daily_token_budget"], 10, 64); budget > 0 {
@@ -533,9 +582,19 @@ func (s *Server) positionDiagnoseAPI(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, map[string]bool{"ok": true})
 }
 
-// POST /api/v1/trades/positions/save-risk/{n} —— 诊断风险候选存为笔记。
+// POST /api/v1/trades/positions/save-risk/{n}?snapshot=YYYY-MM-DD —— 诊断风险候选存为笔记。
+// snapshot 缺省 = 最新诊断;/reviews 点旧期时必传(否则按最新期索引取错条目)。
 func (s *Server) positionSaveRiskAPI(w http.ResponseWriter, r *http.Request, n int) {
-	ok, msg := s.positionSaveRiskCore(r.Context(), n)
+	var snapshot time.Time
+	if v := r.URL.Query().Get("snapshot"); v != "" {
+		t, err := time.ParseInLocation("2006-01-02", v, cst)
+		if err != nil {
+			apiErrJSON(w, http.StatusBadRequest, "snapshot 日期格式应为 YYYY-MM-DD: "+v)
+			return
+		}
+		snapshot = t
+	}
+	ok, msg := s.positionSaveRiskCore(r.Context(), snapshot, n)
 	if !ok {
 		apiErrJSON(w, http.StatusBadRequest, msg)
 		return
@@ -765,7 +824,7 @@ func (s *Server) chatPostAPI(w http.ResponseWriter, r *http.Request) {
 	assistant, note, aerr := s.answerChat(ctx, cfgMap, question, img)
 	if aerr != nil {
 		// 如实降级:失败写入对话历史(用户可见)。
-		assistant = &model.ChatMessage{SessionID: sid, Role: "assistant", Content: "⚠️ 调用失败:" + aerr.Error()}
+		assistant = &model.ChatMessage{SessionID: sid, Role: "assistant", Content: "调用失败:" + aerr.Error()}
 	}
 	assistant.SessionID = sid
 	if err := s.store.InsertChatMessage(ctx, assistant); err != nil {

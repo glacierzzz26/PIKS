@@ -106,18 +106,18 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex h-12 items-center gap-3 border-b border-line px-4">
-          <Search size={15} className="text-faint" />
+          <Search size={15} className="txt-faint" />
           <input
             autoFocus
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="跳转页面、实体，或执行命令…"
+            placeholder="输入股票代码或名称，跳转页面…"
             className="w-full bg-transparent text-[13px] outline-none placeholder:text-faint"
           />
         </div>
         <ul className="max-h-[320px] overflow-auto p-1.5">
           {filtered.length === 0 && (
-            <li className="px-3 py-6 text-center text-xs text-faint">
+            <li className="px-3 py-6 text-center text-xs txt-faint">
               没有匹配项
             </li>
           )}
@@ -139,9 +139,9 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
                 <span className="w-1.5" />
               )}
               <span className="flex-1 truncate">{item.label}</span>
-              <span className="text-2xs text-faint">{item.hint}</span>
+              <span className="text-2xs txt-faint">{item.hint}</span>
               {i === cursor && (
-                <CornerDownLeft size={12} className="text-faint" />
+                <CornerDownLeft size={12} className="txt-faint" />
               )}
             </li>
           ))}

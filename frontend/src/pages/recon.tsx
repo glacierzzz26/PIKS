@@ -23,7 +23,7 @@ export default function Page() {
         <div>
           <h1>对账</h1>
           <div className="psub">
-            reconcile · 每日核对快讯 → 事件链路完整性 · 异常不掩盖
+            每天核对一次：快讯有没有漏进事件 · 有异常如实标出，不掩盖
           </div>
         </div>
         <div className="meta">
@@ -44,18 +44,18 @@ export default function Page() {
             <table className="table">
               <thead>
                 <tr>
-                  <th style={{ textAlign: "left" }}>日期</th>
+                  <th className="text-left">日期</th>
                   <th>快讯数</th>
                   <th>生成事件</th>
                   <th>异常</th>
                   <th>状态</th>
-                  <th style={{ textAlign: "left" }}>备注</th>
+                  <th className="text-left">备注</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.date}>
-                    <td style={{ textAlign: "left" }} className="num-t">
+                    <td className="text-left num-t">
                       {r.date}
                     </td>
                     <td className="num-t">{r.flashes.toLocaleString("zh-CN")}</td>
@@ -71,10 +71,7 @@ export default function Page() {
                         {STATUS[r.status]?.label ?? r.status}
                       </span>
                     </td>
-                    <td
-                      style={{ textAlign: "left", color: "var(--ink-faint)" }}
-                      className="text-[12.5px]"
-                    >
+                    <td className="text-[12.5px] txt-faint text-left">
                       {r.note ?? "—"}
                     </td>
                   </tr>

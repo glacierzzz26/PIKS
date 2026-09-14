@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes, useParams } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes, useParams } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
 import Watchlist from "@/pages/home";
 import Dashboard from "@/pages/dashboard";
@@ -22,6 +22,16 @@ import Settings from "@/pages/settings";
 import Research from "@/pages/research";
 import Analyst from "@/pages/analyst";
 import Stock from "@/pages/stock/[code]";
+import MobileUpload from "@/pages/m/upload";
+
+/** 桌面外壳：左侧栏 + 内容区（所有常规页共用）。 */
+function ShellLayout() {
+  return (
+    <AppShell>
+      <Outlet />
+    </AppShell>
+  );
+}
 
 /**
  * SPA 路由：全部页面（只读分析页 + 交互页）均由 React 提供。
@@ -29,14 +39,18 @@ import Stock from "@/pages/stock/[code]";
  * 消息页 = 重要消息(事件) + 快讯双 tab（P6-2），/flashes 旧深链落到快讯 tab。
  * 详情兜底：/events/:id 打开事件抽屉；/entities/:id 重定向到实体库选中；
  * /reviews/:id 由列表页接管（无独立详情）。未知路径回到首页。
+ *
+ * 手机投递页 `/m/upload` 在 AppShell 布局之外（无侧栏）：用无路径 layout route
+ * 包住全部桌面页，/m/upload 作为兄弟路由挂在外层——静态段在 v6 路由排名中胜出，
+ * 不会落进 AppShell 的 `*` 兜底，也不会双渲染出侧栏。
  */
 export default function App() {
   return (
-    <AppShell>
-      <Routes>
+    <Routes>
+      <Route element={<ShellLayout />}>
         <Route path="/" element={<Watchlist />} />
         <Route path="/market" element={<Dashboard />} />
-        <Route path="/events" element={<Messages />} />
+        <Route path="/events" element={<Events />} />
         <Route path="/events/:id" element={<EventByID />} />
         <Route path="/entities" element={<Entities />} />
         <Route path="/entities/:id" element={<EntityRedirect />} />
@@ -59,8 +73,12 @@ export default function App() {
         <Route path="/chat" element={<Chat />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </AppShell>
+      </Route>
+
+      {/* 手机投递页：无侧栏，独立布局 */}
+      <Route path="/m" element={<Navigate to="/m/upload" replace />} />
+      <Route path="/m/upload" element={<MobileUpload />} />
+    </Routes>
   );
 }
 

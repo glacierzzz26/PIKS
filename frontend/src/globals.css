@@ -1660,3 +1660,270 @@ select.f-sel {
     font-size: 20px;
   }
 }
+
+/* ============================================================
+ * 手机截图投递页 /m/upload —— 仅此页作用域(.m-upload 前缀)
+ * 该页在 AppShell 之外渲染，无 .side-nav/.footer/main.px-6，
+ * 故此处不新增/修改任何全局 media query，不影响桌面端。
+ * ============================================================ */
+.m-upload {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100dvh; /* 100vh 在 iOS 上会被地址栏咬掉底部 */
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-sizing: border-box;
+}
+.m-upload .m-head h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+.m-upload .m-head .psub {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--ink-faint);
+  line-height: 1.5;
+}
+
+/* 提示条（成功 / 出错） */
+.m-upload .m-note {
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.m-upload .m-note-err {
+  background: var(--red-soft);
+  color: var(--red);
+}
+.m-upload .m-note-ok {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.m-upload .m-hint {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink-faint);
+}
+
+/* 类型三选一：大号触摸目标 */
+.m-upload .m-types {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.m-upload .m-typebtn {
+  min-height: 56px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--card);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.m-upload .m-typebtn.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* 拍照 / 相册两个入口 */
+.m-upload .m-capture {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.m-upload .m-capbtn {
+  min-height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* 缩略图 + 元信息 */
+.m-upload .m-thumbwrap {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--card);
+}
+.m-upload .m-thumb {
+  display: block;
+  width: 100%;
+  max-height: 180px;
+  object-fit: contain;
+}
+.m-upload .m-thumbmeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  font-size: 12px;
+  border-top: 1px solid var(--line);
+}
+.m-upload .m-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: none;
+  border: 0;
+  color: var(--accent);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px;
+}
+
+/* 主 / 次按钮 */
+.m-upload .m-primary {
+  min-height: 48px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.m-upload .m-primary:disabled {
+  opacity: 0.45;
+}
+.m-upload .m-secondary {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  color: var(--ink-faint);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* 汇总条 */
+.m-upload .m-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-faint);
+}
+
+/* 预览卡片列表 */
+.m-upload .m-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.m-upload .m-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--card);
+  box-shadow: var(--shadow);
+  padding: 12px;
+}
+.m-upload .m-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 10px;
+}
+.m-upload .m-card-head b {
+  font-family: var(--font-mono);
+  font-size: 15px;
+}
+.m-upload .m-name {
+  font-size: 14px;
+  color: var(--ink);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 勾选框 44×44 触摸区 */
+.m-upload .m-check {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  margin: 0;
+}
+.m-upload .m-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 10px;
+}
+.m-upload .m-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.m-upload .m-field-label {
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+/* font-size:16px 防 iOS 聚焦时整体放大页面 */
+.m-upload .m-input {
+  min-height: 44px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 16px;
+  padding: 0 10px;
+  outline: none;
+}
+.m-upload .m-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.m-upload .m-readonly {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--ink-faint);
+  text-align: right;
+}
+
+/* 底部操作条：不透明 + 上边框，避免卡片从下方划过糊在一起 */
+.m-upload .m-actionbar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0 calc(10px + env(safe-area-inset-bottom));
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+}
+.m-upload .m-foot {
+  margin-top: auto;
+  padding-top: 8px;
+  font-size: 12px;
+  color: var(--ink-faint);
+  text-align: center;
+}
+.m-upload .m-foot a {
+  color: var(--accent);
+}
+
+/* 窄屏：字段两列退一列 */
+@media (max-width: 400px) {
+  .m-upload .m-grid {
+    grid-template-columns: 1fr;
+  }
+}

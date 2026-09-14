@@ -37,6 +37,13 @@ export const RESEARCH_PROFILE_LABEL: Record<string, string> = Object.fromEntries
   RESEARCH_PROFILES.map((p) => [p.key, p.label])
 );
 
+/** 风险等级（research metrics.risk.overall_level）→ 中文；未知 key 原样回显。 */
+export const RISK_LEVEL_LABEL: Record<string, string> = {
+  low: "低",
+  medium: "中",
+  high: "高",
+};
+
 export const FLASH_SOURCES = [
   { key: "", label: "全部来源" },
   { key: "东财快讯", label: "东财快讯" },

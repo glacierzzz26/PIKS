@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, Wand2 } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useData } from "@/hooks/useData";
 import { useUrlState } from "@/hooks/useUrlState";
 import { apiPost, ENDPOINTS } from "@/lib/api";
-import MarkdownBody from "@/components/md/MarkdownBody";
 import { Chip } from "@/components/ui/Num";
 import { LoadingBlock, EmptyState, ErrorState } from "@/components/ui/States";
+import SummaryPanel, { type GenMsg } from "@/components/weekly/SummaryPanel";
 import {
   SnapSection,
   EventSection,
@@ -55,7 +55,7 @@ function Mini({ label }: { label: string }) {
 export default function Page() {
   const [query, setParam] = useUrlState();
   const offset = Number(query.offset ?? "0") || 0;
-  const [genMsg, setGenMsg] = useState<{ tone: "dim" | "amber" | "up" | "down"; label: string } | null>(null);
+  const [genMsg, setGenMsg] = useState<GenMsg | null>(null);
   const [generating, setGenerating] = useState(false);
 
   const { data, loading, error, refresh } = useData<WeeklyDetail>({
@@ -135,41 +135,12 @@ export default function Page() {
       ) : (
         <div className="flex flex-col gap-3.5">
           {/* AI 综述 */}
-          <div className="panel">
-            <div className="wk-head">
-              <div>
-                <h3>{data.week}</h3>
-                <div className="rng">{data.range}</div>
-              </div>
-              <button onClick={generate} disabled={generating} className="btn">
-                <Wand2 size={13} className="mr-1 inline" />
-                {generating ? "生成中…" : data.summary ? "重新生成" : "生成 AI 综述"}
-              </button>
-            </div>
-            {data.summary && (
-              <div className="ai-summary">
-                <div className="ah">
-                  <Wand2 size={16} strokeWidth={2} />
-                  AI 综述 · 本周
-                  <span className="chip">
-                    {data.summary.model} · {data.summary.tokens.toLocaleString()} tokens
-                  </span>
-                </div>
-                <MarkdownBody content={data.summary.summary} />
-                <p className="num mt-3 border-t border-line pt-2 text-[11px] text-faint">
-                  生成于 {data.summary.updated_at}
-                </p>
-              </div>
-            )}
-            {genMsg && (
-              <div className="flex items-center gap-2 px-5 pb-4">
-                <Chip tone={genMsg.tone}>{genMsg.label}</Chip>
-              </div>
-            )}
-            {!data.summary && (
-              <p className="px-5 py-4 text-[13px] text-faint">{data.summary_note}</p>
-            )}
-          </div>
+          <SummaryPanel
+            data={data}
+            generating={generating}
+            genMsg={genMsg}
+            onGenerate={generate}
+          />
 
           {/* 五段聚合 */}
           <Card title="行情快照" count={snaps.length}>

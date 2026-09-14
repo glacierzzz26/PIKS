@@ -1,9 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import { useData } from "@/hooks/useData";
 import { ENDPOINTS } from "@/lib/api";
 import type { ReviewRow } from "@/lib/types";
 import { LoadingBlock, EmptyState, ErrorState } from "@/components/ui/States";
+import ReviewPointList from "@/components/reviews/ReviewPointList";
+import { ShieldAlert, Repeat } from "lucide-react";
 
 const STATE: Record<string, { cls: string; label: string }> = {
   positive: { cls: "st-down", label: "偏多" },
@@ -11,9 +14,11 @@ const STATE: Record<string, { cls: string; label: string }> = {
   neutral: { cls: "st-dim", label: "中性" },
 };
 
-/** 复盘（只读）：AI 带引用诊断结果展示（诊断触发在交易页「组合诊断」） */
+/** 复盘（只读）：AI 带引用诊断结果展示（诊断触发在交易页「组合诊断」）。
+ *  每条风险/复盘点可一键存为个人笔记 —— 后端补 references 边，笔记回流个股页与笔记库（P6-5）。 */
 export default function Page() {
   const reviews = useData<ReviewRow[]>({ path: ENDPOINTS.reviews });
+  const [msg, setMsg] = useState<string | null>(null);
   const rows = reviews.data ?? [];
 
   return (
@@ -30,13 +35,18 @@ export default function Page() {
         </div>
       </div>
 
+      {msg && <p className="mb-3 text-xs text-faint">{msg}</p>}
+
       <div className="panel">
         {reviews.loading ? (
           <LoadingBlock rows={6} />
         ) : reviews.error ? (
           <ErrorState msg={reviews.error} />
         ) : rows.length === 0 ? (
-          <EmptyState tip="暂无复盘记录" />
+          <EmptyState
+            tip="暂无诊断记录 · 到「交易与持仓」上传截图后点「组合诊断」"
+            action={{ to: "/trades", label: "去生成诊断" }}
+          />
         ) : (
           rows.map((r, i) => (
             <div key={i} className="rvrow">
@@ -46,24 +56,26 @@ export default function Page() {
               </div>
               <div className="rc">
                 {r.summary}
-                {r.risks && r.risks.length > 0 && (
-                  <div className="mt-1.5 flex flex-col gap-1">
-                    {r.risks.map((rk, j) => (
-                      <span key={`r${j}`} className="risk">
-                        风险：{rk.title}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {r.mistakes && r.mistakes.length > 0 && (
-                  <div className="mt-1.5 flex flex-col gap-1">
-                    {r.mistakes.map((mk, j) => (
-                      <span key={`m${j}`} className="risk point">
-                        复盘点：{mk.title}
-                      </span>
-                    ))}
-                  </div>
-                )}
+                <div className="mt-2 flex flex-col gap-3">
+                  <ReviewPointList
+                    title="风险点"
+                    icon={<ShieldAlert size={12} />}
+                    points={r.risks ?? []}
+                    pathFor={(j) =>
+                      `/trades/positions/save-risk/${j}?snapshot=${r.date}`
+                    }
+                    onSaved={setMsg}
+                  />
+                  <ReviewPointList
+                    title="复盘点"
+                    icon={<Repeat size={12} />}
+                    points={r.mistakes ?? []}
+                    pathFor={(j) =>
+                      `/trades/positions/save-risk/${j}?snapshot=${r.date}`
+                    }
+                    onSaved={setMsg}
+                  />
+                </div>
               </div>
               <div className="rs">
                 <span className={`st ${STATE[r.state]?.cls ?? "st-dim"}`}>

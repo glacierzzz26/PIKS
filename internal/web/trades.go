@@ -336,13 +336,72 @@ func (s *Server) tradeSaveMistakeCore(ctx context.Context, id string, n int) (bo
 	} else if err != nil {
 		return false, "查重失败: " + err.Error()
 	}
-	if _, err := s.store.CreatePersonalNote(ctx, &model.PersonalNote{
+	noteID, err := s.store.CreatePersonalNote(ctx, &model.PersonalNote{
 		Type: "mistake", Slug: slug, Title: &title,
 		Status: "hypothesis", Content: &m.Content,
-	}); err != nil {
+	})
+	if err != nil {
 		return false, "存为笔记失败: " + err.Error()
 	}
+	// 沉淀回流(P6-5):建 references 边,使该笔记出现在个股页「我的笔记」与 /notes。
+	// 回流失败不回滚笔记(已入库有效),但如实告知——否则「存了却查不到」最难排查。
+	if err := s.linkSavedNote(ctx, noteID, t.Code, "", rv.Refs); err != nil {
+		return true, "已存为个人笔记,但关联回流失败: " + err.Error()
+	}
 	return true, "已存为个人笔记。"
+}
+
+// linkSavedNote 为「存为笔记」的复盘结论建 references 边(P6-5 沉淀回流,零 schema):
+// 笔记 → 公司实体(个股页「我的笔记」按 entity 边查,personal_notes.go ListNotesReferencingEntity)。
+// code 非空则解析公司实体;若给事件 id(单条)亦关联。refs = AI 复盘白名单过滤后的真实引用,
+// 全部补建实体/事件边(它们本就是该笔记的论据)。失败即返回错误(不静默丢链)。
+func (s *Server) linkSavedNote(ctx context.Context, noteID, code, eventID string, refs tradeRefs) error {
+	linked := map[string]bool{} // 去重 to_type|to_id
+	link := func(toType, toID string) error {
+		if strings.TrimSpace(toID) == "" {
+			return nil
+		}
+		key := toType + "|" + toID
+		if linked[key] {
+			return nil
+		}
+		if err := s.store.CreateRelationship(ctx, &model.Relationship{
+			FromType: "personal_note", FromID: noteID,
+			ToType: toType, ToID: toID,
+			RelType: "references", Source: strPtr("review-save"),
+		}); err != nil {
+			return err
+		}
+		linked[key] = true
+		return nil
+	}
+	if code != "" {
+		ent, err := s.store.GetCompanyEntityByCode(ctx, store.NormalizeCode(code))
+		if err != nil {
+			return err
+		}
+		if ent != nil {
+			if err := link("entity", ent.ID); err != nil {
+				return err
+			}
+		}
+	}
+	if eventID != "" {
+		if err := link("event", eventID); err != nil {
+			return err
+		}
+	}
+	for _, e := range refs.Events {
+		if err := link("event", e.ID); err != nil {
+			return err
+		}
+	}
+	for _, e := range refs.Entities {
+		if err := link("entity", e.ID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // tradeReviewCore 交易 AI 复盘并入库(带引用,手动触发)。
@@ -809,13 +868,17 @@ func (s *Server) positionDiagnoseCore(ctx context.Context) string {
 
 // positionSaveRiskCore 把诊断候选 risk 存为个人笔记(type=mistake, status=hypothesis)。
 // iter4 单向 harvest 语义:AI 提议、用户确认;已存过(同 slug)如实提示不重复建。
+// snapshot 为该诊断所属快照日;零值 = 取最新(既有调用不变)。/reviews 可点旧期,必须按行传入,
+// 否则会把旧期的风险条目从最新期索引取错(静默存错内容)。
 // 返回 (成功与否, 用户可见消息);JSON 与 HTML 两条路径共用。
-func (s *Server) positionSaveRiskCore(ctx context.Context, n int) (bool, string) {
-	ps, err := s.store.LatestPositions(ctx)
-	if err != nil || len(ps) == 0 {
-		return false, "暂无持仓快照。"
+func (s *Server) positionSaveRiskCore(ctx context.Context, snapshot time.Time, n int) (bool, string) {
+	if snapshot.IsZero() {
+		ps, err := s.store.LatestPositions(ctx)
+		if err != nil || len(ps) == 0 {
+			return false, "暂无持仓快照。"
+		}
+		snapshot = ps[0].SnapshotDate
 	}
-	snapshot := ps[0].SnapshotDate
 	pr, err := s.store.GetPositionReview(ctx, snapshot)
 	if err != nil || pr == nil {
 		return false, "诊断不存在(请先生成持仓诊断)。"
@@ -835,11 +898,16 @@ func (s *Server) positionSaveRiskCore(ctx context.Context, n int) (bool, string)
 	} else if err != nil {
 		return false, "查重失败: " + err.Error()
 	}
-	if _, err := s.store.CreatePersonalNote(ctx, &model.PersonalNote{
+	noteID, err := s.store.CreatePersonalNote(ctx, &model.PersonalNote{
 		Type: "mistake", Slug: slug, Title: &title,
 		Status: "hypothesis", Content: &m.Content,
-	}); err != nil {
+	})
+	if err != nil {
 		return false, "存为笔记失败: " + err.Error()
+	}
+	// 沉淀回流(P6-5):组合级诊断无单一 code,只关联诊断引用的实体/事件(该笔记的论据)。
+	if err := s.linkSavedNote(ctx, noteID, "", "", rv.Refs); err != nil {
+		return true, "已存为个人笔记,但关联回流失败: " + err.Error()
 	}
 	return true, "已存为个人笔记。"
 }

@@ -8,6 +8,7 @@ import StockHeader from "@/components/stock/StockHeader";
 import StockPosition from "@/components/stock/StockPosition";
 import StockDecisions from "@/components/stock/StockDecisions";
 import StockResearch from "@/components/stock/StockResearch";
+import StockResearchDelta from "@/components/stock/StockResearchDelta";
 import StockNotes from "@/components/stock/StockNotes";
 import StockEvents from "@/components/stock/StockEvents";
 import StockLimitUps from "@/components/stock/StockLimitUps";
@@ -65,6 +66,17 @@ export default function Page() {
         </div>
         <div className="panel panel-pad">
           <StockPosition position={d.position} trades={d.trades} />
+        </div>
+      </section>
+
+      <section className="section">
+        <div className="section-head">
+          <span className="bar" />
+          <h2>研究变化</h2>
+          <span className="hint">最近两份深研的关键指标对比 —— 我的判断在变好还是变差</span>
+        </div>
+        <div className="panel panel-pad">
+          <StockResearchDelta runs={d.research} />
         </div>
       </section>
 

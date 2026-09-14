@@ -582,9 +582,19 @@ func (s *Server) positionDiagnoseAPI(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, map[string]bool{"ok": true})
 }
 
-// POST /api/v1/trades/positions/save-risk/{n} —— 诊断风险候选存为笔记。
+// POST /api/v1/trades/positions/save-risk/{n}?snapshot=YYYY-MM-DD —— 诊断风险候选存为笔记。
+// snapshot 缺省 = 最新诊断;/reviews 点旧期时必传(否则按最新期索引取错条目)。
 func (s *Server) positionSaveRiskAPI(w http.ResponseWriter, r *http.Request, n int) {
-	ok, msg := s.positionSaveRiskCore(r.Context(), n)
+	var snapshot time.Time
+	if v := r.URL.Query().Get("snapshot"); v != "" {
+		t, err := time.ParseInLocation("2006-01-02", v, cst)
+		if err != nil {
+			apiErrJSON(w, http.StatusBadRequest, "snapshot 日期格式应为 YYYY-MM-DD: "+v)
+			return
+		}
+		snapshot = t
+	}
+	ok, msg := s.positionSaveRiskCore(r.Context(), snapshot, n)
 	if !ok {
 		apiErrJSON(w, http.StatusBadRequest, msg)
 		return

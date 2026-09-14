@@ -15,7 +15,7 @@
 - [x] P6-2 白话导航 + 隐藏管线 + 词汇表 + 文案(含修 e2e 冒烟脚本) —— 见 [../stages/p6-2-plain-nav.md](../stages/p6-2-plain-nav.md)
 - [x] P6-3 引导式首页 + 自选富化(后端 `/watchlist` 富化) —— 见 [../stages/p6-3-guided-home.md](../stages/p6-3-guided-home.md)
 - [x] P6-4 决策记录闭环(研究→决策→持仓;图谱过滤同 commit) —— 见 [../stages/p6-4-decision-loop.md](../stages/p6-4-decision-loop.md)
-- [ ] P6-5 复盘→沉淀 + 研究 delta + 收尾
+- [x] P6-5 复盘→沉淀 + 研究 delta + 收尾 —— 见 [../stages/p6-5-reflection-delta.md](../stages/p6-5-reflection-delta.md)
 - [ ] 部署 lab(P6 全部完成后)
 
 ## 前序阶段

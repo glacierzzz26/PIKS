@@ -481,9 +481,17 @@ export type StockHub = {
   limit_ups: string[];
 };
 
-// ---- 自选（GET /api/v1/watchlist，设计 frontend-ia §2.3）----
+// ---- 自选（GET /api/v1/watchlist，设计 frontend-ia §2.3 / phase6 ux-ia §2）----
 
-/** 自选行：自选实体 + 是否持有（持仓快照命中时带现价/盈亏）。 */
+/** 自选项最近一条 affects 事件（P6-3 富化）。 */
+export type WatchEvent = {
+  title: string;
+  date: string; // 事件发生日 YYYY-MM-DD
+  count: number; // affects 到该实体的累计事件数
+  latest_id: string; // 最近事件 id（深链 /events/:id）
+};
+
+/** 自选行：自选实体 + 是否持有（持仓快照命中时带现价/盈亏）+ 富化徽标。 */
 export type WatchItem = {
   code: string;
   entity_id: string;
@@ -491,6 +499,15 @@ export type WatchItem = {
   description: string;
   held: boolean;
   position: PositionRow | null;
+  // 富化（P6-3）
+  latest_event: WatchEvent | null;
+  position_date: string; // 持仓快照日（空 = 无持仓）
+  has_research: boolean;
+  latest_research_asof: string; // YYYY-MM-DD（空 = 未深研）
 };
 
-export type Watchlist = { items: WatchItem[] };
+export type Watchlist = {
+  items: WatchItem[];
+  position_date: string; // 全部持仓共用的最新快照日（空 = 无持仓）
+  researched: number; // 自选中做过深研的数量（覆盖率）
+};

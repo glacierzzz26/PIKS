@@ -133,6 +133,36 @@ func (s *Store) ListEventsByIDs(ctx context.Context, ids []string) ([]EventForAP
 	return pgx.CollectRows(rows, pgx.RowToStructByName[EventForAPI])
 }
 
+// WatchEventRef 自选富化用:affects 到某实体的事件(带实体归属与发生日)。
+type WatchEventRef struct {
+	EntityID   string    `db:"entity_id"`
+	EventID    string    `db:"event_id"`
+	Title      string    `db:"title"`
+	OccurredAt time.Time `db:"occurred_at"`
+}
+
+// ListEventsByEntityIDs 批量取 affects 到给定实体的事件(P6-3 自选富化)。
+// 一次查询喂满首页「每只票最近的消息」,避免 N 次往返;零 schema(复用 relationships)。
+func (s *Store) ListEventsByEntityIDs(ctx context.Context, entityIDs []string) ([]WatchEventRef, error) {
+	if len(entityIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := s.Pool.Query(ctx, `
+		SELECT r.to_id AS entity_id, e.id AS event_id, e.title, e.occurred_at
+		FROM relationships r
+		JOIN events e ON e.id = r.from_id
+		WHERE r.from_type='event' AND r.to_type='entity' AND r.rel_type='affects'
+		  AND r.to_id = ANY($1)
+		  AND e.status IN ('extracted','verified','published')
+		  AND e.occurred_at IS NOT NULL
+		ORDER BY e.occurred_at DESC`, entityIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[WatchEventRef])
+}
+
 // MarkEventPublished 标记事件已发布:只设 published_at,不改 status。
 // status 恒表示知识状态(extracted/verified/merged),发布生命周期由 published_at 承载(设计 §3.4)。
 // 好处:卡片 front matter 稳定,已发布事件即使 updated_at 被触碰,内容未变时渲染逐字节相同 → hash 跳过 → git 零提交。

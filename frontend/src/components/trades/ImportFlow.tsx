@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { apiPost, apiUpload, ENDPOINTS } from "@/lib/api";
 import ImportControls from "@/components/trades/ImportControls";
 import TradePreviewTable from "@/components/trades/TradePreviewTable";
@@ -9,6 +10,11 @@ import WatchPreviewTable from "@/components/trades/WatchPreviewTable";
 import type { ImportPreview, PreviewPosition, PreviewTrade, PreviewWatch } from "@/lib/types";
 
 type Kind = "" | "trade" | "position" | "watchlist";
+
+/** 配置类错误（AI/视觉模型未配）→ 提示去 /settings，其余错误原样展示（不误导）。 */
+function isConfigError(msg: string): boolean {
+  return /配置|设置|未配置/.test(msg);
+}
 
 /** 截图导入：选类型 → 上传识别 → 预览可编辑(勾选) → 确认入库（含自选镜像） */
 export default function ImportFlow({ onDone }: { onDone: () => void }) {
@@ -94,7 +100,16 @@ export default function ImportFlow({ onDone }: { onDone: () => void }) {
           同花顺今日交易 / 持仓 / 自选截图，AI 视觉识别后预览确认
         </span>
         {msg && <span className="text-xs" style={{ color: "var(--green)" }}>{msg}</span>}
-        {err && <span className="text-xs" style={{ color: "var(--red)" }}>{err}</span>}
+        {err && (
+          <span className="text-xs" style={{ color: "var(--red)" }}>
+            {err}
+            {isConfigError(err) && (
+              <Link to="/settings" className="ml-2 text-accent no-underline hover:underline">
+                去设置 →
+              </Link>
+            )}
+          </span>
+        )}
       </div>
 
       {!preview && (

@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes, useParams } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
-import Watchlist from "@/pages/watchlist";
+import Watchlist from "@/pages/home";
 import Dashboard from "@/pages/dashboard";
 import Events from "@/pages/events";
 import EventByID from "@/pages/event/[id]";

@@ -332,7 +332,7 @@ func (s *Server) tradeImportAPI(w http.ResponseWriter, r *http.Request) {
 	base, key := cfgMap["ai_service_base_url"], cfgMap["ai_api_key"]
 	vision := cfgMap["ai_model_vision"]
 	if base == "" || key == "" || vision == "" {
-		apiErrJSON(w, http.StatusBadRequest, "AI 未配置或视觉模型未配置(请到设置页配置 `ai_model_vision`),可用手动录入兜底。")
+		apiErrJSON(w, http.StatusBadRequest, "截图识别需要先在「设置」里配置 AI 与视觉模型。也可以先用「手动录入」。")
 		return
 	}
 	if budget, _ := strconv.ParseInt(cfgMap["ai_daily_token_budget"], 10, 64); budget > 0 {

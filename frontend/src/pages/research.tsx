@@ -90,7 +90,7 @@ export default function Page() {
           <p className="mt-2 text-[13px] leading-relaxed text-muted">{d.error}</p>
           <button
             onClick={run.refresh}
-            className="mt-3 inline-flex h-8 items-center gap-1.5 rounded-[9px] border border-line bg-card px-3 text-xs text-muted hover:text-accent"
+            className="mt-3 inline-flex h-8 items-center gap-1.5 rounded-[10px] border border-line bg-card px-3 text-xs text-muted hover:text-accent"
           >
             <RefreshCw size={12} />
             重新查询

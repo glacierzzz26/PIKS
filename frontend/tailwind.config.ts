@@ -56,7 +56,8 @@ const config: Config = {
           "monospace",
         ],
       },
-      borderRadius: { DEFAULT: "16px", sm: "9px" },
+      // 3 档圆角 token（与 globals.css --radius-* 对齐）：sm 控件 / DEFAULT 中件 / lg 卡片
+      borderRadius: { sm: "6px", DEFAULT: "10px", lg: "16px" },
       fontSize: {
         "2xs": ["11px", "14px"],
       },

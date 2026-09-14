@@ -16,9 +16,9 @@ export default function PositionPreviewTable({
       <table className="table">
         <thead>
           <tr>
-            <th style={{ textAlign: "left" }}>选</th>
-            <th style={{ textAlign: "left" }}>代码</th>
-            <th style={{ textAlign: "left" }}>名称</th>
+            <th className="text-left">选</th>
+            <th className="text-left">代码</th>
+            <th className="text-left">名称</th>
             <th>数量</th>
             <th>成本</th>
             <th>现价</th>

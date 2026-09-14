@@ -53,7 +53,7 @@ function EntitiesInner() {
         <div>
           <h1>实体库</h1>
           <div className="psub">
-            从事件中构建的投资对象档案 · 公司 / 行业 / 概念 / 人物 / 地域
+            从消息里积累出的投资对象档案 · 公司 / 行业 / 概念 / 人物 / 地域
           </div>
         </div>
         <div className="meta">

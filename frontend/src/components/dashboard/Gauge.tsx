@@ -1,9 +1,9 @@
 "use client";
 
-import type { SnapRow, TaskRun } from "@/lib/types";
+import type { SnapRow } from "@/lib/types";
 
 /** 情绪分色：偏热→红、偏暖→warn、谨慎→绿（A 股习惯，与 HTML gauge 一致） */
-function emotionColor(score: number): string {
+export function emotionColor(score: number): string {
   if (score >= 60) return "var(--red)";
   if (score >= 45) return "var(--warn)";
   return "var(--green)";
@@ -55,8 +55,7 @@ export function EmotionSpark({ history }: { history: SnapRow[] }) {
   const top = 14;
   const bottom = 80;
   const n = rows.length;
-  const x = (i: number) =>
-    n === 1 ? padL : padL + (i * (W - padL - padR)) / (n - 1);
+  const x = (i: number) => (n === 1 ? padL : padL + (i * (W - padL - padR)) / (n - 1));
   const y = (s: number) => bottom - (Math.max(0, Math.min(100, s)) / 100) * (bottom - top);
   const pts = rows.map((r, i) => [x(i), y(r.emotion_score)] as const);
   const line = pts.map(([px, py]) => `${px.toFixed(1)},${py.toFixed(1)}`).join(" L");
@@ -132,42 +131,6 @@ export function EmotionSpark({ history }: { history: SnapRow[] }) {
           ))}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-/** 管线状态节点（对齐 HTML .pipe / .pnode） */
-export function Pipeline({ runs }: { runs: TaskRun[] }) {
-  const dot = (status: TaskRun["status"]) =>
-    status === "ok" ? "var(--green)" : status === "failed" ? "var(--red)" : "var(--warn)";
-  return (
-    <div className="px-5 pb-4">
-      <div
-        className="pipe"
-        style={{ gridTemplateColumns: `repeat(${Math.max(1, runs.length)}, 1fr)` }}
-      >
-        {runs.map((t) => (
-          <div key={t.command} className="pnode">
-            <span className="dot" style={{ border: "4px solid", borderColor: dot(t.status) }} />
-            <b>{t.command}</b>
-            <span className="t">{t.time}</span>
-          </div>
-        ))}
-      </div>
-      <div className="pipe-legend">
-        <span className="li">
-          <span className="d d-ok" />
-          正常
-        </span>
-        <span className="li">
-          <span className="d d-run" />
-          运行中 / 跳过（预算耗尽等，如实记录）
-        </span>
-        <span className="li">
-          <span className="d d-fail" />
-          失败（不阻断，下次重试）
-        </span>
-      </div>
     </div>
   );
 }

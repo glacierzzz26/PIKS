@@ -60,7 +60,7 @@ export default function Page() {
         <div className="section-head">
           <span className="bar" />
           <h2>深研报告</h2>
-          <span className="hint">research · 点右上「深研」发起新分析</span>
+          <span className="hint">点右上「深研」发起一次新的 AI 分析</span>
         </div>
         <div className="panel panel-pad">
           <StockResearch runs={d.research} />
@@ -92,7 +92,7 @@ export default function Page() {
         <div className="section-head">
           <span className="bar" />
           <h2>相关事件</h2>
-          <span className="hint">affects 到该股的事件 · 时间倒序</span>
+          <span className="hint">与这只票相关的消息 · 时间倒序</span>
         </div>
         <div className="panel">
           <StockEvents events={d.events} />

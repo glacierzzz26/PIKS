@@ -39,8 +39,8 @@ export default function Page() {
     <div>
       <div className="page-head">
         <div>
-          <h1>涨停梯队</h1>
-          <div className="psub">最新快照 · 连板阶梯 · 行业分布 · 涨停池</div>
+          <h1>涨停股</h1>
+          <div className="psub">最新交易日的涨停池 · 连板越高的排在越前</div>
         </div>
         <div className="meta">
           <span className="st st-accent">{m.trade_date}</span>
@@ -57,7 +57,7 @@ export default function Page() {
           <span className="bar" />
           <h2>连板梯队 与 行业分布</h2>
           <span className="hint">
-            最高 {m.max_board} 板 · 涨停 {m.limit_up} 家
+            最多连 {m.max_board} 个板 · 共 {m.limit_up} 家涨停
           </span>
         </div>
         <div className="two-col">
@@ -88,10 +88,10 @@ function LadderTable({ market }: { market: MarketSnapshot }) {
       <table className="table">
         <thead>
           <tr>
-            <th style={{ textAlign: "left" }}>代码 / 名称</th>
+            <th>代码 / 名称</th>
             <th>连板</th>
-            <th style={{ textAlign: "left" }}>行业</th>
-            <th style={{ textAlign: "left" }}>涨停原因</th>
+            <th className="text-left">行业</th>
+            <th className="text-left">涨停原因</th>
             <th>封单额</th>
             <th>首封时间</th>
             <th>换手</th>
@@ -101,7 +101,7 @@ function LadderTable({ market }: { market: MarketSnapshot }) {
         <tbody>
           {rows.map((s) => (
             <tr key={s.code}>
-              <td style={{ textAlign: "left" }}>
+              <td className="text-left">
                 <Link to={`/stock/${s.code}`} className="chip no-underline hover:border-accent">
                   {s.code}
                 </Link>
@@ -116,19 +116,14 @@ function LadderTable({ market }: { market: MarketSnapshot }) {
                   </span>
                 )}
               </td>
-              <td style={{ textAlign: "left", color: "var(--ink-faint)" }}>
-                {s.industry}
-              </td>
-              <td
-                className="max-w-[200px] truncate text-[12.5px]"
-                style={{ textAlign: "left", color: "var(--ink-faint)" }}
-              >
-                {s.reason}
+              <td className="text-left txt-faint">{s.industry || "—"}</td>
+              <td className="max-w-[200px] truncate text-left text-[12.5px] txt-faint">
+                {s.reason || "—"}
               </td>
               <td className="num-t">{fmtWan(s.seal_amount)}</td>
-              <td className="num-t">{s.first_time}</td>
-              <td className="num-t">{s.turnover.toFixed(1)}%</td>
-              <td className="num-t">{s.float_mv} 亿</td>
+              <td className="num-t">{s.first_time || "—"}</td>
+              <td className="num-t">{s.turnover > 0 ? `${s.turnover.toFixed(1)}%` : "—"}</td>
+              <td className="num-t">{s.float_mv > 0 ? `${s.float_mv} 亿` : "—"}</td>
             </tr>
           ))}
         </tbody>

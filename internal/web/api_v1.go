@@ -673,14 +673,9 @@ type apiDashboard struct {
 	TaskRuns    []apiTaskRun      `json:"task_runs"`
 }
 
-// GET /api/v1/dashboard —— 看板(统计 + 最新快照 + 历史情绪 + 每日复盘 + 管线)。
+// GET /api/v1/dashboard —— 看板(我的概况 + 最新快照 + 历史情绪 + 每日复盘 + 数据更新)。
 func (s *Server) handleAPIDashboard(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	c, err := s.store.Counts(ctx)
-	if err != nil {
-		s.apiErr(w, "dashboard", err)
-		return
-	}
 	notes, trades, err := s.store.NoteTradeCounts(ctx)
 	if err != nil {
 		s.apiErr(w, "dashboard", err)
@@ -702,11 +697,22 @@ func (s *Server) handleAPIDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// KPI 归「我」而非管线:P6-2 起看板回答「我的资产有什么」,不再报知识库规模。
+	// 自选数/持仓数复用既有查询(零新 store 方法)。
+	watchN := 0
+	if watchEnts, err := s.store.ListEntitiesByStatus(ctx, "watch"); err == nil {
+		watchN = len(watchEnts)
+	}
+	heldN := 0
+	if ps, err := s.store.LatestPositions(ctx); err == nil {
+		heldN = len(ps)
+	}
+
 	out := apiDashboard{
 		Stats: []apiStatCard{
-			{Label: "结构化事件", Value: c.Events},
-			{Label: "统一实体", Value: c.Entities},
-			{Label: "知识笔记", Value: notes},
+			{Label: "我的自选", Value: watchN},
+			{Label: "持仓股票", Value: heldN},
+			{Label: "我的笔记", Value: notes},
 			{Label: "交易记录", Value: trades},
 		},
 	}
@@ -830,12 +836,13 @@ func (s *Server) handleAPIRecon(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/v1/reviews —— 持仓 AI 诊断列表。
 type apiReview struct {
-	Date    string           `json:"date"`
-	Scope   string           `json:"scope"`
-	Summary string           `json:"summary"`
-	Refs    int              `json:"refs"`
-	State   string           `json:"state"`
-	Risks   []apiReviewPoint `json:"risks,omitempty"`
+	Date     string           `json:"date"`
+	Scope    string           `json:"scope"`
+	Summary  string           `json:"summary"`
+	Refs     int              `json:"refs"`
+	State    string           `json:"state"`
+	Risks    []apiReviewPoint `json:"risks,omitempty"`
+	Mistakes []apiReviewPoint `json:"mistakes,omitempty"`
 }
 
 type posReviewJSON struct {
@@ -855,6 +862,38 @@ type posReviewJSON struct {
 	} `json:"refs"`
 }
 
+// toAPIReview 把一条持仓诊断投影为前端 ReviewRow。
+// 纯函数(无 DB),便于对「risks + mistakes 都出、state 由二者合计决定」做回归。
+func toAPIReview(p store.PositionReview) apiReview {
+	var rj posReviewJSON
+	_ = json.Unmarshal(p.Review, &rj)
+	nrisk := len(rj.Risks) + len(rj.Mistakes)
+	state := "positive"
+	switch {
+	case nrisk == 1:
+		state = "neutral"
+	case nrisk >= 2:
+		state = "negative"
+	}
+	risks := make([]apiReviewPoint, 0, len(rj.Risks))
+	for _, r := range rj.Risks {
+		risks = append(risks, apiReviewPoint{Title: r.Title, Content: r.Content})
+	}
+	mistakes := make([]apiReviewPoint, 0, len(rj.Mistakes))
+	for _, m := range rj.Mistakes {
+		mistakes = append(mistakes, apiReviewPoint{Title: m.Title, Content: m.Content})
+	}
+	return apiReview{
+		Date:     p.SnapshotDate.In(cst).Format("2006-01-02"),
+		Scope:    "组合持仓诊断",
+		Summary:  rj.Review,
+		Refs:     len(rj.Refs.Events) + len(rj.Refs.Entities) + len(rj.Refs.Notes),
+		State:    state,
+		Risks:    risks,
+		Mistakes: mistakes,
+	}
+}
+
 func (s *Server) handleAPIReviews(w http.ResponseWriter, r *http.Request) {
 	reviews, err := s.store.ListPositionReviews(r.Context(), 20)
 	if err != nil {
@@ -863,28 +902,7 @@ func (s *Server) handleAPIReviews(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]apiReview, 0, len(reviews))
 	for _, p := range reviews {
-		var rj posReviewJSON
-		_ = json.Unmarshal(p.Review, &rj)
-		nrisk := len(rj.Risks) + len(rj.Mistakes)
-		state := "positive"
-		switch {
-		case nrisk == 1:
-			state = "neutral"
-		case nrisk >= 2:
-			state = "negative"
-		}
-		risks := make([]apiReviewPoint, 0, len(rj.Risks))
-		for _, r := range rj.Risks {
-			risks = append(risks, apiReviewPoint{Title: r.Title, Content: r.Content})
-		}
-		out = append(out, apiReview{
-			Date:    p.SnapshotDate.In(cst).Format("2006-01-02"),
-			Scope:   "组合持仓诊断",
-			Summary: rj.Review,
-			Refs:    len(rj.Refs.Events) + len(rj.Refs.Entities) + len(rj.Refs.Notes),
-			State:   state,
-			Risks:   risks,
-		})
+		out = append(out, toAPIReview(p))
 	}
 	s.writeJSON(w, out)
 }

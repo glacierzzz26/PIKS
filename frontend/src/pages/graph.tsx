@@ -50,7 +50,7 @@ export default function Page() {
       <div className="page-head">
         <div>
           <h1>图谱</h1>
-          <div className="psub">实体关系力导向图 · 拖拽平移 / 滚轮缩放 / 点击查看</div>
+          <div className="psub">实体与消息的关系网络 · 拖拽平移 / 滚轮缩放 / 点击查看</div>
         </div>
         <div className="meta">
           <span className="st st-accent">节点 {nodes.length}</span>
@@ -101,7 +101,7 @@ export default function Page() {
             onSelect={setFocusId}
           />
         ) : (
-          <EmptyState tip="加载中…" />
+          <EmptyState tip="正在加载图谱…" />
         )}
 
         {/* 图例 */}

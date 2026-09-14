@@ -42,7 +42,7 @@ export default function MetricGroup({
                   : "";
             return (
               <tr key={r.key} className="h-[38px]">
-                <td style={{ textAlign: "left" }} className="text-muted">
+                <td className="text-left text-muted">
                   {r.label}
                 </td>
                 <td className="num-t font-semibold">

@@ -11,24 +11,24 @@ export default function WatchTable({ items }: { items: WatchItem[] }) {
       <table className="table">
         <thead>
           <tr>
-            <th style={{ textAlign: "left" }}>标的</th>
-            <th style={{ textAlign: "left" }}>状态</th>
+            <th className="text-left">标的</th>
+            <th className="text-left">状态</th>
             <th>现价</th>
             <th>成本</th>
             <th>盈亏</th>
-            <th style={{ textAlign: "left" }}>备注</th>
+            <th className="text-left">备注</th>
           </tr>
         </thead>
         <tbody>
           {items.map((it) => (
             <tr key={it.entity_id}>
-              <td style={{ textAlign: "left" }}>
+              <td className="text-left">
                 <Link to={`/stock/${it.code}`} className="chip no-underline hover:border-accent">
                   {it.code}
                 </Link>
                 <span className="ml-2 font-semibold">{it.name}</span>
               </td>
-              <td style={{ textAlign: "left" }}>
+              <td className="text-left">
                 {it.held ? <Chip tone="up">持有</Chip> : <Chip tone="dim">观察</Chip>}
               </td>
               <td className="num-t">{it.position ? it.position.last.toFixed(2) : "—"}</td>
@@ -43,10 +43,7 @@ export default function WatchTable({ items }: { items: WatchItem[] }) {
                   "—"
                 )}
               </td>
-              <td
-                className="max-w-[260px] truncate text-[12.5px]"
-                style={{ color: "var(--ink-faint)", textAlign: "left" }}
-              >
+              <td className="max-w-[260px] truncate text-[12.5px] txt-faint text-left">
                 {it.description || "—"}
               </td>
             </tr>

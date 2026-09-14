@@ -28,7 +28,7 @@ export default function GraphPanel({
   );
 
   return (
-    <div className="absolute bottom-3 right-3 top-3 w-[340px] max-w-[80%] overflow-auto rounded-[14px] border border-line bg-card p-4 shadow-pop">
+    <div className="absolute bottom-3 right-3 top-3 w-[340px] max-w-[80%] overflow-auto rounded-lg border border-line bg-card p-4 shadow-pop">
       <div className="flex items-start justify-between">
         <h3 className="m-0 text-base font-bold leading-snug">{entity.name}</h3>
         <button

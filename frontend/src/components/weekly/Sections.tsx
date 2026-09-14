@@ -17,12 +17,12 @@ export function SnapSection({ snaps }: { snaps: WeeklySnap[] }) {
       <table className="table">
         <thead>
           <tr>
-            <th style={{ textAlign: "left" }}>日期</th>
-            <th style={{ textAlign: "left" }}>情绪</th>
+            <th className="text-left">日期</th>
+            <th className="text-left">情绪</th>
             <th>涨停</th>
             <th>跌停</th>
             <th>成交</th>
-            <th style={{ textAlign: "left" }}>我的判断</th>
+            <th className="text-left">我的判断</th>
           </tr>
         </thead>
         <tbody>
@@ -42,10 +42,7 @@ export function SnapSection({ snaps }: { snaps: WeeklySnap[] }) {
                 {s.limit_down}
               </td>
               <td className="num-t">{s.turnover}</td>
-              <td
-                className="max-w-[260px] truncate text-[12.5px]"
-                style={{ color: "var(--ink-faint)" }}
-              >
+              <td className="max-w-[260px] truncate text-[12.5px] txt-faint">
                 {s.judgment || "—"}
               </td>
             </tr>
@@ -98,9 +95,9 @@ export function TradeSection({ trades }: { trades: WeeklyTrade[] }) {
       <table className="table">
         <thead>
           <tr>
-            <th style={{ textAlign: "left" }}>日期</th>
-            <th style={{ textAlign: "left" }}>标的</th>
-            <th style={{ textAlign: "left" }}>方向</th>
+            <th className="text-left">日期</th>
+            <th className="text-left">标的</th>
+            <th className="text-left">方向</th>
             <th>价格</th>
             <th>数量</th>
             <th>金额</th>
@@ -135,7 +132,7 @@ export function PositionSection({ positions }: { positions: WeeklyPosition[] }) 
       <table className="table">
         <thead>
           <tr>
-            <th style={{ textAlign: "left" }}>标的</th>
+            <th className="text-left">标的</th>
             <th>数量</th>
             <th>成本</th>
             <th>现价</th>
@@ -155,14 +152,9 @@ export function PositionSection({ positions }: { positions: WeeklyPosition[] }) 
               <td className="num-t">{p.price}</td>
               <td className="num-t">{p.mv}</td>
               <td
-                className="num-t font-bold"
-                style={{
-                  color: p.pl.startsWith("+")
-                    ? "var(--red)"
-                    : p.pl.startsWith("-")
-                      ? "var(--green)"
-                      : "var(--ink-faint)",
-                }}
+                className={`num-t font-bold ${
+                  p.pl.startsWith("+") ? "text-up" : p.pl.startsWith("-") ? "text-down" : "txt-faint"
+                }`}
               >
                 {p.pl}
               </td>

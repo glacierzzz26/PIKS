@@ -74,7 +74,7 @@ export default function TradeAddForm({ onDone }: { onDone: () => void }) {
         <button
           onClick={submit}
           disabled={saving}
-          className="h-9 rounded-[9px] bg-accent px-4 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+          className="h-9 rounded-[10px] bg-accent px-4 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
         >
           {saving ? "录入中…" : "录入"}
         </button>

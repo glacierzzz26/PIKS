@@ -46,6 +46,8 @@ export const EVENT_TYPE_LABEL: Record<string, string> = {
 export const DOC_TYPE_LABEL: Record<string, string> = {
   "daily-review": "每日复盘",
   note: "笔记",
-  weekly: "周报",
+  belief: "信念",
+  case: "案例",
   mistake: "错题",
+  weekly: "周报",
 };

@@ -765,7 +765,7 @@ func (s *Server) chatPostAPI(w http.ResponseWriter, r *http.Request) {
 	assistant, note, aerr := s.answerChat(ctx, cfgMap, question, img)
 	if aerr != nil {
 		// 如实降级:失败写入对话历史(用户可见)。
-		assistant = &model.ChatMessage{SessionID: sid, Role: "assistant", Content: "⚠️ 调用失败:" + aerr.Error()}
+		assistant = &model.ChatMessage{SessionID: sid, Role: "assistant", Content: "调用失败:" + aerr.Error()}
 	}
 	assistant.SessionID = sid
 	if err := s.store.InsertChatMessage(ctx, assistant); err != nil {

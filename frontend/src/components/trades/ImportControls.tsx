@@ -41,7 +41,7 @@ export default function ImportControls({
           {o.label}
         </button>
       ))}
-      <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-[9px] bg-accent px-3 text-xs font-semibold text-white hover:opacity-90">
+      <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-[10px] bg-accent px-3 text-xs font-semibold text-white hover:opacity-90">
         <Upload size={12} />
         选择截图
         <input
@@ -55,7 +55,7 @@ export default function ImportControls({
       {file && (
         <span className="inline-flex items-center gap-1 text-xs text-faint">
           {file.name}
-          <button onClick={onClearFile} style={{ color: "var(--ink-faint)" }}>
+          <button onClick={onClearFile} className="txt-faint">
             <X size={11} />
           </button>
         </span>
@@ -63,7 +63,7 @@ export default function ImportControls({
       <button
         onClick={onUpload}
         disabled={busy || !kind || !file}
-        className="inline-flex h-8 items-center rounded-[9px] border border-line bg-card px-3 text-xs text-muted hover:text-accent disabled:opacity-40"
+        className="inline-flex h-8 items-center rounded-[10px] border border-line bg-card px-3 text-xs text-muted hover:text-accent disabled:opacity-40"
       >
         {busy ? "识别中…" : "开始识别"}
       </button>

@@ -20,9 +20,9 @@ export default function Page() {
     <div>
       <div className="page-head">
         <div>
-          <h1>复盘</h1>
+          <h1>持仓诊断</h1>
           <div className="psub">
-            AI 持仓诊断 · 带知识库引用 · 诊断在交易页触发
+            给当前持仓逐条体检 · 列出风险点与复盘点 · 结论可存成笔记
           </div>
         </div>
         <div className="meta">
@@ -49,8 +49,17 @@ export default function Page() {
                 {r.risks && r.risks.length > 0 && (
                   <div className="mt-1.5 flex flex-col gap-1">
                     {r.risks.map((rk, j) => (
-                      <span key={j} className="risk">
+                      <span key={`r${j}`} className="risk">
                         风险：{rk.title}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {r.mistakes && r.mistakes.length > 0 && (
+                  <div className="mt-1.5 flex flex-col gap-1">
+                    {r.mistakes.map((mk, j) => (
+                      <span key={`m${j}`} className="risk point">
+                        复盘点：{mk.title}
                       </span>
                     ))}
                   </div>

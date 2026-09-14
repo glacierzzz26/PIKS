@@ -127,7 +127,7 @@ export default function ImportFlow({ onDone }: { onDone: () => void }) {
             <button
               onClick={confirm}
               disabled={busy}
-              className="inline-flex h-8 items-center gap-1.5 rounded-[9px] bg-accent px-3 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+              className="inline-flex h-8 items-center gap-1.5 rounded-[10px] bg-accent px-3 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
             >
               {busy ? "确认中…" : "确认导入"}
             </button>
@@ -137,7 +137,7 @@ export default function ImportFlow({ onDone }: { onDone: () => void }) {
                 setErr(null);
                 setMsg(null);
               }}
-              className="inline-flex h-8 items-center rounded-[9px] border border-line bg-card px-3 text-xs text-muted hover:text-up"
+              className="inline-flex h-8 items-center rounded-[10px] border border-line bg-card px-3 text-xs text-muted hover:text-up"
             >
               取消
             </button>

@@ -22,13 +22,13 @@ export default function WatchPreviewTable({
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-3 text-xs">
         <span className="text-muted">
-          将加入 <b style={{ color: "var(--red)" }}>{adds}</b> 只 · 将移出{" "}
+将加入 <b className="text-up">{adds}</b> 只 · 将移出{" "}
           <b>{removes.length}</b> 只
         </span>
         {removes.length > 0 && (
           <button
             onClick={() => onToggleRemoveAll(allRemoveOff)}
-            className="inline-flex h-7 items-center rounded-[9px] border border-line bg-card px-2.5 text-[12px] text-muted hover:text-accent"
+            className="inline-flex h-7 items-center rounded-[10px] border border-line bg-card px-2.5 text-[12px] text-muted hover:text-accent"
           >
             {allRemoveOff ? "恢复移出勾选" : "整组取消移出"}
           </button>
@@ -40,10 +40,10 @@ export default function WatchPreviewTable({
         <table className="table">
           <thead>
             <tr>
-              <th style={{ textAlign: "left" }}>选</th>
-              <th style={{ textAlign: "left" }}>代码</th>
-              <th style={{ textAlign: "left" }}>名称</th>
-              <th style={{ textAlign: "left" }}>动作</th>
+              <th className="text-left">选</th>
+              <th className="text-left">代码</th>
+              <th className="text-left">名称</th>
+              <th className="text-left">动作</th>
             </tr>
           </thead>
           <tbody>
@@ -60,9 +60,9 @@ export default function WatchPreviewTable({
                     />
                   )}
                 </td>
-                <td className="num-t" style={{ textAlign: "left" }}>{r.code}</td>
-                <td style={{ textAlign: "left" }}>{r.name}</td>
-                <td style={{ textAlign: "left" }}>
+                <td className="num-t text-left">{r.code}</td>
+                <td className="text-left">{r.name}</td>
+                <td className="text-left">
                   {r.change === "add" && <Chip tone="up">加入自选</Chip>}
                   {r.change === "keep" && <Chip tone="dim">已在自选</Chip>}
                   {r.change === "remove" && <Chip tone="amber">移出自选</Chip>}

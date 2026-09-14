@@ -1,44 +1,19 @@
 "use client";
 
-import { useState, Suspense, useMemo } from "react";
+import { useState } from "react";
 import { Search, X } from "lucide-react";
 import { useData } from "@/hooks/useData";
 import { usePagedQuery } from "@/hooks/usePagedQuery";
 import { EVENT_TYPES, EVENT_STATUS } from "@/lib/constants";
 import { ENDPOINTS } from "@/lib/api";
-import { EVENT_TYPE_LABEL } from "@/lib/format";
 import EventDetail from "@/components/events/EventDetail";
+import EventTable from "@/components/events/EventTable";
 import Pagination from "@/components/ui/Pagination";
-import { ConfidenceBar } from "@/components/ui/Num";
 import { LoadingBlock, EmptyState, ErrorState } from "@/components/ui/States";
 import type { EventItem } from "@/lib/types";
 
-const TYPE_TAG: Record<string, string> = {
-  policy: "t-mix",
-  earnings: "t-idx",
-  product_launch: "t-ev",
-  supply_agreement: "t-bond",
-  industry_event: "t-idx",
-  investment: "t-mix",
-  sales_data: "t-ev",
-  rumor: "t-gray",
-};
-const STATUS_ST: Record<string, { cls: string; label: string }> = {
-  confirmed: { cls: "st-down", label: "已确认" },
-  pending: { cls: "st-amber", label: "待复核" },
-  archived: { cls: "st-dim", label: "已归档" },
-};
-
-/** 事件流（核心）：筛选 + 搜索 + 分页全部写入 URL query（规范第 7 条，默认 20/页） */
-export default function Page() {
-  return (
-    <Suspense fallback={<div className="panel mt-6"><LoadingBlock rows={8} /></div>}>
-      <EventsInner />
-    </Suspense>
-  );
-}
-
-function EventsInner() {
+/** 重要消息 tab（= 结构化事件）：筛选 + 搜索 + 分页全部写入 URL query（默认 20/页）。 */
+export default function EventsTab() {
   const { query, setFilter, page, size, setPage, setSize, paginate } =
     usePagedQuery();
   const [selected, setSelected] = useState<EventItem | null>(null);
@@ -50,25 +25,10 @@ function EventsInner() {
   });
   const data = events.data ?? [];
   const paged = paginate(data);
-
   const submitKw = () => setFilter("q", kw.trim());
 
   return (
     <div>
-      <div className="page-head">
-        <div>
-          <h1>事件流</h1>
-          <div className="psub">
-            AI 从快讯中抽取的结构化事实 · 含置信度 · 与个人推断严格分域
-          </div>
-        </div>
-        <div className="meta">
-          <span className="st st-accent">
-            共 {events.loading ? "…" : data.length} 条
-          </span>
-        </div>
-      </div>
-
       <div className="filter-bar">
         {EVENT_STATUS.map((s) => (
           <button
@@ -97,7 +57,7 @@ function EventsInner() {
             submitKw();
           }}
         >
-          <Search size={15} className="text-faint" strokeWidth={2} />
+          <Search size={15} className="txt-faint" strokeWidth={2} />
           <input
             value={kw}
             onChange={(e) => setKw(e.target.value)}
@@ -110,7 +70,7 @@ function EventsInner() {
                 setKw("");
                 setFilter("q", "");
               }}
-              className="text-faint hover:text-up"
+              className="txt-faint hover:text-up"
             >
               <X size={13} />
             </button>
@@ -124,55 +84,13 @@ function EventsInner() {
         ) : events.error ? (
           <ErrorState msg={events.error} />
         ) : data.length === 0 ? (
-          <EmptyState tip="没有符合筛选条件的事件，试试放宽条件" />
+          <EmptyState
+            tip="没有符合筛选条件的事件，试试放宽条件"
+            action={{ to: "/help", label: "什么是「事件」？" }}
+          />
         ) : (
           <>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th style={{ textAlign: "left" }}>事件标题</th>
-                  <th>类型</th>
-                  <th>影响实体</th>
-                  <th>发生时间</th>
-                  <th>置信度</th>
-                  <th>状态</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paged.map((e) => (
-                  <tr
-                    key={e.id}
-                    className="cursor-pointer"
-                    onClick={() => setSelected(e)}
-                  >
-                    <td>
-                      <div className="ev-title">
-                        <b>{e.title}</b>
-                        <span className="meta">
-                          来源：{e.source}
-                          {e.summary ? ` · ${e.summary.slice(0, 24)}` : ""}
-                        </span>
-                      </div>
-                    </td>
-                    <td>
-                      <span className={`type-tag ${TYPE_TAG[e.event_type] ?? "t-gray"}`}>
-                        {EVENT_TYPE_LABEL[e.event_type] ?? e.event_type}
-                      </span>
-                    </td>
-                    <td className="num-t">{e.affected.length} 个</td>
-                    <td className="num-t">{e.occurred_at.slice(5, 16).replace("T", " ")}</td>
-                    <td>
-                      <ConfidenceBar v={e.confidence} />
-                    </td>
-                    <td>
-                      <span className={`st ${STATUS_ST[e.status]?.cls ?? "st-dim"}`}>
-                        {STATUS_ST[e.status]?.label ?? e.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <EventTable events={paged} onSelect={setSelected} />
             <Pagination
               page={page}
               pageSize={size}

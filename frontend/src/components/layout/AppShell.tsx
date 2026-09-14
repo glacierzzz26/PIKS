@@ -30,9 +30,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <main className="mx-auto w-full max-w-[1440px] px-6 pb-4">{children}</main>
         <footer className="footer">
           <div className="src">
-            数据来源：东方财富 7×24 快讯 · 涨停池 · PIKS 管线自动生成 · PostgreSQL 唯一数据源
+            数据来源：东方财富 7×24 快讯 · 涨停池 · PIKS 自动整理 · PostgreSQL 唯一数据源
           </div>
-          <div>Fact ≠ Inference ≠ Belief · 数据诚实：缺失如实标空态，宁缺毋假。</div>
+          <div>不预测涨跌、不给买卖建议 · 数据缺失如实留白，宁缺毋假。</div>
         </footer>
       </div>
       {paletteOpen && <CommandPalette onClose={closePalette} />}

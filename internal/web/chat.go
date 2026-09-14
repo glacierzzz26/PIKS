@@ -35,7 +35,7 @@ func (s *Server) answerChat(ctx context.Context, cfg map[string]string, question
 	if img != nil && vision == "" {
 		return &model.ChatMessage{
 			Role: "assistant",
-			Content: "⚠️ 已收到截图,但截图/视觉模型未配置(`ai_model_vision` 为空)。" +
+			Content: "已收到截图,但截图/视觉模型未配置(`ai_model_vision` 为空)。" +
 				"请在 /settings 选择一个视觉模型(如 deepseek-v4-flash-vision-exp)后重试,或用文字描述图片内容。",
 		}, "截图识别已降级:未配置视觉模型。", nil
 	}

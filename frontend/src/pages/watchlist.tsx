@@ -18,7 +18,7 @@ export default function Page() {
       <div className="page-head">
         <div>
           <h1>我的自选</h1>
-          <div className="psub">关注与持仓一屏尽览 · 点代码进入个股中心</div>
+          <div className="psub">关注与持仓一屏尽览，点代码进入个股中心</div>
         </div>
         <div className="meta">
           <span className="st st-accent">共 {wl.loading ? "…" : items.length} 只</span>

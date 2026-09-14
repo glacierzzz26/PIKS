@@ -39,15 +39,15 @@ export function MarketPanel({ market }: { market: MarketSnapshot }) {
       </table>
       <div className="grid grid-cols-4 gap-2.5 px-4">
         <div className="snap">
-          <b style={{ color: "var(--red)" }}>{market.limit_up}</b>
+          <b className="text-up">{market.limit_up}</b>
           <span>涨停</span>
         </div>
         <div className="snap">
-          <b style={{ color: "var(--green)" }}>{market.limit_down}</b>
+          <b className="text-down">{market.limit_down}</b>
           <span>跌停</span>
         </div>
         <div className="snap">
-          <b style={{ color: "var(--warn)" }}>{market.broken_limit}</b>
+          <b className="text-amber">{market.broken_limit}</b>
           <span>炸板</span>
         </div>
         <div className="snap">

@@ -53,14 +53,14 @@ function TradesInner() {
         <div className="meta">
           <button
             onClick={() => setPanel(panel === "add" ? "" : "add")}
-            className={`inline-flex h-8 items-center gap-1.5 rounded-[9px] border px-3 text-xs ${panel === "add" ? "border-accent bg-accent-soft text-accent" : "border-line bg-card text-muted hover:text-accent"}`}
+            className={`inline-flex h-8 items-center gap-1.5 rounded-[10px] border px-3 text-xs ${panel === "add" ? "border-accent bg-accent-soft text-accent" : "border-line bg-card text-muted hover:text-accent"}`}
           >
             <Plus size={13} />
             手动录入
           </button>
           <button
             onClick={() => setPanel(panel === "import" ? "" : "import")}
-            className={`inline-flex h-8 items-center gap-1.5 rounded-[9px] border px-3 text-xs ${panel === "import" ? "border-accent bg-accent-soft text-accent" : "border-line bg-card text-muted hover:text-accent"}`}
+            className={`inline-flex h-8 items-center gap-1.5 rounded-[10px] border px-3 text-xs ${panel === "import" ? "border-accent bg-accent-soft text-accent" : "border-line bg-card text-muted hover:text-accent"}`}
           >
             <Upload size={13} />
             截图导入

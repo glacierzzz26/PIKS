@@ -319,11 +319,11 @@ func optStr(v string) *string {
 func (s *Server) tradeSaveMistakeCore(ctx context.Context, id string, n int) (bool, string) {
 	t, err := s.store.GetTrade(ctx, id)
 	if err != nil {
-		return false, "⚠️ 交易不存在: " + err.Error()
+		return false, "交易不存在: " + err.Error()
 	}
 	rv := parseTradeReview(t.Review)
 	if rv == nil || n < 0 || n >= len(rv.Mistakes) {
-		return false, "⚠️ 复盘点不存在(复盘可能已更新,请重新解读)。"
+		return false, "复盘点不存在(复盘可能已更新,请重新解读)。"
 	}
 	m := rv.Mistakes[n]
 	title := m.Title
@@ -332,17 +332,17 @@ func (s *Server) tradeSaveMistakeCore(ctx context.Context, id string, n int) (bo
 	}
 	slug := fmt.Sprintf("trade-%s-%d", id, n)
 	if existing, err := s.store.GetPersonalNoteBySlug(ctx, "mistake", slug); err == nil && existing != nil {
-		return true, "✅ 该复盘点已存为笔记,未重复创建。"
+		return true, "该复盘点已存为笔记,未重复创建。"
 	} else if err != nil {
-		return false, "⚠️ 查重失败: " + err.Error()
+		return false, "查重失败: " + err.Error()
 	}
 	if _, err := s.store.CreatePersonalNote(ctx, &model.PersonalNote{
 		Type: "mistake", Slug: slug, Title: &title,
 		Status: "hypothesis", Content: &m.Content,
 	}); err != nil {
-		return false, "⚠️ 存为笔记失败: " + err.Error()
+		return false, "存为笔记失败: " + err.Error()
 	}
-	return true, "✅ 已存为个人笔记。"
+	return true, "已存为个人笔记。"
 }
 
 // tradeReviewCore 交易 AI 复盘并入库(带引用,手动触发)。
@@ -350,11 +350,11 @@ func (s *Server) tradeSaveMistakeCore(ctx context.Context, id string, n int) (bo
 func (s *Server) tradeReviewCore(ctx context.Context, id string) string {
 	t, err := s.store.GetTrade(ctx, id)
 	if err != nil {
-		return "⚠️ 交易不存在: " + err.Error()
+		return "交易不存在: " + err.Error()
 	}
 	cfgMap, err := s.store.ListAppConfig(ctx)
 	if err != nil {
-		return "⚠️ 读 AI 配置失败: " + err.Error()
+		return "读 AI 配置失败: " + err.Error()
 	}
 	base, key := cfgMap["ai_service_base_url"], cfgMap["ai_api_key"]
 	model := cfgMap["ai_model_reasoning"]
@@ -362,11 +362,11 @@ func (s *Server) tradeReviewCore(ctx context.Context, id string) string {
 		model = cfgMap["ai_model_extract"]
 	}
 	if base == "" || key == "" || model == "" {
-		return "⚠️ AI 未配置,复盘暂缺(请到设置页配置)。"
+		return "AI 未配置,复盘暂缺(请到设置页配置)。"
 	}
 	if budget, _ := strconv.ParseInt(cfgMap["ai_daily_token_budget"], 10, 64); budget > 0 {
 		if today, err := s.store.TokensSince(ctx, time.Now().Truncate(24*time.Hour)); err == nil && today >= budget {
-			return "⚠️ 今日 AI 预算已用尽,复盘暂缺(预算恢复后重试)。"
+			return "今日 AI 预算已用尽,复盘暂缺(预算恢复后重试)。"
 		}
 	}
 
@@ -378,7 +378,7 @@ func (s *Server) tradeReviewCore(ctx context.Context, id string) string {
 	extra, _ := s.expandQuery(ctx, cfgMap, q)
 	events, entities, err := s.store.SearchKnowledgeExpanded(ctx, q, extra, 8, 8)
 	if err != nil {
-		return "⚠️ 检索知识库失败: " + err.Error()
+		return "检索知识库失败: " + err.Error()
 	}
 	// 防未来函数:历史交易只含 trade_date 及之前的语境。
 	cutoff := t.TradeDate.AddDate(0, 0, 1)
@@ -391,29 +391,29 @@ func (s *Server) tradeReviewCore(ctx context.Context, id string) string {
 	events = kept
 	notes, err := s.store.ListPersonalNotesByText(ctx, t.Name, 8)
 	if err != nil {
-		return "⚠️ 检索个人笔记失败: " + err.Error()
+		return "检索个人笔记失败: " + err.Error()
 	}
 
 	runID, err := s.store.StartTaskRun(ctx, "trade-review")
 	if err != nil {
-		return "⚠️ 记账失败: " + err.Error()
+		return "记账失败: " + err.Error()
 	}
 	system, user := reviewPrompt(t, events, entities, notes)
 	c := ai.NewOpenAICompat(base, key, model)
 	resp, err := c.StructuredOutput(ctx, ai.StructuredRequest{System: system, User: user})
 	if err != nil {
 		_ = s.store.FinishTaskRun(ctx, runID, "failed", err.Error(), map[string]any{"trade_id": id})
-		return "⚠️ 复盘生成失败: " + err.Error()
+		return "复盘生成失败: " + err.Error()
 	}
 	rv, verr := validateTradeReview(resp.Data, events, entities, notes, model, resp.Usage.Total())
 	if verr != nil {
 		_ = s.store.FinishTaskRun(ctx, runID, "failed", verr.Error(), map[string]any{"trade_id": id})
-		return "⚠️ 复盘解析失败: " + verr.Error()
+		return "复盘解析失败: " + verr.Error()
 	}
 	_ = s.store.FinishTaskRun(ctx, runID, "success", "", map[string]any{"trade_id": id, "model": model, "ai_tokens": resp.Usage.Total()})
 	raw, _ := json.Marshal(rv)
 	if err := s.store.SetTradeReview(ctx, id, raw); err != nil {
-		return "⚠️ 复盘入库失败: " + err.Error()
+		return "复盘入库失败: " + err.Error()
 	}
 	return ""
 }
@@ -715,15 +715,15 @@ func positionReviewPrompt(agg PositionAgg, events []model.Event, entities []mode
 func (s *Server) positionDiagnoseCore(ctx context.Context) string {
 	ps, err := s.store.LatestPositions(ctx)
 	if err != nil {
-		return "⚠️ 读持仓失败: " + err.Error()
+		return "读持仓失败: " + err.Error()
 	}
 	if len(ps) == 0 {
-		return "⚠️ 暂无持仓快照,先导入持仓再诊断。"
+		return "暂无持仓快照,先导入持仓再诊断。"
 	}
 	snapshot := ps[0].SnapshotDate
 	cfgMap, err := s.store.ListAppConfig(ctx)
 	if err != nil {
-		return "⚠️ 读 AI 配置失败: " + err.Error()
+		return "读 AI 配置失败: " + err.Error()
 	}
 	base, key := cfgMap["ai_service_base_url"], cfgMap["ai_api_key"]
 	mname := cfgMap["ai_model_reasoning"]
@@ -731,11 +731,11 @@ func (s *Server) positionDiagnoseCore(ctx context.Context) string {
 		mname = cfgMap["ai_model_extract"]
 	}
 	if base == "" || key == "" || mname == "" {
-		return "⚠️ AI 未配置,诊断暂缺(请到设置页配置)。"
+		return "AI 未配置,诊断暂缺(请到设置页配置)。"
 	}
 	if budget, _ := strconv.ParseInt(cfgMap["ai_daily_token_budget"], 10, 64); budget > 0 {
 		if today, err := s.store.TokensSince(ctx, time.Now().Truncate(24*time.Hour)); err == nil && today >= budget {
-			return "⚠️ 今日 AI 预算已用尽,诊断暂缺(预算恢复后重试)。"
+			return "今日 AI 预算已用尽,诊断暂缺(预算恢复后重试)。"
 		}
 	}
 
@@ -743,7 +743,7 @@ func (s *Server) positionDiagnoseCore(ctx context.Context) string {
 	cutoff := snapshot.AddDate(0, 0, 1)
 	recent, err := s.store.ListTradesBetween(ctx, snapshot.AddDate(0, 0, -14), cutoff)
 	if err != nil {
-		return "⚠️ 读交易联动失败: " + err.Error()
+		return "读交易联动失败: " + err.Error()
 	}
 	agg := aggPositions(ps, recent)
 
@@ -756,7 +756,7 @@ func (s *Server) positionDiagnoseCore(ctx context.Context) string {
 	extra, _ := s.expandQuery(ctx, cfgMap, q)
 	events, entities, err := s.store.SearchKnowledgeExpanded(ctx, q, extra, 10, 10)
 	if err != nil {
-		return "⚠️ 检索知识库失败: " + err.Error()
+		return "检索知识库失败: " + err.Error()
 	}
 	kept := events[:0]
 	for _, e := range events {
@@ -785,24 +785,24 @@ func (s *Server) positionDiagnoseCore(ctx context.Context) string {
 
 	runID, err := s.store.StartTaskRun(ctx, "position-review")
 	if err != nil {
-		return "⚠️ 记账失败: " + err.Error()
+		return "记账失败: " + err.Error()
 	}
 	system, user := positionReviewPrompt(agg, events, entities, notes)
 	c := ai.NewOpenAICompat(base, key, mname)
 	resp, err := c.StructuredOutput(ctx, ai.StructuredRequest{System: system, User: user})
 	if err != nil {
 		_ = s.store.FinishTaskRun(ctx, runID, "failed", err.Error(), map[string]any{"snapshot": agg.SnapshotDate})
-		return "⚠️ 诊断生成失败: " + err.Error()
+		return "诊断生成失败: " + err.Error()
 	}
 	rv, verr := validatePositionReview(resp.Data, events, entities, notes, mname, resp.Usage.Total())
 	if verr != nil {
 		_ = s.store.FinishTaskRun(ctx, runID, "failed", verr.Error(), map[string]any{"snapshot": agg.SnapshotDate})
-		return "⚠️ 诊断解析失败: " + verr.Error()
+		return "诊断解析失败: " + verr.Error()
 	}
 	_ = s.store.FinishTaskRun(ctx, runID, "success", "", map[string]any{"snapshot": agg.SnapshotDate, "model": mname, "ai_tokens": resp.Usage.Total()})
 	raw, _ := json.Marshal(rv)
 	if err := s.store.UpsertPositionReview(ctx, snapshot, raw, mname, resp.Usage.Total()); err != nil {
-		return "⚠️ 诊断入库失败: " + err.Error()
+		return "诊断入库失败: " + err.Error()
 	}
 	return ""
 }
@@ -813,16 +813,16 @@ func (s *Server) positionDiagnoseCore(ctx context.Context) string {
 func (s *Server) positionSaveRiskCore(ctx context.Context, n int) (bool, string) {
 	ps, err := s.store.LatestPositions(ctx)
 	if err != nil || len(ps) == 0 {
-		return false, "⚠️ 暂无持仓快照。"
+		return false, "暂无持仓快照。"
 	}
 	snapshot := ps[0].SnapshotDate
 	pr, err := s.store.GetPositionReview(ctx, snapshot)
 	if err != nil || pr == nil {
-		return false, "⚠️ 诊断不存在(请先生成持仓诊断)。"
+		return false, "诊断不存在(请先生成持仓诊断)。"
 	}
 	rv := parsePositionReview(pr.Review)
 	if rv == nil || n < 0 || n >= len(rv.Risks) {
-		return false, "⚠️ 风险候选不存在(诊断可能已更新,请重新诊断)。"
+		return false, "风险候选不存在(诊断可能已更新,请重新诊断)。"
 	}
 	m := rv.Risks[n]
 	title := m.Title
@@ -831,15 +831,15 @@ func (s *Server) positionSaveRiskCore(ctx context.Context, n int) (bool, string)
 	}
 	slug := fmt.Sprintf("posrev-%s-%d", snapshot.Format("20060102"), n)
 	if existing, err := s.store.GetPersonalNoteBySlug(ctx, "mistake", slug); err == nil && existing != nil {
-		return true, "✅ 该风险候选已存为笔记,未重复创建。"
+		return true, "该风险候选已存为笔记,未重复创建。"
 	} else if err != nil {
-		return false, "⚠️ 查重失败: " + err.Error()
+		return false, "查重失败: " + err.Error()
 	}
 	if _, err := s.store.CreatePersonalNote(ctx, &model.PersonalNote{
 		Type: "mistake", Slug: slug, Title: &title,
 		Status: "hypothesis", Content: &m.Content,
 	}); err != nil {
-		return false, "⚠️ 存为笔记失败: " + err.Error()
+		return false, "存为笔记失败: " + err.Error()
 	}
-	return true, "✅ 已存为个人笔记。"
+	return true, "已存为个人笔记。"
 }

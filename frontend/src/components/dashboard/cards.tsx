@@ -9,7 +9,7 @@ export function SnapCard({ s, latest }: { s: SnapRow; latest?: boolean }) {
   const tone =
     s.emotion_score >= 60 ? "st-up" : s.emotion_score >= 45 ? "st-amber" : "st-down";
   return (
-    <div className="rounded-[12px] border border-line bg-soft p-3">
+    <div className="rounded-lg border border-line bg-soft p-3">
       <div className="mb-2.5 flex items-center gap-2">
         <span className="num text-[15px] font-bold">{s.date}</span>
         {latest && (
@@ -80,7 +80,7 @@ export function EventRank({
       <thead>
         <tr>
           <th style={{ width: 40 }}>#</th>
-          <th style={{ textAlign: "left" }}>事件标题</th>
+          <th className="text-left">事件标题</th>
           <th>置信度</th>
         </tr>
       </thead>
@@ -89,14 +89,14 @@ export function EventRank({
           <tr key={e.id}>
             <td>
               <span
-                className={`inline-flex h-5 w-5 items-center justify-center rounded-[6px] text-[11.5px] font-bold ${
+                className={`inline-flex h-5 w-5 items-center justify-center rounded-sm text-[11.5px] font-bold ${
                   i < 2 ? "bg-accent-soft text-accent" : "bg-bg-soft text-faint"
                 }`}
               >
                 {i + 1}
               </span>
             </td>
-            <td style={{ textAlign: "left" }}>
+            <td className="text-left">
               <Link
                 to={`/events?q=${encodeURIComponent(e.title.slice(0, 8))}`}
                 className="ev-title no-underline hover:text-accent"

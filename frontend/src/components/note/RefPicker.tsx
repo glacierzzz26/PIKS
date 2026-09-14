@@ -48,7 +48,7 @@ export default function RefPicker({
         {shown.map((o) => (
           <label
             key={o.id}
-            className="flex cursor-pointer items-center gap-2 rounded-[8px] px-1.5 py-1 text-[13px] hover:bg-bg-soft"
+            className="flex cursor-pointer items-center gap-2 rounded-sm px-1.5 py-1 text-[13px] hover:bg-bg-soft"
           >
             <input
               type="checkbox"

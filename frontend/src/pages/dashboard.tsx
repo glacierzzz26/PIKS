@@ -5,11 +5,12 @@ import { ENDPOINTS } from "@/lib/api";
 import type { DashboardData } from "@/lib/types";
 import MarkdownBody from "@/components/md/MarkdownBody";
 import { SnapCard, StatCard, Bars, EventRank } from "@/components/dashboard/cards";
-import { Gauge, EmotionSpark, Pipeline } from "@/components/dashboard/widgets";
+import { Gauge, EmotionSpark } from "@/components/dashboard/Gauge";
+import { Pipeline } from "@/components/dashboard/Pipeline";
 import { MarketPanel, HeroScore } from "@/components/dashboard/panels";
 import { LoadingBlock, ErrorState } from "@/components/ui/States";
 
-/** 看板（首页）：知识库规模 + 市场快照 + 情绪走势 + 行业分布 + 高置信事件 + 管线状态 */
+/** 看板：知识库规模 + 市场快照 + 情绪走势 + 行业分布 + 高置信事件 + 数据更新状态 */
 export default function Page() {
   const dash = useData<DashboardData>({ path: ENDPOINTS.dashboard });
 
@@ -40,16 +41,14 @@ export default function Page() {
             </svg>
           </div>
           <div>
-            <h1>个人投资知识系统 · 每日看板</h1>
-            <div className="sub">
-              Personal Investment Knowledge System · {market.trade_date}
-            </div>
+            <h1>市场概况</h1>
+            <div className="sub">Personal Investment Knowledge System · {market.trade_date}</div>
           </div>
         </div>
         <div className="hero-body">
           <div className="hero-tag">
-            基于今日 <b>东财 7×24 快讯</b> 与 <b>涨停池</b> 数据，经 AI 事件抽取、语义去重聚类与实体构建，自动沉淀为结构化知识库。
-            <b>Fact ≠ Inference ≠ Belief</b>，机器产出与个人判断严格分域。
+            今天的市场数据来自<b>东财 7×24 快讯</b>与<b>涨停池</b>，由 AI 整理成一条条消息。
+            机器给的是事实，你自己写的是判断，两者分开存放。
           </div>
           <HeroScore
             score={market.emotion_score}
@@ -72,7 +71,7 @@ export default function Page() {
         <div className="section-head">
           <span className="bar" />
           <h2>今日市场快照</h2>
-          <span className="hint">quote-collector · 仅交易日运行</span>
+          <span className="hint">仅在交易日更新</span>
         </div>
         <div className="two-col">
           <MarketPanel market={market} />
@@ -109,7 +108,7 @@ export default function Page() {
         <div className="section-head">
           <span className="bar" />
           <h2>每日复盘 · {market.trade_date}</h2>
-          <span className="hint">daily-review · 管线自动生成</span>
+          <span className="hint">PIKS 自动生成</span>
         </div>
         <div className="panel panel-pad">
           <MarkdownBody content={review} />
@@ -120,7 +119,7 @@ export default function Page() {
         <div className="section-head">
           <span className="bar" />
           <h2>近 5 日情绪</h2>
-          <span className="hint">market-state · 每日收盘后更新</span>
+          <span className="hint">每日收盘后更新</span>
         </div>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           {snap_history.slice(0, 5).map((s, i) => (
@@ -132,8 +131,8 @@ export default function Page() {
       <section className="section">
         <div className="section-head">
           <span className="bar" />
-          <h2>管线状态</h2>
-          <span className="hint">crontab 每 15 分钟自判 · 幂等可重跑</span>
+          <h2>数据更新状态</h2>
+          <span className="hint">自动重试直到成功</span>
         </div>
         <div className="panel">
           <Pipeline runs={task_runs.slice(0, 9)} />

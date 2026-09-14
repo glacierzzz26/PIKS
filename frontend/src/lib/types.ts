@@ -182,6 +182,7 @@ export type ReviewRow = {
   refs: number;
   state: "positive" | "negative" | "neutral";
   risks?: ReviewPoint[];
+  mistakes?: ReviewPoint[]; // 复盘点（诊断时识别出的操作失误）
 };
 
 export type SnapRow = {

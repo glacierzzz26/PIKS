@@ -96,13 +96,13 @@ export default function Page() {
         <div>
           <h1>周报</h1>
           <div className="psub">
-            规则聚合本周快照 / 事件 / 笔记 / 交易 + AI 综述（手动触发）
+            汇总本周的快照 / 事件 / 笔记 / 交易，可让 AI 写一段综述
           </div>
         </div>
         <div className="meta">
           <button
             onClick={() => go(-1)}
-            className="inline-flex h-8 items-center gap-1 rounded-[9px] border border-line bg-card px-2.5 text-xs text-muted hover:text-accent"
+            className="inline-flex h-8 items-center gap-1 rounded-[10px] border border-line bg-card px-2.5 text-xs text-muted hover:text-accent"
           >
             <ChevronLeft size={13} />
             上一周
@@ -112,7 +112,7 @@ export default function Page() {
           </Chip>
           <button
             onClick={() => go(1)}
-            className="inline-flex h-8 items-center gap-1 rounded-[9px] border border-line bg-card px-2.5 text-xs text-muted hover:text-accent"
+            className="inline-flex h-8 items-center gap-1 rounded-[10px] border border-line bg-card px-2.5 text-xs text-muted hover:text-accent"
           >
             下一周
             <ChevronRight size={13} />

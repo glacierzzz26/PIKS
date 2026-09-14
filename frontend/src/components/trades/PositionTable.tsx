@@ -11,12 +11,12 @@ export default function PositionTable({ positions }: { positions: PositionRow[] 
       <table className="table">
         <thead>
           <tr>
-            <th style={{ textAlign: "left" }}>标的</th>
+            <th className="text-left">标的</th>
             <th>数量</th>
             <th>成本</th>
             <th>现价</th>
             <th>盈亏</th>
-            <th style={{ textAlign: "left" }}>深研</th>
+            <th className="text-left">深研</th>
           </tr>
         </thead>
         <tbody>

@@ -166,3 +166,84 @@ type gatherBoom struct{}
 func (gatherBoom) Error() string { return "akshare 连接超时(注入)" }
 
 var errGatherBoom = gatherBoom{}
+
+// TestOrchestratorIndustrySubject 行业主体(P9 / issue #10)端到端接线:
+// 传入 sw801010 → 编排把**规范主体码 sw801010** 传给 CLI 与产物命名,
+// 且不被加交易所前缀(旧 ToFullCode 会产出 bj801010)。
+//
+// 与 TestOrchestratorStateMachine 同 DB 开关。用 fakeCLI 验证 Go 侧接线;
+// 申万指数**真实采集**属 P9-3(数据管线)范围。
+func TestOrchestratorIndustrySubject(t *testing.T) {
+	if os.Getenv("PIKS_TEST_INTEGRATION") == "" {
+		t.Skip("PIKS_TEST_INTEGRATION not set (integration off by default)")
+	}
+	dsn := os.Getenv("PIKS_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("PIKS_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	pool, err := store.Open(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := store.New(pool)
+	t.Cleanup(func() { pool.Close() })
+
+	dir := t.TempDir()
+	// 规范主体码带 sw 前缀:它同时是产物文件名前缀。
+	const subject = "sw801010"
+	runID := "p9-industry-" + time.Now().Format("20060102150405.000000")
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM research_runs WHERE run_id=$1`, runID)
+		_, _ = pool.Exec(ctx, `DELETE FROM task_runs WHERE command LIKE 'research-run:%' AND created_at > now() - interval '1 minute'`)
+	})
+
+	cli := &fakeCLI{files: map[string]string{
+		"run_meta.json": `{"run_id":"` + runID + `","symbol":"sw801010","profile":"index",` +
+			`"as_of":"2026-09-15","sections":["market"],"contract":1}`,
+		"{code}_metrics.json": `{"meta":{"symbol":"sw801010","as_of":"2026-09-15"},` +
+			`"price":{"end_price":2530.11,"period_return_pct":-2.4},` +
+			`"evidence":[{"id":"e1","type":"fact","tier":"structured","section":"price",` +
+			`"statement":"period_return_pct = -2.4"}]}`,
+		"{code}_synthesis_prompt.txt": "你是一名 A 股研究分析师，正在撰写 sw801010 的行业研究报告。\n指标卡见下…",
+		"{code}_skeleton.md":          "# 骨架报告\n\n行业行情定位",
+	}}
+
+	o := New(s, ai.NewMock(), 0)
+	o.runner = cli
+
+	if _, err := s.CreateResearchRun(ctx, &store.ResearchRun{
+		RunID: runID, Code: subject, Symbol: subject,
+		Profile: "index", AsOf: time.Now(), Status: StatusPending,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := o.Run(ctx, Options{RunID: runID, Code: subject, OutDir: dir})
+	if err != nil {
+		t.Fatalf("编排报错: %v", err)
+	}
+	if res.Status != StatusDone {
+		t.Fatalf("status = %s, want done(error=%s)", res.Status, res.Error)
+	}
+
+	// 核心断言 1:CLI 收到的就是规范主体码(带 sw 前缀),不是裸 801010、不是 bj801010。
+	if cli.gotCode != subject {
+		t.Errorf("gather 收到 code = %q, want %q(行业码不得被加交易所前缀)", cli.gotCode, subject)
+	}
+	// 核心断言 2:产物按 sw801010 命名并成功读取。
+	if _, err := os.Stat(filepath.Join(dir, subject+"_final.md")); err != nil {
+		t.Errorf("产物 %s_final.md 应存在: %v", subject, err)
+	}
+	// 核心断言 3:落库 code 是规范主体码。
+	row, err := s.GetResearchRun(ctx, runID)
+	if err != nil || row == nil {
+		t.Fatalf("读回落库行失败: %v", err)
+	}
+	if row.Code != subject {
+		t.Errorf("落库 code = %q, want %q", row.Code, subject)
+	}
+	if row.Symbol != subject {
+		t.Errorf("落库 symbol = %q, want %q(不得带交易所前缀)", row.Symbol, subject)
+	}
+}

@@ -190,6 +190,7 @@ func TestLintFailed(t *testing.T) {
 }
 
 // TestToFullCode 交易所前缀映射(与 research/src/models/symbol.py 同规则)。
+// ⚠️ 只用于股票:它会把申万行业码 850111 误标成 bj850111(故有 SubjectFullCode)。
 func TestToFullCode(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"600519", "sh600519"},
@@ -206,6 +207,55 @@ func TestToFullCode(t *testing.T) {
 	}
 }
 
+// TestSubjectFullCode 主体感知 full_code(P9 / issue #10)。
+// 核心回归:行业码**不得**被加交易所前缀 —— ToFullCode("850111") 会产出 bj850111(错)。
+// 公司路径必须与既有 ToFullCode 逐字节一致(零回归)。
+func TestSubjectFullCode(t *testing.T) {
+	cases := []struct{ in, want string }{
+		// 行业:不加前缀,原样 sw+6 位
+		{"sw801010", "sw801010"}, // 农林牧渔
+		{"sw851251", "sw851251"}, // 白酒Ⅲ
+		{"SW801010", "sw801010"}, // 归一为小写
+		// 宏观:#13 预留
+		{"macro:cpi", "macro:cpi"},
+		// 公司:与 ToFullCode 完全一致(零回归)
+		{"600519", "sh600519"},
+		{"000560", "sz000560"},
+		{"300750", "sz300750"},
+		{"430047", "bj430047"},
+		{"sh600519", "sh600519"},
+		// 地雷对照:裸申万码仍按公司处理 → bj 前缀(故调用方必须传 sw 前缀)
+		{"850111", "bj850111"},
+	}
+	for _, c := range cases {
+		if got := SubjectFullCode(c.in); got != c.want {
+			t.Errorf("SubjectFullCode(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestSubjectTypeOf 主体类型判别,供 web 层 DTO 分支。
+func TestSubjectTypeOf(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"sw801010", "industry"},
+		// ⚠️ 地雷(有意锁住):裸申万码是 6 位数字,**语法上就是合法股票码** →
+		// 被判为 company,后续 SubjectFullCode 产出 bj850111(错过深研)。
+		// 这不是 bug,是「裸码无法与股票区分」的必然结果 —— 故行业**必须带 sw 前缀**。
+		{"851251", "company"},
+		{"801010", "company"},
+		{"600519", "company"},
+		{"sh600519", "company"},
+		{"macro:cpi", "macro"},
+		{"海南橡胶", ""},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := SubjectTypeOf(c.in); got != c.want {
+			t.Errorf("SubjectTypeOf(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 // ==================== 编排状态机(注入假 CLI,不依赖 Python/DB) ====================
 
 // fakeCLI 用固定产物模拟三步 CLI 的产出,验证编排按契约读产物。
@@ -214,6 +264,8 @@ type fakeCLI struct {
 	files map[string]string
 	// gatherErr 非空则 gather 返回该错误(模拟采集失败)。
 	gatherErr error
+	// gotCode 记录 gather 收到的代码(P9:验证行业主体码传对)。
+	gotCode string
 	// priorMetricsPath 记录 synthesize 收到的 --prior-metrics 路径(验证签名贯通)。
 	priorMetricsPath string
 }
@@ -227,6 +279,7 @@ func (f *fakeCLI) materialize(dir, code string) {
 }
 
 func (f *fakeCLI) gather(_ context.Context, code, _ string, _ int, outDir, _ string) (string, error) {
+	f.gotCode = code
 	if f.gatherErr != nil {
 		return "", f.gatherErr
 	}

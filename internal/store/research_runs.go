@@ -77,6 +77,57 @@ func ValidStockCode(symbol string) string {
 	return ""
 }
 
+// ---- 主体轴(P9 / issue #10):研报的主体不一定是个股 ----
+
+// 主体类型。研报三类(行业/公司/宏观)共用一套版面,差异由 subject_type + 章节清单驱动
+// (docs/phase9/design/report-layout.md D-R2/D-R3)。
+const (
+	// SubjectIndustry 申万行业指数。写法 sw + 6 位申万代码。
+	// 前缀选 sw(而非裸 6 位数字)是为了与 A 股代码**语法上互斥**:
+	// NormalizeCode 只剥 sh/sz/bj 且要求 len==前缀+6,对 sw801010 原样穿过;
+	// IsStockCode 见非数字即 false —— 股票逻辑因此天然忽略行业码,零冲突。
+	SubjectIndustry = "industry"
+	// SubjectMacro 宏观。写法 macro:<key>(预留,#13)。
+	SubjectMacro = "macro"
+	// SubjectCompany 个股 = 既有行为,6 位数字代码。
+	SubjectCompany = "company"
+)
+
+// 行业主体写法:sw + 6 位申万数字代码(如 sw801010 农林牧渔 / sw851251 白酒Ⅲ)。
+// ⚠️ 申万代码 ↔ 名称**必须查表**:801010 是农林牧渔(104 只),不是「食品饮料」。
+const industryCodePrefix = "sw"
+
+// NormalizeSubject 归一主体码,返回 (主体类型, **规范主体码**)。
+// 无法识别 → ("", "")。
+//
+// 规范主体码(P9 D-R3):
+//   - 公司 600519      —— 裸 6 位,与既有 code 列语义一致
+//   - 行业 sw801010    —— **带 sw 前缀**。刻意存带前缀的形式:裸 801010 在库里
+//     与北交所股票(SubjectFullCode → bj801010)无法区分,会把行业 run 误当个股。
+//     带前缀后,主体类型可由码本身判定,前端无需额外字段。
+//   - 宏观 macro:cpi   —— #13 预留
+//
+// 识别顺序:行业 → 宏观 → 公司。行业必须先于公司:sw 前缀不是 6 位数字,不会误入公司分支,
+// 但显式排序可防未来规则变更时静默漂移。
+func NormalizeSubject(symbol string) (subjectType, subjectCode string) {
+	s := strings.TrimSpace(strings.ToLower(symbol))
+
+	// 行业:sw + 恰好 6 位数字(与申万原生 801010.SI 的写法解耦:接受 sw801010,
+	// 不接受 801010.SI —— 后者含 `.` 会污染产物文件名与 run_id)。
+	if rest, ok := strings.CutPrefix(s, industryCodePrefix); ok && IsStockCode(rest) {
+		return SubjectIndustry, industryCodePrefix + rest
+	}
+	// 宏观:macro:<key>(#13 预留,当前无产出方)
+	if rest, ok := strings.CutPrefix(s, "macro:"); ok && rest != "" {
+		return SubjectMacro, "macro:" + rest
+	}
+	// 公司:既有归一语义不变(full_code → 6 位)
+	if c := ValidStockCode(s); c != "" {
+		return SubjectCompany, c
+	}
+	return "", ""
+}
+
 // ActiveResearchStatuses 进行中的状态集(SQL 与 Go 判定共用同一来源,勿分散硬编码)。
 // 放 store 而非 research:store 持有 SQL;且 research 已 import store(不可反向依赖)。
 // ⚠️ 前端镜像见 frontend/src/hooks/useResearchRun.ts 的 ACTIVE(改这里须同步)。

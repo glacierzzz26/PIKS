@@ -145,11 +145,13 @@ func (s *Server) researchRunTrigger(w http.ResponseWriter, r *http.Request) {
 		apiErrJSON(w, http.StatusBadRequest, "请求体解析失败: "+err.Error())
 		return
 	}
-	// 归一后必须为 6 位数字:实体库页可能传来股票名称(detail.code 为名称时),
+	// 主体感知(P9 / issue #10):研报主体不限于个股 —— 行业(sw+6 位申万码)亦合法。
+	// 归一后必须能识别为主体:实体库页可能传来股票名称(detail.code 为名称时),
 	// 名称原样进编排会造出 run_id 含名称的失败记录(issue #2),此处拦在入口。
-	code := store.ValidStockCode(req.Code)
-	if code == "" {
-		apiErrJSON(w, http.StatusBadRequest, fmt.Sprintf("缺少有效股票代码(收到 %q,应为 6 位数字)", strings.TrimSpace(req.Code)))
+	subjectType, code := store.NormalizeSubject(req.Code)
+	if subjectType == "" {
+		apiErrJSON(w, http.StatusBadRequest, fmt.Sprintf(
+			"无法识别的主体(收到 %q;公司应为 6 位数字,行业应为 sw+6 位申万代码)", strings.TrimSpace(req.Code)))
 		return
 	}
 	profile := req.Profile
@@ -179,9 +181,11 @@ func (s *Server) researchRunTrigger(w http.ResponseWriter, r *http.Request) {
 
 	o := research.New(s.store, s.researchProvider(), s.cfg.AIDailyTokenBudget)
 	// 先占位建行(同步),前端马上拿到 run_id;失败即报,不留悬挂行。
+	// code 是**规范主体码**(公司=裸 6 位,行业=sw801010),它同时是产物文件名前缀与
+	// Python CLI 入参 —— 三处必须是同一串(行业裸码会被 Python 当北交所股票)。
 	runID := research.NewRunID(code, profile, time.Now())
 	created, err := s.store.CreateResearchRun(ctx, &store.ResearchRun{
-		RunID: runID, Code: code, Symbol: research.ToFullCode(code),
+		RunID: runID, Code: code, Symbol: research.SubjectFullCode(code),
 		Profile: profile, AsOf: time.Now(), Status: research.StatusPending,
 	})
 	if err != nil {

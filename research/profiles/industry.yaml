@@ -1,0 +1,37 @@
+name: industry
+version: "1.0.0"
+description: 行业研报(申万行业指数主体,表达为 sw+6 位代码;#12)
+
+mode: full
+
+# ⚠️ 与个股 profile 的关键差异(数据源决定,非取舍):
+# - 无 financial/valuation provider:申万行业**只有当期估值快照**(sw_index_*_info),
+#   无财报序列。行业估值走 industry provider 的横截面排名(D-R7)。
+# - 无 volume/turnover 章节:申万指数 history 的「成交量/成交额」量纲与 A 股不一致
+#   (实测白酒Ⅲ 指数行成交额 45.5 而成分合计市值 23629 亿)→ 采集绝对量即编造。
+# - 无 events/announcements:指数无公告;行业新闻需单独舆情源,不在本次范围。
+period:
+  display:
+    price: 250d          # 展示窗口:约一年,足以看趋势与回撤
+  compute:
+    price: 6000d         # 点位历史分位用**全历史**(index_hist_sw 实测 6456 行);上限即全量
+  unit:
+    price: trading
+
+sections:
+  - industry_index      # 一、行业行情(点位/涨跌/历史分位/回撤/波动)
+  - industry_valuation  # 二、估值定位(当期 PE/PB/股息率 + 横截面排名)
+  - industry_structure  # 三、成分结构(数量 + ROE/增速中位与四分位)
+  - risk                # 四、风险提示
+
+# 评分卡:**不启用**。个股评分卡维度(业务质量/基本面趋势/估值/近期事件)对指数无对应
+# 数据源 —— 硬凑分数即编造。行业研报的「结论」由 AI 三段定性在版面层承担(见 report-layout.md)。
+scorecard:
+  dimensions: []
+  overall_rule: simple_sum
+  scale: [-2, -1, 0, +1, +2]
+
+thresholds:
+  abnormal_volume_multiplier: 2.0
+  abnormal_volume_lookback: 20
+  turnover_percentile_window: 520

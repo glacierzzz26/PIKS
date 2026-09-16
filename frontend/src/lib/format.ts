@@ -32,6 +32,14 @@ export function daysAgo(date: string): number | null {
   return Math.floor((Date.now() - t) / 86_400_000);
 }
 
+/**
+ * 是否为合法 A 股 6 位数字代码（与后端 store.IsStockCode 同一规则）。
+ * 用于判断 code 能否安全进深研/个股聚合 —— 名称当作代码会产脏数据（issue #2）。
+ */
+export function isStockCode(code: string | undefined | null): boolean {
+  return !!code && /^\d{6}$/.test(code);
+}
+
 export const ENTITY_TYPE_LABEL: Record<string, string> = {
   company: "公司",
   industry: "行业",

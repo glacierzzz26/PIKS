@@ -26,7 +26,9 @@
 python3 -m src.cli research <代码> [--days N] [--profile complete-stock|short-term] [--out-dir DIR] [--run-id ID]
 
 # 2. 把 LLM 的三段定性渲染进报告 + Number Lint(数字一致性机检)
-python3 -m src.cli synthesize <产物目录> <代码> --synthesis-file <LLM输出.json>
+#    --prior-metrics 可选:既往研报的 metrics JSON(数组,Go 侧落成 {code}_prior_metrics.json),
+#    其中的数字并入 lint 的 known 集 —— 让「较上次 +12%」这类对比数字不被误判为编造。
+python3 -m src.cli synthesize <产物目录> <代码> --synthesis-file <LLM输出.json> [--prior-metrics <历史metrics.json>]
 
 # 3. 六项 Quality Gate 机检
 python3 -m src.cli gate <产物目录> <代码> [--json]
@@ -41,12 +43,13 @@ python3 -m src.cli gate <产物目录> <代码> [--json]
 | 文件 | 产出者 | 内容 |
 |---|---|---|
 | `run_meta.json` | research | `run_id` / `symbol` / `profile` / `mode` / `as_of` / `sections` / `provider_calls` / **`contract`** |
-| `{code}_metrics.json` | research | 指标卡(**数字唯一源 = Fact**)含 Evidence 链 |
+| `{code}_metrics.json` | research | 指标卡(**数字唯一源 = Fact**)含 Evidence 链;`meta.section_manifest` = 章节清单 `[{title,domains[]}]`(前端目录/三域标签的数据源,D-R8) |
 | `{code}_skeleton.md` | research | 骨架报告(模板槽位,数字已渲染) |
 | `{code}_synthesis_prompt.txt` | research | 给 LLM 的合成提示(含"只能引用指标卡数字"硬约束) |
 | `{code}_final.md` | synthesize | 渲染了三段定性的最终报告 |
 | `{code}_lint.json` | synthesize | Number Lint 结果 `{scanned,matched,ignored,passed,issues[]}` |
 | `{code}_synthesis.json` | synthesize | LLM 三段定性 `{summary,trend,conclusion}`(= Opinion) |
+| `{code}_prior_metrics.json` | Go 编排 | 既往 done 研报的 metrics 数组(Go 写、synthesize 读);仅供 `--prior-metrics` 取 known 数,非 research 产出 |
 | `{code}_gate.json` | gate | 六项机检结果 |
 
 > **契约变更规则**:新增字段/新 section **不升** `contract`(Go 忽略未知键);

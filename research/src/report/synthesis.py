@@ -49,9 +49,27 @@ def build_synthesis_prompt(
                 if isinstance(v, (int, float, str)) and not isinstance(v, bool)
             }
 
-    lines = [
-        f"你是一名 A 股研究分析师，正在撰写 {symbol} 的个股研究报告。",
-        "以下是该股票近期研究的数据指标卡（全部由确定性计算引擎生成）：",
+    # 主体感知(P9 #12):行业报告的主体是申万行业指数,不是个股。
+    # ⚠️ 个股分支的文案 "A 股研究分析师" 是 internal/ai/mock.go 的关键词,
+    # 改动它会让 mock provider 在 dev 下不回话 —— 故个股分支**逐字节不变**。
+    is_industry = "industry_index" in json_report
+
+    if is_industry:
+        ref = (json_report.get("industry_index") or {}).get("ref") or {}
+        # ⚠️ 不要 .strip("（）"):它会把刚拼上的右括号也剥掉("农林牧渔（申万一级")。
+        name, label = ref.get("name"), ref.get("level_label")
+        subj = f"{name}（{label}）" if name and label else (name or symbol)
+        lines = [
+            f"你是一名 A 股行业研究分析师，正在撰写 {subj} 的行业研究报告。",
+            "以下是该行业近期研究的数据指标卡（全部由确定性计算引擎生成）：",
+        ]
+    else:
+        lines = [
+            f"你是一名 A 股研究分析师，正在撰写 {symbol} 的个股研究报告。",
+            "以下是该股票近期研究的数据指标卡（全部由确定性计算引擎生成）：",
+        ]
+
+    lines += [
         "",
         "```json",
         json.dumps(summary, ensure_ascii=False, indent=2, default=str),
@@ -59,15 +77,34 @@ def build_synthesis_prompt(
         "",
         "请根据以上数据，撰写三段**定性叙述**（不要生成表格，用纯段落文字）：",
         "",
-        "1. **summary**（执行摘要，2-4 句）：概括当前股价表现、基本面与整体多空格局。",
-        "2. **trend**（趋势解读，3-5 句）：解读近期量价与基本面趋势，解释主要驱动与隐忧。",
-        "3. **conclusion**（综合结论，3-5 句）：基于评分卡给出综合判断与关注要点，明确是正面/中性/负面倾向。",
+    ]
+
+    if is_industry:
+        lines += [
+            "1. **summary**（执行摘要，2-4 句）：概括行业指数近期表现、估值位置与成分结构特征。",
+            "2. **trend**（趋势解读，3-5 句）：解读行业行情趋势与成分盈利分化，解释主要驱动与隐忧。",
+            "3. **conclusion**（综合结论，3-5 句）：基于行情、估值横截面位次与成分结构给出行业综合判断，明确是正面/中性/负面倾向。",
+        ]
+    else:
+        lines += [
+            "1. **summary**（执行摘要，2-4 句）：概括当前股价表现、基本面与整体多空格局。",
+            "2. **trend**（趋势解读，3-5 句）：解读近期量价与基本面趋势，解释主要驱动与隐忧。",
+            "3. **conclusion**（综合结论，3-5 句）：基于评分卡给出综合判断与关注要点，明确是正面/中性/负面倾向。",
+        ]
+
+    lines += [
         "",
         "**硬性约束：**",
         "- 只能引用上述指标卡中出现的数字；不得编造任何新数字、金额、百分比、日期。",
         "- 引用数字时保持原值，允许四舍五入到 1-2 位小数，允许添加 %、元、手、条等单位后缀。",
         "- 不得声称「数据缺失但给出估计」，缺失字段直接不讨论。",
         "- 不得进行财务预测、目标价预估、收益承诺。",
+    ]
+    if is_industry:
+        # D-R7(design report-layout.md):申万行业估值只有当期快照,无历史序列。
+        lines.append("- 不得表述行业估值的历史分位；估值只可作横截面比较（同层级行业间的位次）。")
+
+    lines += [
         "",
         "**输出格式：**严格输出以下 JSON（不要 markdown 代码块包裹，不要其他文字）：",
         '{"summary": "...", "trend": "...", "conclusion": "..."}',
@@ -149,13 +186,17 @@ def validate_synthesis(
 def render_synthesis(
     markdown: str,
     blocks: Optional[Dict[str, str]],
-    include_section: bool = True,
+    include_section: bool = False,
 ) -> str:
     """
     把 LLM 定性段落渲染进 Markdown 模板。
 
-    - 有内容：注入槽位
+    - 有内容：注入槽位（三个 `### ` 子段）
     - 无内容：用占位符（_待 AI 综合研判_）
+
+    include_section 默认 **False**(P9 D-R6 摘要前置):骨架已含「## 一、执行摘要」
+    章标题,此处只需注入三子段。置 True 会另起「## 九、AI 综合研判」把 AI 段落又
+    搬到文末 —— 正是改造前的硬伤,仅作兼容保留。
     """
     blocks = blocks or {}
 

@@ -225,6 +225,31 @@ func (s *Store) ListEntitiesByStatus(ctx context.Context, status string) ([]mode
 	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Entity])
 }
 
+// CompanyNamesByCodes 批量取 6 位代码 → 公司名(展示用「名称(代码)」,issue #2)。
+// 同名多行时取最早创建的一行(与 GetCompanyEntityByCode 一致);未建实体的 code 不在结果里。
+func (s *Store) CompanyNamesByCodes(ctx context.Context, codes []string) (map[string]string, error) {
+	out := map[string]string{}
+	if len(codes) == 0 {
+		return out, nil
+	}
+	rows, err := s.Pool.Query(ctx,
+		`SELECT DISTINCT ON (detail->>'code') detail->>'code', name FROM entities
+		 WHERE type='company' AND detail->>'code' = ANY($1)
+		 ORDER BY detail->>'code', created_at`, codes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var code, name string
+		if err := rows.Scan(&code, &name); err != nil {
+			return nil, err
+		}
+		out[code] = name
+	}
+	return out, rows.Err()
+}
+
 // SetEntityStatus 显式置状态(自选镜像:watch 加入 / archived 移出)。返回是否命中实体。
 func (s *Store) SetEntityStatus(ctx context.Context, id, status string) (bool, error) {
 	tag, err := s.Pool.Exec(ctx,

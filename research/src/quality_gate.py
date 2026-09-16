@@ -137,6 +137,10 @@ def run_quality_gate(
         "events": "events",
         "announcements": "events",
         "industry": "industry",
+        # 行业主体(P9 #12):三节同源于 industry_index 指标卡。
+        "industry_index": "industry_index",
+        "industry_valuation": "industry_index",
+        "industry_structure": "industry_index",
         "risk": "risk",
         "conclusion": "scorecard",
     }
@@ -172,6 +176,10 @@ def run_quality_gate(
         "events": "events",
         "risk": "risk",
         "conclusion": "risk",
+        # 行业主体:三节的 Evidence 由 add_industry_evidence 按此 section 登记。
+        "industry_index": "industry_index",
+        "industry_valuation": "industry_valuation",
+        "industry_structure": "industry_structure",
     }
     missing_ev = []
     for sec in profile_sections:
@@ -213,10 +221,14 @@ def run_quality_gate(
     )
 
     # ---- 4. Time Boundary：as_of + period 存在 ----
+    # 行业主体无 price 节(行业指数不是个股行情),时间边界落在 industry_index.price。
+    # 判定的是「有没有时间边界」,不是「一定在 price 里」—— 故按主体取对应来源。
     meta = json_report.get("meta", {})
     has_as_of = bool(meta.get("as_of"))
-    price_sec = json_report.get("price", {})
-    has_period = bool(price_sec.get("period_days"))
+    period_src = json_report.get("price") or (
+        (json_report.get("industry_index") or {}).get("price") or {}
+    )
+    has_period = bool(period_src.get("period_days"))
     gate.add(
         GateCheck(
             name="time_boundary",

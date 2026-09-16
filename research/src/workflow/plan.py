@@ -119,6 +119,16 @@ class PlanGenerator:
                 optional=True,
             ))
 
+        # 行业本体(P9 #12):主体 = 申万行业指数。与上面的「个股所属行业」不同。
+        # 三节(行情/估值/成分)同源一次采集,故 provider 去重后只建一个 collect 任务。
+        if "industry_index" in needed_providers:
+            tasks.append(Task(
+                name="collect_industry_index",
+                task_type=TaskType.COLLECT,
+                provider="industry_index",
+                params={},
+            ))
+
         # 3. 分析阶段
         needed_analysis: Set[str] = set()
         for sec in profile.sections:
@@ -168,6 +178,17 @@ class PlanGenerator:
                 optional=True,
             ))
 
+        # 行业本体分析(P9 #12):算点位分位/回撤/波动 + 估值横截面排名 + 成分离散度。
+        # ⚠️ 必须在 risk **之前**建任务:_can_run 只把 depends_on 当错误门(不保证已执行),
+        # 实际执行顺序 = 任务列表顺序。行业风险引擎读 industry_metrics,排后面会读到 None。
+        if "industry_index" in needed_analysis:
+            tasks.append(Task(
+                name="analyze_industry_index",
+                task_type=TaskType.ANALYZE,
+                analysis="industry_index",
+                depends_on=["collect_industry_index"],
+            ))
+
         if "risk" in needed_analysis:
             # risk 依赖前面所有分析结果
             deps = []
@@ -177,6 +198,8 @@ class PlanGenerator:
                 deps.append("analyze_volume")
             if "analyze_financial" in [t.name for t in tasks]:
                 deps.append("analyze_financial")
+            if "analyze_industry_index" in [t.name for t in tasks]:
+                deps.append("analyze_industry_index")
             deps.append("collect_announcement")
             tasks.append(Task(
                 name="analyze_risk",

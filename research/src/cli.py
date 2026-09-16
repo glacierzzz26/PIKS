@@ -182,7 +182,27 @@ def run_synthesize(args) -> None:
     # Number Lint 事后扫描 LLM 文本
     metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
     known = collect_numbers_from_json(metrics)
+    # issue #8:可选 --prior-metrics 把历史研报的数字并入 known 集。
+    # 背景:新一期报告若引用既往研报的数值(「较上次 +12%」),该数字不在本次指标卡里
+    # → 会被判为编造 → markdown 回落骨架 → AI 段落反而丢失。故喂历史材料必须同步放开 known。
+    # 不传时行为与改动前逐字节一致(零回归)。
+    prior_used = 0
+    if getattr(args, "prior_metrics", None):
+        prior_path = Path(args.prior_metrics)
+        if prior_path.exists():
+            try:
+                priors = json.loads(prior_path.read_text(encoding="utf-8"))
+                if isinstance(priors, dict):
+                    priors = [priors]
+                for pm in priors or []:
+                    known |= collect_numbers_from_json(pm)
+                    prior_used += 1
+            except Exception as e:
+                # 历史材料取不到不该让本次合成失败:如实降级,继续用本次指标卡对账。
+                print(f"⚠️ 历史研报数字未能并入(忽略): {e}")
     lint = lint_text(final_md, known_values=known)
+    if prior_used:
+        print(f"📎 已并入 {prior_used} 份历史研报的数字作对账基准")
     print(f"\n🔍 {lint.summary()}")
     for issue in lint.issues:
         print(f"   {issue}")
@@ -330,6 +350,10 @@ def main():
     p_synth.add_argument("dir", help="研究产物目录")
     p_synth.add_argument("symbol", help="股票代码")
     p_synth.add_argument("--synthesis-file", type=str, default=None, help="LLM 输出的 JSON 文件（默认从 stdin 读）")
+    # issue #8:可选。传了则把该文件里的历史研报数字并入 Number Lint 的 known 集
+    # (文件为 metrics JSON 数组,由 Go 侧落成 {code}_prior_metrics.json)。
+    p_synth.add_argument("--prior-metrics", type=str, default=None,
+                         help="既往研报的 metrics JSON（数组）;其中的数字并入 lint known 集（可选）")
 
     # M6 Quality Gate 命令
     p_gate = sub.add_parser("gate", help="M6 Quality Gate：对产物目录进行机器可判定的六项机检")

@@ -1,41 +1,19 @@
 "use client";
 
-import { Loader2, ArrowRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { isActive, STATUS_LABEL } from "@/hooks/useResearchRun";
+import { useUrlState } from "@/hooks/useUrlState";
 import { usePagedQuery } from "@/hooks/usePagedQuery";
-import { RESEARCH_PROFILE_LABEL } from "@/lib/constants";
+import { groupRunsByCode } from "@/lib/research";
+import RunGroupRow from "@/components/research/RunGroupRow";
 import { LoadingBlock, EmptyState, ErrorState } from "@/components/ui/States";
 import Pagination from "@/components/ui/Pagination";
 import type { ResearchRunSummary } from "@/lib/types";
 
-/** 状态徽标（无骨架屏：进行中用文字徽标） */
-function StatusBadge({ s }: { s: ResearchRunSummary }) {
-  if (s.status === "done") return <span className="st st-dim">已完成</span>;
-  if (s.status === "failed") return <span className="st st-up">失败</span>;
-  if (isActive(s.status))
-    return (
-      <span className="st st-amber inline-flex items-center gap-1">
-        <Loader2 size={11} className="animate-spin" />
-        {STATUS_LABEL[s.status]}
-      </span>
-    );
-  return <span className="st st-dim">{STATUS_LABEL[s.status]}</span>;
-}
-
-/** 机检徽标：仅 done 有意义 */
-function LintBadge({ s }: { s: ResearchRunSummary }) {
-  if (s.status !== "done") return <span className="text-faint">—</span>;
-  return s.lint_ok && s.gate_ok ? (
-    <span className="st st-accent">通过</span>
-  ) : (
-    <span className="st st-up">未过</span>
-  );
-}
-
 /**
  * 历史报告表（独立分析师页）。列出全部 run（不限股票），点击进入报告页。
- * 三态 + 客户端分页（page/size 入 URL，规则 7）。
+ * issue #7：跨股票列表会因同股多份而平铺重复 —— 按 code 分组，每行显该股最新一份，
+ * 历史/失败折叠可展开；展开态入 URL（规则 7）。分页对**组**进行（不是对行）。
+ * 三态 + 客户端分页（page/size 入 URL）。
  */
 export default function RunHistoryTable({
   runs,
@@ -47,7 +25,9 @@ export default function RunHistoryTable({
   error: string | null;
 }) {
   const navigate = useNavigate();
+  const [query, setParam] = useUrlState();
   const { page, size, setPage, setSize, paginate } = usePagedQuery();
+  const open = query.rh === "1";
 
   if (loading) {
     return (
@@ -71,9 +51,23 @@ export default function RunHistoryTable({
     );
   }
 
-  const paged = paginate(runs);
+  const groups = groupRunsByCode(runs);
+  const paged = paginate(groups);
+  const hasCollapsed = groups.some((g) => g.history.length > 0 || g.unfinished.length > 0);
+  const go = (runId: string) => navigate(`/research/${runId}`);
+
   return (
     <>
+      {hasCollapsed && (
+        <div className="mb-1 flex items-center justify-end">
+          <button
+            onClick={() => setParam("rh", open ? "" : "1")}
+            className="inline-flex items-center gap-1 text-[12px] text-muted hover:text-accent"
+          >
+            {open ? "收起历史版本" : "展开历史版本"}
+          </button>
+        </div>
+      )}
       <div className="panel overflow-x-auto">
         <table className="table">
           <thead>
@@ -83,51 +77,12 @@ export default function RunHistoryTable({
               <th className="text-left">数据截止</th>
               <th className="text-left">状态</th>
               <th className="text-left">机检</th>
-              <th className="text-right" >报告</th>
+              <th className="text-right">报告</th>
             </tr>
           </thead>
           <tbody>
-            {paged.map((r) => (
-              <tr
-                key={r.run_id}
-                role="button"
-                tabIndex={0}
-                className="cursor-pointer"
-                onClick={() => navigate(`/research/${r.run_id}`)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    navigate(`/research/${r.run_id}`);
-                  }
-                }}
-              >
-                <td>
-                  {/* 有公司名 → 「名称(代码)」;未建实体则如实只显代码,不臆测名称 */}
-                  {r.name ? (
-                    <>
-                      <span className="font-semibold">{r.name}</span>
-                      <span className="ml-2 chip">{r.code}</span>
-                    </>
-                  ) : (
-                    <span className="chip">{r.code}</span>
-                  )}
-                </td>
-                <td className="text-muted">
-                  {RESEARCH_PROFILE_LABEL[r.profile] ?? r.profile}
-                </td>
-                <td className="num text-muted">{r.as_of}</td>
-                <td>
-                  <StatusBadge s={r} />
-                </td>
-                <td>
-                  <LintBadge s={r} />
-                </td>
-                <td className="text-right" >
-                  <span className="inline-flex items-center gap-1 text-[12px] text-accent">
-                    查看 <ArrowRight size={12} />
-                  </span>
-                </td>
-              </tr>
+            {paged.map((g) => (
+              <RunGroupRow key={g.key} group={g} open={open} onOpen={go} />
             ))}
           </tbody>
         </table>
@@ -135,7 +90,7 @@ export default function RunHistoryTable({
       <Pagination
         page={page}
         pageSize={size}
-        total={runs.length}
+        total={groups.length}
         onPage={setPage}
         onPageSize={setSize}
       />

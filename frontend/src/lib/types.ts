@@ -457,8 +457,8 @@ export type ResearchRunSummary = {
 
 export type ResearchRunList = { runs: ResearchRunSummary[] };
 
-/** POST /api/v1/research-runs 触发响应 */
-export type ResearchTrigger = { run_id: string; status: ResearchStatus };
+/** POST /api/v1/research-runs 触发响应（reused = 复用了已在跑的同 code+profile，未新建行） */
+export type ResearchTrigger = { run_id: string; status: ResearchStatus; reused?: boolean };
 
 // ---- 个股中心（GET /api/v1/stock/:code，设计 frontend-ia §2.4）----
 

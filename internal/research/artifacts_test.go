@@ -266,6 +266,8 @@ type fakeCLI struct {
 	gatherErr error
 	// gotCode 记录 gather 收到的代码(P9:验证行业主体码传对)。
 	gotCode string
+	// priorMetricsPath 记录 synthesize 收到的 --prior-metrics 路径(验证签名贯通)。
+	priorMetricsPath string
 }
 
 func (f *fakeCLI) materialize(dir, code string) {
@@ -285,12 +287,14 @@ func (f *fakeCLI) gather(_ context.Context, code, _ string, _ int, outDir, _ str
 	return "ok", nil
 }
 
-func (f *fakeCLI) synthesize(_ context.Context, dir, code, synthFile string) (string, error) {
+func (f *fakeCLI) synthesize(_ context.Context, dir, code, synthFile, priorMetricsPath string) (string, error) {
 	// 模拟 research:读 Go 写好的 synthesis.json,渲染 final.md + lint.json。
 	raw, err := os.ReadFile(synthFile)
 	if err != nil {
 		return "", err
 	}
+	// 记录 priorMetricsPath 供用例断言(夹具不真做 lint,只验证签名贯通与传参)。
+	f.priorMetricsPath = priorMetricsPath
 	_ = os.WriteFile(filepath.Join(dir, code+"_final.md"), append([]byte("# 报告\n\n"), raw...), 0o644)
 	_ = os.WriteFile(filepath.Join(dir, code+"_lint.json"), []byte(`{"scanned":9,"matched":9,"ignored":0,"passed":true,"issues":[]}`), 0o644)
 	return "ok", nil

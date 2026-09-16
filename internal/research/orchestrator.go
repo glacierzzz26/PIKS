@@ -35,6 +35,9 @@ type Options struct {
 	Force bool
 	// OutDir 产物目录;空 = 按 run_id 落临时根(续跑时能凭 run_id 找回原目录)。
 	OutDir string
+	// PriorRuns 引用几份既往 done 研报作合成输入(issue #8;0 = 关,新档默认关)。
+	// 关时产物与改动前逐字节一致 —— 首次研报与独立 CLI 路径零回归。
+	PriorRuns int
 }
 
 // Orchestrator 深研编排:exec Python → LLM 合成 → 机检 → 落 PG。
@@ -227,6 +230,15 @@ func (o *Orchestrator) execute(ctx context.Context, opt Options, code, symbol, r
 	if err != nil || prompt == "" {
 		return fmt.Errorf("读合成提示失败(指标卡不可得?): %v", err)
 	}
+	// issue #8:既往 done 研报作合成输入。用 Python 的 prompt 原文 + 追加历史摘要段,
+	// 并把这些 metrics 落成 {code}_prior_metrics.json 供 lint 放开 known 集。
+	// 无历史(PriorRuns=0 或首次研报)→ 下面三步全是 no-op,产物与改动前逐字节一致。
+	priors, priorMetrics := o.loadPriorRuns(ctx, code, runID, opt.PriorRuns)
+	prompt += priorPromptBlock(priors)
+	priorMetricsPath, err := writePriorMetrics(dir, code, priorMetrics)
+	if err != nil {
+		return fmt.Errorf("写历史研报数字失败: %w", err)
+	}
 	// 预算护栏:今日已用 ≥ 预算 → 如实失败,不降级不编造(设计 §4.4)。
 	if err := o.checkBudget(ctx); err != nil {
 		return err
@@ -251,7 +263,8 @@ func (o *Orchestrator) execute(ctx context.Context, opt Options, code, symbol, r
 		return fmt.Errorf("写合成结果失败: %w", err)
 	}
 	// 第 4 步:渲染进报告 + Number Lint(未过退出码 2,已落产物)。
-	if _, err := o.runner.synthesize(ctx, dir, code, arts.synthPath()); err != nil {
+	// priorMetricsPath 为空(synthesize 自动跳过)或指向历史 metrics → lint 把历史数字并入 known。
+	if _, err := o.runner.synthesize(ctx, dir, code, arts.synthPath(), priorMetricsPath); err != nil {
 		return fmt.Errorf("渲染/机检失败: %w", err)
 	}
 	lint, err := readJSON(arts.lintPath())
@@ -276,6 +289,15 @@ func (o *Orchestrator) execute(ctx context.Context, opt Options, code, symbol, r
 		Model: model, Tokens: usage.Total(),
 	}); err != nil {
 		return fmt.Errorf("落合成/机检成果失败: %w", err)
+	}
+	// issue #8:把"参考了 N 份历史研报"标进 metrics.meta(零 schema;前端可如实展示)。
+	// 无历史 → annotatePriorRuns 是 no-op,metrics 保持 Python 产物原样。
+	if len(priorMetrics) > 0 {
+		if err := o.store.SaveResearchArtifacts(ctx, runID, &store.ResearchRun{
+			Metrics: annotatePriorRuns(metrics, len(priorMetrics)),
+		}); err != nil {
+			return fmt.Errorf("标注历史研报引用失败: %w", err)
+		}
 	}
 	res.Tokens, res.Model = usage.Total(), model
 	res.Lint = !lintFailed(lint)

@@ -202,7 +202,11 @@ func (s *Server) researchRunTrigger(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		defer cancel()
-		if _, err := o.Run(ctx, research.Options{RunID: runID, Code: code, Profile: profile, Days: req.Days}); err != nil {
+		// PriorRuns=2:新一期把最近两份 done 研报作合成输入(issue #8),可对比。
+		if _, err := o.Run(ctx, research.Options{
+			RunID: runID, Code: code, Profile: profile, Days: req.Days,
+			PriorRuns: research.PriorRunLimit,
+		}); err != nil {
 			// 编排自身的失败已落 research_runs.error;此处只记服务端日志。
 			log.Printf("research-run %s 编排失败: %v", runID, err)
 		}

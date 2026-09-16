@@ -6,6 +6,7 @@ class Market(Enum):
     SH = "sh"           # 上海证券交易所（主板）
     SZ = "sz"           # 深圳证券交易所（主板/创业板）
     BJ = "bj"           # 北京证券交易所
+    SI = "sw"           # 申万行业指数（研报主体，非股票）
     UNKNOWN = "unknown"
 
     @property
@@ -14,6 +15,7 @@ class Market(Enum):
             Market.SH: "上海证券交易所",
             Market.SZ: "深圳证券交易所",
             Market.BJ: "北京证券交易所",
+            Market.SI: "申万行业指数",
             Market.UNKNOWN: "未知",
         }[self]
 
@@ -35,6 +37,9 @@ class Symbol:
     @property
     def limit_up_pct(self) -> float:
         """涨停幅度（%）"""
+        # 申万行业指数无涨跌停制度（P9）：返回 0 而非按「8 开头」误判为北交所 30%。
+        if self.market == Market.SI:
+            return 0.0
         if self.market == Market.BJ:
             return 30.0
         if self.code.startswith(("30", "68")):
@@ -47,6 +52,8 @@ class Symbol:
     @property
     def limit_down_pct(self) -> float:
         """跌停幅度（%）"""
+        if self.market == Market.SI:
+            return 0.0
         if self.market == Market.BJ:
             return -30.0
         if self.code.startswith(("30", "68")):
@@ -61,10 +68,16 @@ class Symbol:
 
 def resolve_symbol(raw: str) -> Symbol:
     """
-    解析用户输入的股票代码。
-    支持格式：600519, sh600519, 贵州茅台（暂不支持名称，未来接入）
+    解析用户输入的代码。
+    支持格式：600519, sh600519（股票）, sw801010（申万行业指数，研报主体）。
     """
     raw = raw.strip().lower()
+
+    # 申万行业指数（P9 主体轴泛化）：sw + 6 位申万代码，如 sw801010 农林牧渔。
+    # 必须在股票分支**之前**判断：否则 801010 会落到下方「8 开头 → BJ」，
+    # 被当北交所股票并套用 30% 涨跌停（实测错误行为）。
+    if raw.startswith("sw") and len(raw) == 8 and raw[2:].isdigit():
+        return Symbol(code=raw[2:], market=Market.SI)
 
     # 去除市场前缀
     if raw.startswith("sh"):

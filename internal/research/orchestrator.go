@@ -3,7 +3,6 @@ package research
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -73,15 +72,16 @@ type Result struct {
 // Run 执行完整编排(设计 §4.4 六步)。
 // 任何一步失败都如实落 status=failed + error,不掩盖;机检未过 ≠ 失败(报告仍可用)。
 func (o *Orchestrator) Run(ctx context.Context, opt Options) (*Result, error) {
-	code := store.NormalizeCode(opt.Code)
-	if code == "" {
-		return nil, errors.New("股票代码为空")
+	// 主体归一(P9):公司=6 位数字,行业=sw+6 位申万码,宏观=macro:<key>。
+	subjectType, code := store.NormalizeSubject(opt.Code)
+	if subjectType == "" {
+		return nil, fmt.Errorf("无法识别的主体码 %q(公司应为 6 位数字,行业应为 sw+6 位申万代码)", opt.Code)
 	}
 	if opt.Profile == "" {
 		opt.Profile = "complete-stock"
 	}
 
-	symbol := ToFullCode(code)
+	symbol := SubjectFullCode(opt.Code)
 	asOf := time.Now()
 
 	// 运行身份(Identity)与产物目录绑定:续跑沿用同一 run_id + 同一目录,
@@ -350,13 +350,16 @@ func (o *Orchestrator) finishTask(ctx context.Context, id int64, status string, 
 	}
 }
 
-// NewRunID 生成一次深研的 run_id(code+profile+时间戳)。
+// NewRunID 生成一次深研的 run_id(主体 full_code + profile + 时间戳)。
 // 触发端(web)先建 pending 行并立即返回它,后台 goroutine 再按同一 id 续跑 —— 见 §4.8。
+// P9:主体感知 —— 行业主体为 sw801010_industry_...,不再被误加 bj 前缀。
 func NewRunID(code, profile string, t time.Time) string {
-	return fmt.Sprintf("%s_%s_%s", ToFullCode(code), profile, t.Format("20060102_150405"))
+	return fmt.Sprintf("%s_%s_%s", SubjectFullCode(code), profile, t.Format("20060102_150405"))
 }
 
 // ToFullCode 6 位代码 → research full_code(与 src/models/symbol.py resolve_symbol 同规则)。
+// ⚠️ 只用于**股票**:它把 8/43/83/87/88 开头当北交所,会把申万行业码 850111 误标成 bj850111。
+// 非股票主体走 SubjectFullCode。
 func ToFullCode(code string) string {
 	switch {
 	case hasPrefix(code, "600", "601", "603", "605", "688", "689"):
@@ -367,6 +370,28 @@ func ToFullCode(code string) string {
 		return "bj" + code
 	}
 	return code
+}
+
+// SubjectFullCode 主体码 → research full_code(P9 / issue #10,主体轴泛化)。
+// 行业/宏观的规范码已自带前缀(sw801010 / macro:cpi),原样返回 ——
+// 它们不是股票,**不得**加交易所前缀(加 sh/sz/bj 会造出 bj801010 这种错码,
+// 且 Python 侧 resolve_symbol 会把行业码按北交所给 30% 涨跌停,实测)。
+// 公司走既有 ToFullCode,逐字节不变。
+func SubjectFullCode(symbol string) string {
+	subjectType, code := store.NormalizeSubject(symbol)
+	switch subjectType {
+	case store.SubjectIndustry, store.SubjectMacro:
+		return code // 规范码自带前缀
+	default:
+		return ToFullCode(code) // 公司(或不可识别时原样,与既有行为一致)
+	}
+}
+
+// SubjectTypeOf 主体类型(company / industry / macro);不可识别返回 ""。
+// 供 web 层与 DTO 做主体感知分支,不改变任何既有行为。
+func SubjectTypeOf(symbol string) string {
+	st, _ := store.NormalizeSubject(symbol)
+	return st
 }
 
 func hasPrefix(s string, ps ...string) bool {

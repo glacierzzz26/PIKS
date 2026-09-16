@@ -102,8 +102,15 @@ export default function RunHistoryTable({
                 }}
               >
                 <td>
-                  <span className="chip">{r.code}</span>
-                  <span className="ml-2 font-semibold">{r.symbol}</span>
+                  {/* 有公司名 → 「名称(代码)」;未建实体则如实只显代码,不臆测名称 */}
+                  {r.name ? (
+                    <>
+                      <span className="font-semibold">{r.name}</span>
+                      <span className="ml-2 chip">{r.code}</span>
+                    </>
+                  ) : (
+                    <span className="chip">{r.code}</span>
+                  )}
                 </td>
                 <td className="text-muted">
                   {RESEARCH_PROFILE_LABEL[r.profile] ?? r.profile}

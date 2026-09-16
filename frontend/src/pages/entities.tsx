@@ -7,7 +7,7 @@ import { useData } from "@/hooks/useData";
 import { usePagedQuery } from "@/hooks/usePagedQuery";
 import { ENTITY_TYPES } from "@/lib/constants";
 import { ENDPOINTS } from "@/lib/api";
-import { ENTITY_TYPE_LABEL } from "@/lib/format";
+import { ENTITY_TYPE_LABEL, isStockCode } from "@/lib/format";
 import Pagination from "@/components/ui/Pagination";
 import { LoadingBlock, EmptyState, ErrorState } from "@/components/ui/States";
 import DeepResearchButton from "@/components/research/DeepResearchButton";
@@ -145,8 +145,10 @@ function EntitiesInner() {
                 <div className="desc">{e.description}</div>
                 <div className="efoot">
                   <span>更新 <b>{e.updated_at}</b></span>
-                  {/* 带股票代码的公司实体：代码跳个股中心，另提供深研入口（detail.code 归一） */}
-                  {e.code && (
+                  {/* 仅当 detail.code 是合法 6 位数字才给入口:脏数据(代码为名称)不提供
+                      深研/个股跳转,避免拿名称去请求(issue #2)。无 code 的实体
+                      (行业/概念/人物)照旧不显示,仅「有码但非法」时如实标出。 */}
+                  {isStockCode(e.code) ? (
                     <>
                       <Link
                         to={`/stock/${e.code}`}
@@ -156,10 +158,14 @@ function EntitiesInner() {
                         {e.code}
                       </Link>
                       <span onClick={(ev) => ev.stopPropagation()}>
-                        <DeepResearchButton code={e.code} />
+                        <DeepResearchButton code={e.code!} />
                       </span>
                     </>
-                  )}
+                  ) : e.code ? (
+                    <span className="text-faint" title={`无效代码：${e.code}`}>
+                      代码异常：{e.code}
+                    </span>
+                  ) : null}
                 </div>
               </div>
             ))}

@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { Loader2, Microscope, FileText } from "lucide-react";
 import { useResearchRun, STATUS_LABEL } from "@/hooks/useResearchRun";
 import { apiGet, ENDPOINTS } from "@/lib/api";
+import { isStockCode } from "@/lib/format";
 import type { ResearchRunList } from "@/lib/types";
 import { useState } from "react";
 
@@ -13,6 +14,7 @@ import { useState } from "react";
  *   无报告 → 「深研」触发；触发后原地显示状态徽标（文字，非骨架屏）。
  *   有报告 → 「查看报告」直达 /research/:runId。
  * 完成后自动跳报告页。
+ * code 非 6 位数字 → 不渲染深研入口（名称当代码会造出失败 run，issue #2）。
  */
 export default function DeepResearchButton({
   code,
@@ -22,6 +24,22 @@ export default function DeepResearchButton({
   profile?: string;
 }) {
   const navigate = useNavigate();
+  // 先于任何请求判定:非法代码直接不出入口,避免拿名称触发深研/查列表。
+  if (!isStockCode(code)) {
+    return <span className="text-faint" title={`无法深研：代码「${code}」不是 6 位数字`}>—</span>;
+  }
+  return <DeepResearchButtonInner code={code} profile={profile} navigate={navigate} />;
+}
+
+function DeepResearchButtonInner({
+  code,
+  profile,
+  navigate,
+}: {
+  code: string;
+  profile: string;
+  navigate: ReturnType<typeof useNavigate>;
+}) {
   const { runId, status, active, error, trigger } = useResearchRun({ code, profile });
   // 该股是否已有完成的报告（决定首屏渲染「深研」还是「查看报告」）
   const [latest, setLatest] = useState<string | null>(null);

@@ -3,9 +3,8 @@
 import { useState } from "react";
 import { AlertCircle, Loader2, Microscope } from "lucide-react";
 import { RESEARCH_PROFILES } from "@/lib/constants";
+import { isStockCode } from "@/lib/format";
 import { useResearchTrigger } from "@/hooks/useResearchTrigger";
-
-const CODE_RE = /^\d{6}$/;
 
 /**
  * 分析师触发条：6 位代码输入 + 报告类型（profile）+ 触发。
@@ -23,7 +22,7 @@ export default function AnalystTrigger({
   const [code, setCode] = useState("");
   const { trigger, busy, error } = useResearchTrigger();
 
-  const valid = CODE_RE.test(code.trim());
+  const valid = isStockCode(code.trim());
   const submit = () => {
     if (valid && !busy) trigger(code.trim(), profile);
   };

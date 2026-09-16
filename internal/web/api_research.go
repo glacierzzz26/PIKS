@@ -6,6 +6,7 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -25,6 +26,7 @@ type apiResearchRun struct {
 	RunID     string          `json:"run_id"`
 	Code      string          `json:"code"`
 	Symbol    string          `json:"symbol"`
+	Name      string          `json:"name"` // 公司名(仅展示;经 entities.detail.code → name 富化,缺则不臆测)
 	Profile   string          `json:"profile"`
 	AsOf      string          `json:"as_of"`
 	Status    string          `json:"status"`
@@ -48,6 +50,7 @@ type apiResearchRunSummary struct {
 	RunID   string `json:"run_id"`
 	Code    string `json:"code"`
 	Symbol  string `json:"symbol"`
+	Name    string `json:"name"` // 公司名(展示富化;缺则空,前端不臆测)
 	Profile string `json:"profile"`
 	AsOf    string `json:"as_of"`
 	Status  string `json:"status"`
@@ -96,7 +99,7 @@ func (s *Server) handleAPIResearchRun(w http.ResponseWriter, r *http.Request) {
 		apiErrJSON(w, http.StatusNotFound, "报告不存在: "+runID)
 		return
 	}
-	s.writeJSON(w, toAPIResearchRun(row))
+	s.writeJSON(w, toAPIResearchRun(row, s.researchNames(r.Context(), []store.ResearchRun{*row})[row.Code]))
 }
 
 // ==================== 处理 ====================
@@ -122,9 +125,10 @@ func (s *Server) researchRunsList(w http.ResponseWriter, r *http.Request) {
 		s.apiErr(w, "research-runs", err)
 		return
 	}
+	names := s.researchNames(r.Context(), rows)
 	out := make([]apiResearchRunSummary, 0, len(rows))
 	for i := range rows {
-		out = append(out, toSummary(&rows[i]))
+		out = append(out, toSummary(&rows[i], names[rows[i].Code]))
 	}
 	s.writeJSON(w, map[string]any{"runs": out})
 }
@@ -141,9 +145,11 @@ func (s *Server) researchRunTrigger(w http.ResponseWriter, r *http.Request) {
 		apiErrJSON(w, http.StatusBadRequest, "请求体解析失败: "+err.Error())
 		return
 	}
-	code := store.NormalizeCode(req.Code)
+	// 归一后必须为 6 位数字:实体库页可能传来股票名称(detail.code 为名称时),
+	// 名称原样进编排会造出 run_id 含名称的失败记录(issue #2),此处拦在入口。
+	code := store.ValidStockCode(req.Code)
 	if code == "" {
-		apiErrJSON(w, http.StatusBadRequest, "缺少股票代码 code")
+		apiErrJSON(w, http.StatusBadRequest, fmt.Sprintf("缺少有效股票代码(收到 %q,应为 6 位数字)", strings.TrimSpace(req.Code)))
 		return
 	}
 	profile := req.Profile
@@ -207,13 +213,29 @@ func (s *Server) researchProvider() ai.Provider {
 
 // ==================== 转换 ====================
 
-func toAPIResearchRun(r *store.ResearchRun) apiResearchRun {
+// researchNames 批量取 code → 公司名(展示富化)。查库失败不阻断报告渲染:名称是锦上添花,
+// 缺了退回代码即可,不该让整个请求失败(如实降级)。
+func (s *Server) researchNames(ctx context.Context, rows []store.ResearchRun) map[string]string {
+	codes := make([]string, 0, len(rows))
+	for i := range rows {
+		if rows[i].Code != "" {
+			codes = append(codes, rows[i].Code)
+		}
+	}
+	names, err := s.store.CompanyNamesByCodes(ctx, codes)
+	if err != nil {
+		return map[string]string{}
+	}
+	return names
+}
+
+func toAPIResearchRun(r *store.ResearchRun, name string) apiResearchRun {
 	md := ""
 	if r.Markdown != nil {
 		md = *r.Markdown
 	}
 	return apiResearchRun{
-		RunID: r.RunID, Code: r.Code, Symbol: r.Symbol, Profile: r.Profile,
+		RunID: r.RunID, Code: r.Code, Symbol: r.Symbol, Name: name, Profile: r.Profile,
 		AsOf: fmtDate(r.AsOf.In(cst)), Status: r.Status,
 		Metrics: r.Metrics, Synthesis: r.Synthesis, Markdown: md,
 		Lint: r.Lint, Gate: r.Gate, Evidence: r.Evidence,
@@ -223,11 +245,11 @@ func toAPIResearchRun(r *store.ResearchRun) apiResearchRun {
 	}
 }
 
-func toSummary(r *store.ResearchRun) apiResearchRunSummary {
+func toSummary(r *store.ResearchRun, name string) apiResearchRunSummary {
 	return apiResearchRunSummary{
 		ID:    r.ID,
 		RunID: r.RunID,
-		Code:  r.Code, Symbol: r.Symbol, Profile: r.Profile,
+		Code:  r.Code, Symbol: r.Symbol, Name: name, Profile: r.Profile,
 		AsOf: fmtDate(r.AsOf.In(cst)), Status: r.Status,
 		LintOK: research.JSONPassed(r.Lint),
 		GateOK: research.JSONPassed(r.Gate),
@@ -235,14 +257,17 @@ func toSummary(r *store.ResearchRun) apiResearchRunSummary {
 	}
 }
 
-// runTitle 决策记录引用用的可读标题:code + profile(研报无自有 title 字段)。
-func runTitle(r store.ResearchRun) string {
-	code := r.Code
-	if r.Symbol != "" {
-		code = r.Symbol
+// researchRunTitle 决策记录引用用的可读标题:有公司名 → 「名称(代码)」,否则退回代码(不臆测)。
+func researchRunTitle(code, symbol, name, profile string) string {
+	label := code
+	if symbol != "" {
+		label = symbol
 	}
-	if r.Profile != "" {
-		return code + " · " + r.Profile
+	if name != "" {
+		label = name + "(" + code + ")"
 	}
-	return code
+	if profile != "" {
+		return label + " · " + profile
+	}
+	return label
 }

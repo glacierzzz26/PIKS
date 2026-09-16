@@ -71,6 +71,7 @@ export default function Page() {
         <ReportHeader
           code={d.code}
           symbol={d.symbol}
+          name={d.name}
           asOf={d.as_of}
           profile={d.profile}
           status={d.status}

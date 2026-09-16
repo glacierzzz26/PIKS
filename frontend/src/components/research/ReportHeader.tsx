@@ -11,6 +11,7 @@ import { STATUS_LABEL } from "@/hooks/useResearchRun";
 export default function ReportHeader({
   code,
   symbol,
+  name,
   asOf,
   profile,
   status,
@@ -23,6 +24,8 @@ export default function ReportHeader({
 }: {
   code: string;
   symbol: string;
+  /** 公司名；空 = 未建实体，标题退回代码（如实不臆测） */
+  name: string;
   asOf: string;
   profile: string;
   status: ResearchStatus;
@@ -34,6 +37,8 @@ export default function ReportHeader({
   backLabel?: string;
 }) {
   const passed = lintOK && gateOK;
+  // 标题优先公司名，缺则退回 full_code(symbol) —— 后者仍比裸 6 位码可读。
+  const title = name || symbol || code;
   return (
     <div className="panel panel-pad">
       <Link
@@ -44,7 +49,7 @@ export default function ReportHeader({
         {backLabel}
       </Link>
       <div className="flex flex-wrap items-center gap-2.5">
-        <h1 className="m-0 text-xl font-bold">{symbol}</h1>
+        <h1 className="m-0 text-xl font-bold">{title}</h1>
         <Link
           to={`/stock/${code}`}
           className="num text-sm text-muted no-underline hover:text-accent"

@@ -51,6 +51,32 @@ func NormalizeCode(symbol string) string {
 	return s
 }
 
+// IsStockCode 是否为合法 A 股 6 位数字代码。
+// ⚠️ NormalizeCode 只剥前缀、不校验数字:股票名称(如「海南橡胶」)会原样穿过,
+// 一路传到编排层(Python resolve_symbol 拿名字 int() 即炸,issue #2)。所有
+// 代码进入下游(编排/入库/聚合)前都应先过这一关。
+func IsStockCode(code string) bool {
+	if len(code) != 6 {
+		return false
+	}
+	for i := 0; i < len(code); i++ {
+		if code[i] < '0' || code[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// ValidStockCode 归一后校验:合法则返回 6 位代码,否则返回 ""(调用方据此报错,
+// 不要把归一后的名称当代码用)。
+func ValidStockCode(symbol string) string {
+	code := NormalizeCode(symbol)
+	if IsStockCode(code) {
+		return code
+	}
+	return ""
+}
+
 // CreateResearchRun 建行(status=pending);run_id 冲突时走幂等(同 run_id 不新增)。
 // 返回是否新建(false = 已存在,调用方可跳过重跑)。
 func (s *Store) CreateResearchRun(ctx context.Context, r *ResearchRun) (bool, error) {

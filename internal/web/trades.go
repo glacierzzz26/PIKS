@@ -107,7 +107,7 @@ func importPrompt(kind string) (system, user, schema string) {
 		system = `你是 PIKS 的交易截图识别助手。识别同花顺 App「持仓」截图,抽取结构化持仓数据。
 规则:
 - 只抽取截图中明确出现的条目;字段缺失标 null,禁止推断或补全;
-- 名称映射 code(6 位)用截图标注;无代码则 code 填名称;
+- code 只填截图标注的 6 位数字代码;截图无代码则留空(名称只进 name,禁止用名称充当 code);
 - 若图片不是持仓截图,返回空数组 {"positions":[]},不要编造;
 - 仅输出 JSON。`
 		user = "识别这张持仓截图,输出持仓列表。"
@@ -118,7 +118,7 @@ func importPrompt(kind string) (system, user, schema string) {
 规则:
 - 只抽取截图中明确出现的交易;字段缺失标 null,禁止推断或补全;
 - side 用 buy(买入)/sell(卖出)映射截图的「买入/卖出」;
-- date 用截图显示的交易日期(格式 2006-01-02);无 code 则 code 填名称;
+- date 用截图显示的交易日期(格式 2006-01-02);code 只填截图标注的 6 位数字代码,无则留空(名称只进 name,禁止用名称充当 code);
 - 若图片不是今日交易截图,返回空数组 {"trades":[]},不要编造;
 - 仅输出 JSON。`
 	user = "识别这张今日交易截图,输出交易列表。"

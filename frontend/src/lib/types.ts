@@ -419,6 +419,8 @@ export type ResearchRun = {
   run_id: string;
   code: string;
   symbol: string;
+  /** 公司名（后端经 entities.detail.code 富化；空 = 未建实体） */
+  name: string;
   profile: string;
   as_of: string;
   status: ResearchStatus;
@@ -441,6 +443,8 @@ export type ResearchRunSummary = {
   run_id: string; // 业务键（深链 /research/:runId、轮询用）
   code: string;
   symbol: string;
+  /** 公司名（后端经 entities.detail.code 富化；空 = 未建实体，如实不臆测） */
+  name: string;
   profile: string;
   as_of: string;
   status: ResearchStatus;

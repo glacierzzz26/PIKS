@@ -160,8 +160,9 @@ func (s *Server) handleAPIStock(w http.ResponseWriter, r *http.Request) {
 		s.apiErr(w, "stock", err)
 		return
 	}
+	names := s.researchNames(ctx, runs)
 	for i := range runs {
-		out.Research = append(out.Research, toSummary(&runs[i]))
+		out.Research = append(out.Research, toSummary(&runs[i], names[runs[i].Code]))
 	}
 
 	// 3. 我的持仓与成交(只依赖 code)。

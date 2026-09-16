@@ -29,6 +29,7 @@ const PAGES = [
   { path: "/events", kind: "spa" }, // 消息页主 tab
   { path: "/flashes", kind: "spa" }, // 旧深链 → 消息页快讯 tab
   { path: "/research", kind: "spa" },
+  { path: "/reports", kind: "spa" }, // P9-2 研报列表(体裁独立入口)
   { path: "/trades", kind: "spa" },
   { path: "/reviews", kind: "spa" },
   { path: "/weekly", kind: "spa" },

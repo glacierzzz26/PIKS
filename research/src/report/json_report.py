@@ -12,6 +12,7 @@ from ..analysis.capital import CapitalMetrics
 from ..analysis.scorecard import Scorecard
 from ..analysis.industry import IndustryMetrics
 from ..models.financial import FinancialSnapshot
+from .sections import DEFAULT_SECTIONS, build_manifest
 
 
 def generate_json(
@@ -27,18 +28,25 @@ def generate_json(
     scorecard: Optional[Scorecard] = None,
     industry: Optional[Any] = None,
     industry_metrics: Optional[IndustryMetrics] = None,
+    sections: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """生成 JSON 结构化报告
 
     industry_metrics: 行业**本体**指标卡(P9 #12,主体=申万行业指数)。
       与 industry(个股所属行业的同业对比)是两回事,JSON 键分别为
       `industry_index` / `industry`。
+    sections: Profile 章节清单 —— 用于产出 `meta.section_manifest`(前端 TOC +
+      三域标记的数据源,D-R8)。缺省则用 markdown.py 的历史默认(兼容旧调用)。
     """
     result = {
         "meta": {
             "symbol": symbol,
             "as_of": as_of.isoformat(),
             "data_source": "akshare/tencent",
+            # 章节清单(D-R8,零 schema):前端据此渲染目录与三域标签,**不解析
+            # markdown 标题**(裸 react-markdown 无锚点、不可靠)。与 markdown.py
+            # 的正文装配同源(都出自 sections.py),故不会错位。新增字段不升 contract。
+            "section_manifest": build_manifest(sections or list(DEFAULT_SECTIONS)),
         },
     }
 

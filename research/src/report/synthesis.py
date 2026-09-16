@@ -186,13 +186,17 @@ def validate_synthesis(
 def render_synthesis(
     markdown: str,
     blocks: Optional[Dict[str, str]],
-    include_section: bool = True,
+    include_section: bool = False,
 ) -> str:
     """
     把 LLM 定性段落渲染进 Markdown 模板。
 
-    - 有内容：注入槽位
+    - 有内容：注入槽位（三个 `### ` 子段）
     - 无内容：用占位符（_待 AI 综合研判_）
+
+    include_section 默认 **False**(P9 D-R6 摘要前置):骨架已含「## 一、执行摘要」
+    章标题,此处只需注入三子段。置 True 会另起「## 九、AI 综合研判」把 AI 段落又
+    搬到文末 —— 正是改造前的硬伤,仅作兼容保留。
     """
     blocks = blocks or {}
 

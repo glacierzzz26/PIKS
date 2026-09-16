@@ -20,6 +20,8 @@ import Trades from "@/pages/trades";
 import Chat from "@/pages/chat";
 import Settings from "@/pages/settings";
 import Research from "@/pages/research";
+import Reports from "@/pages/reports";
+import ReportDetail from "@/pages/report/[runId]";
 import Analyst from "@/pages/analyst";
 import Stock from "@/pages/stock/[code]";
 
@@ -55,6 +57,9 @@ export default function App() {
         <Route path="/trades" element={<Trades />} />
         <Route path="/research" element={<Analyst />} />
         <Route path="/research/:runId" element={<Research />} />
+        {/* 研报体裁（P9-2 §6）：独立入口，与个股分析并存不互替（D-R1） */}
+        <Route path="/reports" element={<Reports />} />
+        <Route path="/reports/:runId" element={<ReportDetail />} />
         <Route path="/stock/:code" element={<Stock />} />
         <Route path="/chat" element={<Chat />} />
         <Route path="/settings" element={<Settings />} />

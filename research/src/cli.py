@@ -177,7 +177,10 @@ def run_synthesize(args) -> None:
 
     # 渲染最终报告
     skeleton = skeleton_path.read_text(encoding="utf-8")
-    final_md = render_synthesis(skeleton, blocks, include_section=True)
+    # include_section=False:D-R6 摘要前置后,骨架里已有「## 一、执行摘要」章标题
+    # (见 markdown.py),此处只注入三个 `### ` 子槽。若再 include_section=True,
+    # 会额外插一个「## 九、AI 综合研判」把 AI 段落又搬回文末 —— 正是改造前的问题。
+    final_md = render_synthesis(skeleton, blocks, include_section=False)
 
     # Number Lint 事后扫描 LLM 文本
     metrics = json.loads(metrics_path.read_text(encoding="utf-8"))

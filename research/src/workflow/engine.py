@@ -25,6 +25,17 @@ from .profile import ResearchProfile, ThresholdConfig
 from .plan import ResearchPlan, Task, TaskType
 
 
+def _display_days(profile: ResearchProfile, key: str, default: int) -> int:
+    """Profile 的展示窗口天数(如 "250d" → 250)。缺省用 default。"""
+    raw = profile.period.display.get(key, "")
+    if isinstance(raw, str) and raw.endswith("d"):
+        try:
+            return int(raw.rstrip("d"))
+        except ValueError:
+            pass
+    return default
+
+
 @dataclass
 class WorkflowResult:
     """工作流执行结果"""
@@ -179,6 +190,51 @@ class WorkflowEngine:
             industry = provider.get_industry(self.symbol)
             self.context["industry"] = industry
 
+        elif provider_name == "industry_index":
+            # 行业**本体**(P9 #12):主体是申万行业指数。需要全历史(点位分位,见下),
+            # 故采集窗口取 profile.compute.price(6000d ≈ 全量 6456 交易日),展示窗口另裁。
+            self._collect_industry_index()
+
+    def _collect_industry_index(self) -> None:
+        """行业本体采集(P9 #12)。失败即抛(非 optional)—— 行业报告的行情是主章节,
+        采不到就该如实失败,不像「个股的同业对比」那样可降级。"""
+        from ..providers.industry.sw_index_provider import SwIndexProvider
+
+        provider = SwIndexProvider()
+        ref = provider.resolve(self.symbol.code)
+        if ref is None:
+            raise ValueError(
+                f"申万行业码 {self.symbol.code} 不在申万一级/二级/三级行业表中"
+                f"(行业码↔名称必须查表,不按前缀推断)"
+            )
+        # 全历史:index_hist_sw 实测 6456 行(1999-12-30 起)。天数上限即全量。
+        history_days = _display_days(self.profile, "price", 250)
+        compute_days = 6000
+        raw = self.profile.period.compute.get("price", "")
+        if raw.endswith("d"):
+            try:
+                compute_days = int(raw.rstrip("d"))
+            except ValueError:
+                pass
+        history_start = self.as_of - timedelta(days=compute_days * 2)
+        history_bars = provider.get_history(self.symbol, history_start, self.as_of)
+        if not history_bars:
+            raise ValueError(f"申万行业 {ref.code} {ref.name} 无行情序列")
+
+        display_bars = history_bars[-history_days:] if len(history_bars) > history_days else history_bars
+        constituents = provider.get_constituents(ref)
+        rank = provider.valuation_rank(ref)
+
+        self.context["industry_ref"] = ref
+        self.context["industry_history_bars"] = history_bars
+        self.context["industry_display_bars"] = display_bars
+        self.context["industry_constituents"] = constituents
+        self.context["industry_valuation_rank"] = rank
+        # 个股的 Evidence 由 _refresh_evidence 建(它要求 bars,对指数不适用),
+        # 行业路径在此自建空 store,供后续 add_industry_evidence 填。
+        if self.context.get("evidence_store") is None:
+            self.context["evidence_store"] = EvidenceStore()
+
     def _execute_analyze(self, task: Task) -> None:
         analysis_name = task.analysis
         bars = self.context.get("bars", [])
@@ -186,6 +242,21 @@ class WorkflowEngine:
         valuation = self.context.get("valuation")
         news = self.context.get("news", [])
         announcements = self.context.get("announcements", [])
+
+        if analysis_name == "industry_index":
+            from ..analysis.industry import analyze_industry
+            ref = self.context.get("industry_ref")
+            if ref is None:
+                raise ValueError("无行业主体,无法计算行业指标")
+            self.context["industry_metrics"] = analyze_industry(
+                ref,
+                self.context.get("industry_display_bars", []),
+                self.context.get("industry_history_bars", []),
+                self.context.get("industry_constituents", []),
+                self.context.get("industry_valuation_rank"),
+                self.as_of,
+            )
+            return
 
         if analysis_name == "price":
             if not bars:
@@ -216,7 +287,20 @@ class WorkflowEngine:
             price = self.context.get("price_metrics")
             volume = self.context.get("volume_metrics")
             financial = self.context.get("financial_metrics")
-            if price and volume:
+            # 行业主体(P9 #12)走独立风险引擎:个股风险依据「换手率+成交额」,
+            # 而申万指数这两个字段量纲不可靠 —— 套用会产出基于假数字的结论。
+            im = self.context.get("industry_metrics")
+            if im is not None:
+                from ..analysis.industry import analyze_industry_risk
+                self.context["industry_risk_metrics"] = analyze_industry_risk(im, self.as_of)
+                # 行业 Evidence(个股的 _refresh_evidence 依赖 bars,对指数不适用)
+                from ..analysis.engine import add_industry_evidence
+                store = self.context.get("evidence_store")
+                if store is not None:
+                    add_industry_evidence(
+                        store, im, self.context["industry_risk_metrics"]
+                    )
+            elif price and volume:
                 self.context["risk_metrics"] = analyze_risk(
                     price, volume, financial, announcements
                 )
@@ -278,6 +362,12 @@ class WorkflowEngine:
         events = self.context.get("event_metrics")
         risk = self.context.get("risk_metrics")
         capital = self.context.get("capital_metrics")
+        industry_metrics = self.context.get("industry_metrics")
+        industry_risk = self.context.get("industry_risk_metrics")
+
+        # 行业主体:风险章节用行业风险引擎的产物(个股 risk_metrics 为 None)。
+        if industry_metrics is not None and industry_risk is not None:
+            risk = industry_risk
 
         scorecard = self.context.get("scorecard")
 
@@ -293,6 +383,7 @@ class WorkflowEngine:
             capital,
             scorecard,
             industry=self.context.get("industry"),
+            industry_metrics=industry_metrics,
             sections=self.plan.sections,
         )
 
@@ -308,6 +399,7 @@ class WorkflowEngine:
             capital,
             scorecard,
             industry=self.context.get("industry"),
+            industry_metrics=industry_metrics,
         )
 
         evidence = self.context.get("evidence_store")

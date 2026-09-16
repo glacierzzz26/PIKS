@@ -38,11 +38,14 @@ def generate_markdown(
     capital_metrics: Optional[CapitalMetrics] = None,
     scorecard: Optional[Scorecard] = None,
     industry: Optional[Any] = None,
+    industry_metrics: Optional[Any] = None,
     data_source: str = "腾讯财经/akshare",
     sections: Optional[List[str]] = None,
 ) -> str:
     """生成 Markdown 报告（模板槽位渲染）
 
+    industry_metrics: 行业**本体**指标卡(P9 #12,主体=申万行业指数)。给了它就渲染
+        行业三章(行情/估值/成分),而非个股的「行业对比」章。
     sections: Profile 要求的报告章节（如 ["market","volume","events",...]），
               决定渲染哪些章节；默认全部（兼容旧调用）。
     """
@@ -53,7 +56,12 @@ def generate_markdown(
 
     fin_section = _build_financial_section(fin_metrics, snapshots)
     event_section = _build_event_section(event_metrics)
-    risk_section = _build_risk_section(risk_metrics)
+    # 风险章节(P9 #12):行业主体的 risk_metrics 是 IndustryRiskMetrics(无 veto_buy、
+    # 无涨跌停/流动性依据),走独立渲染器;个股路径逐字节不变。
+    if industry_metrics is not None:
+        risk_section = _build_industry_risk_section(risk_metrics)
+    else:
+        risk_section = _build_risk_section(risk_metrics)
     capital_section = _build_capital_section(capital_metrics)
     scorecard_section = _build_scorecard_section(scorecard)
 
@@ -102,6 +110,15 @@ def generate_markdown(
     if "industry" in sections:
         add_section("行业对比", _build_industry_section(industry))
 
+    # 行业本体三章(P9 #12):主体是行业指数,不是个股。与上面的「行业对比」互斥 ——
+    # industry profile 不含 "industry" section,个股 profile 不含这三个。
+    if "industry_index" in sections:
+        add_section("行业行情", _build_industry_price_section(industry_metrics))
+    if "industry_valuation" in sections:
+        add_section("估值定位", _build_industry_valuation_section(industry_metrics))
+    if "industry_structure" in sections:
+        add_section("成分结构", _build_industry_structure_section(industry_metrics))
+
     if "capital" in sections:
         add_section("资金面分析（龙虎榜）", capital_section)
 
@@ -120,10 +137,20 @@ def generate_markdown(
 {{ai_synthesis}}
 """)
 
-    return f"""# 个股研究报告：{symbol}
+    # 封面头:主体感知(P9 #12)。行业主体没有 price_metrics(profile 不含 price 分析),
+    # 硬套「个股研究报告」与 price_metrics.period_days 会既错又崩。
+    if industry_metrics is not None:
+        ref = industry_metrics.ref
+        title = f"行业研究报告：{ref.name}（{ref.level_label} {ref.code}）"
+        period_line = f"> 研究周期：近 {industry_metrics.price.period_days} 个交易日"
+    else:
+        title = f"个股研究报告：{symbol}"
+        period_line = f"> 研究周期：近 {price_metrics.period_days} 个交易日"
+
+    return f"""# {title}
 
 > 报告生成时间：{as_of.isoformat()}
-> 研究周期：近 {price_metrics.period_days} 个交易日
+{period_line}
 > 数据来源：{data_source}
 
 ---
@@ -216,6 +243,98 @@ def _build_industry_section(industry: Optional[Any]) -> str:
     lines.append("> Phase 1 降级：仅做同业横比，不做景气度判断。财务数据缺失标 N/A，不推测。")
     lines.append("")
     return "\n".join(lines)
+
+
+def _build_industry_price_section(im: Optional[Any]) -> str:
+    """行业行情章节(P9 #12)。只写点位派生量 —— 不含成交额/换手(量纲不可靠)。"""
+    if im is None:
+        return "_行业行情暂不可得。_\n"
+    p = im.price
+    ref = im.ref
+
+    # 历史起点如实标注:三级新设码历史短(851251 实测仅 2021-12-13 起),不能一律写「1999 年以来」。
+    hist = ""
+    if p.point_percentile is not None and p.history_start is not None:
+        hist = (f"\n当前点位处于 **{p.history_start.isoformat()} 以来 {p.history_days} 个交易日"
+                f"的 {p.point_percentile:.1f}% 分位**（点位分位，非估值分位）。\n")
+    elif p.point_percentile is not None:
+        hist = f"\n当前点位处于历史 {p.history_days} 个交易日的 {p.point_percentile:.1f}% 分位。\n"
+
+    return f"""**{ref.name}**（{ref.level_label} {ref.code}{'，上级：' + ref.parent if ref.parent else ''}）
+
+| 指标 | 数值 |
+|---|---|
+| 最新收盘点位 | {p.end_point:.2f} |
+| 区间涨跌幅 | {p.period_return_pct:+.2f}% |
+| 5 日涨跌幅 | {format_optional(p.return_pct_5d, '{:+.2f}', '%')} |
+| 20 日涨跌幅 | {format_optional(p.return_pct_20d, '{:+.2f}', '%')} |
+| 60 日涨跌幅 | {format_optional(p.return_pct_60d, '{:+.2f}', '%')} |
+| 区间最大回撤 | {p.max_drawdown_pct:.2f}% |
+| 年化波动率 | {p.volatility_annual:.2f}% |
+{hist}
+> 口径说明：行业指数无涨跌停制度，亦**不提供成交额/换手率**（申万指数该字段量纲与 A 股个股不一致，本报告不采集、不推测）。
+"""
+
+
+def _build_industry_valuation_section(im: Optional[Any]) -> str:
+    """估值定位章节(P9 #12 / D-R7)。
+
+    ⚠️ **只做横截面排名,禁止历史分位表述** —— 申万行业估值只有当期快照
+    (sw_index_*_info),无历史序列。写「近 5 年 X% 分位」= 编造。
+    """
+    if im is None:
+        return "_行业估值暂不可得。_\n"
+    ref = im.ref
+    r = im.valuation_rank
+
+    rank_line = "N/A"
+    if r.rank is not None:
+        rank_line = f"{r.value:.2f}（{r.level_label} {r.universe} 个行业中第 {r.rank}）"
+
+    return f"""| 指标 | 数值 |
+|---|---|
+| PE（静态） | {format_optional(ref.pe_static, '{:.2f}')} |
+| PE（TTM 滚动） | {format_optional(ref.pe_ttm, '{:.2f}')} |
+| PB | {format_optional(ref.pb, '{:.2f}')} |
+| 股息率（静态） | {format_optional(ref.dividend_yield, '{:.2f}', '%')} |
+| **PE(TTM) 横截面位次** | {rank_line} |
+
+> 口径说明：以上为**当期快照**，横截面位次在{ref.level_label}同层级行业内比较。
+> 数据源不提供行业估值的历史序列，故本报告**不作估值历史分位判断**。
+"""
+
+
+def _build_industry_structure_section(im: Optional[Any]) -> str:
+    """成分结构章节(P9 #12)。中位 + 四分位,不做均值(财务比率受极值影响)。"""
+    if im is None:
+        return "_成分结构暂不可得。_\n"
+    d = im.dispersion
+    ref = im.ref
+
+    if d.count == 0:
+        return (f"_成分股明细暂不可得_（{ref.level_label}成分需经三级行业聚合；"
+                f"行业表挂牌成份数 {im.declared_count or 'N/A'}）。\n")
+
+    roe_q = ""
+    if d.roe_q1 is not None and d.roe_q3 is not None:
+        roe_q = f"（四分位 {d.roe_q1:.2f}% ~ {d.roe_q3:.2f}%）"
+
+    count_note = f"{d.count} 只"
+    if im.declared_count is not None and im.declared_count != d.count:
+        # 不等就如实说 —— 不假装聚合完整(新成份未纳入三级表等)
+        count_note = f"{d.count} 只（行业表挂牌 {im.declared_count} 只）"
+
+    return f"""| 指标 | 数值 |
+|---|---|
+| 成分股数量 | {count_note} |
+| 成分合计市值 | {format_optional(d.cap_sum, '{:,.0f}', ' 亿元')} |
+| ROE 中位 | {format_optional(d.roe_median, '{:.2f}', '%')}{roe_q} |
+| 净利润增速中位 | {format_optional(d.net_profit_growth_median, '{:.1f}', '%')} |
+| 营收增速中位 | {format_optional(d.revenue_growth_median, '{:.1f}', '%')} |
+| PE(TTM) 中位 | {format_optional(d.pe_ttm_median, '{:.2f}')} |
+
+> 口径说明：用**中位数**而非均值（财务比率受极值影响大）。成分财务为个股当期快照。
+"""
 
 
 def _build_event_section(event_metrics: Optional[EventMetrics]) -> str:
@@ -343,6 +462,26 @@ def _build_capital_section(capital_metrics: Optional[CapitalMetrics]) -> str:
     lines.append(f"**主导力量**: {capital_metrics.dominant_force} | **合计净额**: {capital_metrics.total_net_buy/1e4:+.0f} 万元")
     lines.append("")
 
+    return "\n".join(lines)
+
+
+def _build_industry_risk_section(risk_metrics: Optional[Any]) -> str:
+    """行业风险章节(P9 #12):纯文字,无 emoji(强制规则 3)。"""
+    if risk_metrics is None:
+        return "_风险分析暂不可得。_\n"
+
+    level_word = {"low": "低", "medium": "中", "high": "高"}
+    lines = [f"**综合风险等级**: {level_word.get(risk_metrics.overall_level, risk_metrics.overall_level)}", ""]
+
+    if risk_metrics.items:
+        lines.append("| 风险类别 | 等级 | 依据 | 说明 |")
+        lines.append("|---|---|---|---|")
+        for item in risk_metrics.items:
+            lines.append(f"| {item.category} | {item.level.upper()} | {item.evidence} | {item.description} |")
+        lines.append("")
+    else:
+        lines.append("未发现显著风险信号。")
+        lines.append("")
     return "\n".join(lines)
 
 

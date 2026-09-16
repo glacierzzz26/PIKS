@@ -13,3 +13,8 @@ storage/
 
 # 运行产物(由 cmd/research-run 写到共享 volume,不入库)
 out/
+
+# Provider 磁盘缓存(申万行业表/成分——官网限流时的回退源)
+# ⚠️ 忽略的是**新**缓存只读文件;src/cache/ 下少数既有 .json 已入库(历史提交),
+# 不受影响(gitignore 不作用于已跟踪文件)。
+src/cache/sw_index_*.json

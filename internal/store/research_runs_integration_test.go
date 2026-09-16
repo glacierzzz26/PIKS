@@ -201,3 +201,76 @@ func TestListPriorDoneResearchRuns(t *testing.T) {
 	t.Logf("ListPriorDoneResearchRuns ok: done=%d exclude=%d limit=%d empty=%d",
 		len(got), len(got2), len(got3), len(got4))
 }
+
+// TestFindActiveResearchRun 触发侧防重查询(issue #7):
+// 只匹配「进行中」的 run;done/failed 不算(历史版本是刻意保留的时间序列)。
+// 用独立 code 保证与其它测试互不干扰,结束清理。
+func TestFindActiveResearchRun(t *testing.T) {
+	if os.Getenv("PIKS_TEST_INTEGRATION") == "" {
+		t.Skip("PIKS_TEST_INTEGRATION not set (integration off by default)")
+	}
+	dsn := os.Getenv("PIKS_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("PIKS_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	pool, err := store.Open(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := store.New(pool)
+
+	// 用一个测试专用 code,避免与真实数据/其它测试撞车。
+	const code = "999998"
+	// LIFO:先注册关池(最后跑),再注册删行(先跑)。
+	t.Cleanup(func() { pool.Close() })
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM research_runs WHERE code=$1`, code) })
+	_, _ = pool.Exec(ctx, `DELETE FROM research_runs WHERE code=$1`, code)
+
+	asOf := time.Date(2026, 9, 11, 0, 0, 0, 0, time.UTC)
+
+	// 1. 无 run → 查不到
+	if got, err := s.FindActiveResearchRun(ctx, code, "short-term"); err != nil || got != nil {
+		t.Fatalf("empty: got=%v err=%v", got, err)
+	}
+
+	// 2. 建一条 pending → 命中
+	runID := "test_sz999998_short-term_" + time.Now().Format("20060102150405.000000")
+	if _, err := s.CreateResearchRun(ctx, &store.ResearchRun{
+		RunID: runID, Code: code, Symbol: "sz999998", Profile: "short-term", AsOf: asOf,
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, err := s.FindActiveResearchRun(ctx, code, "short-term")
+	if err != nil || got == nil || got.RunID != runID {
+		t.Fatalf("pending should be active: got=%v err=%v", got, err)
+	}
+
+	// 3. 不同 profile 不该命中(防重按 code+profile 成对)
+	if other, err := s.FindActiveResearchRun(ctx, code, "complete-stock"); err != nil || other != nil {
+		t.Fatalf("other profile should miss: got=%v err=%v", other, err)
+	}
+
+	// 4. 收尾为 done → 不再算进行中(已完成的历史版本不该被复用)
+	if err := s.FinishResearchRun(ctx, runID, "done", "", nil); err != nil {
+		t.Fatalf("finish: %v", err)
+	}
+	if got, err := s.FindActiveResearchRun(ctx, code, "short-term"); err != nil || got != nil {
+		t.Fatalf("done should not be active: got=%v err=%v", got, err)
+	}
+
+	// 5. failed 同样不算
+	runID2 := "test_sz999998_short-term_" + time.Now().Format("20060102150405.000001")
+	if _, err := s.CreateResearchRun(ctx, &store.ResearchRun{
+		RunID: runID2, Code: code, Symbol: "sz999998", Profile: "short-term", AsOf: asOf,
+	}); err != nil {
+		t.Fatalf("create2: %v", err)
+	}
+	if err := s.FinishResearchRun(ctx, runID2, "failed", "采集失败: 测试", nil); err != nil {
+		t.Fatalf("finish2: %v", err)
+	}
+	if got, err := s.FindActiveResearchRun(ctx, code, "short-term"); err != nil || got != nil {
+		t.Fatalf("failed should not be active: got=%v err=%v", got, err)
+	}
+	t.Logf("FindActiveResearchRun ok: pending hit, done/failed/other-profile miss")
+}

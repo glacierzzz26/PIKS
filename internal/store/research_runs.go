@@ -77,6 +77,35 @@ func ValidStockCode(symbol string) string {
 	return ""
 }
 
+// ActiveResearchStatuses 进行中的状态集(SQL 与 Go 判定共用同一来源,勿分散硬编码)。
+// 放 store 而非 research:store 持有 SQL;且 research 已 import store(不可反向依赖)。
+// ⚠️ 前端镜像见 frontend/src/hooks/useResearchRun.ts 的 ACTIVE(改这里须同步)。
+var ActiveResearchStatuses = []string{"pending", "gathering", "synthesizing", "verifying"}
+
+// FindActiveResearchRun 查同 code+profile 最近一条「进行中」的 run(无则 nil)。
+// 触发侧防重用:同秒双击由 run_id 秒级时间戳挡住,但隔几秒的重复触发挡不住
+// (实测 600519 prebuy 15:38:46 与 15:39:39 各落一行)。此查询让 web 端点复用在跑的那一回。
+// 只匹配进行中状态 —— done/failed 不算,历史版本是刻意保留的时间序列(决策记录依赖)。
+func (s *Store) FindActiveResearchRun(ctx context.Context, code, profile string) (*ResearchRun, error) {
+	rows, err := s.Pool.Query(ctx,
+		`SELECT `+researchRunCols+` FROM research_runs
+		 WHERE code=$1 AND profile=$2 AND status = ANY($3)
+		 ORDER BY created_at DESC LIMIT 1`,
+		NormalizeCode(code), profile, ActiveResearchStatuses)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	r, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[ResearchRun])
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
 // CreateResearchRun 建行(status=pending);run_id 冲突时走幂等(同 run_id 不新增)。
 // 返回是否新建(false = 已存在,调用方可跳过重跑)。
 func (s *Store) CreateResearchRun(ctx context.Context, r *ResearchRun) (bool, error) {

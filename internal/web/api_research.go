@@ -157,6 +157,23 @@ func (s *Server) researchRunTrigger(w http.ResponseWriter, r *http.Request) {
 		profile = "complete-stock"
 	}
 
+	// 触发侧防重(issue #7):同 code+profile 已有「进行中」的 run → 复用它,不落新行。
+	// 同秒双击本由 run_id 的秒级时间戳 + ON CONFLICT 挡住,但隔几秒的重复触发挡不住
+	// (实测 600519 prebuy 15:38:46 与 15:39:39 各落一行)。刷新页面/多标签也走这里。
+	// ⚠️ 只复用进行中的:done/failed 不算 —— 已完成后再点「重新分析」是刻意保留的
+	// 时间序列(决策记录 based_on 边指向 research_runs.id,不能被覆盖)。
+	if active, err := s.store.FindActiveResearchRun(r.Context(), code, profile); err != nil {
+		s.apiErr(w, "research-trigger", err)
+		return
+	} else if active != nil && !s.researchRunStale(active) {
+		// 陈旧判定兜底:服务重启会让状态永远卡在 gathering/synthesizing(没人再推进它),
+		// 此时不该无限复用一个死 run,照常新建。
+		s.writeJSON(w, map[string]any{
+			"run_id": active.RunID, "status": active.Status, "reused": true,
+		})
+		return
+	}
+
 	// per-run 可取消:请求断开不该杀后台任务,故用独立的 Background ctx + 编排总超时兜底。
 	ctx, cancel := context.WithTimeout(context.Background(), research.TimeoutTotal)
 
@@ -193,6 +210,14 @@ func (s *Server) researchRunTrigger(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusAccepted)
 	s.writeJSON(w, map[string]any{"run_id": runID, "status": research.StatusPending})
+}
+
+// researchRunStale 判断一条「进行中」的 run 是否已死(不该再被复用)。
+// 编排总上限 TimeoutTotal 之后必然有定论(done/failed)——若状态仍是进行中,
+// 说明推进它的进程没了(服务重启/容器重建),该 run 永远不会再变。
+// 留 5 分钟余量,避免把正在收尾的 run 误判为死。
+func (s *Server) researchRunStale(r *store.ResearchRun) bool {
+	return time.Since(r.CreatedAt) > research.TimeoutTotal+5*time.Minute
 }
 
 // researchProvider 构造 AI provider(与 settings/trades 同源:app_config)。

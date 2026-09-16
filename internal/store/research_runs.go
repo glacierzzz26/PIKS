@@ -175,6 +175,31 @@ func (s *Store) ListResearchRuns(ctx context.Context, code string, limit int) ([
 	return pgx.CollectRows(rows, pgx.RowToStructByName[ResearchRun])
 }
 
+// ListPriorDoneResearchRuns 取同 code 既往**已完成**的报告(issue #8:新一期把旧研报作输入)。
+// 只取 status='done':半成品/失败的报告没有可信结论,不该喂给 LLM 当"上次怎么看"。
+// excludeRunID 排除本次 run(它此刻还是 pending,本不会命中,但显式排除更稳)。
+// 按 as_of DESC(最近的在最前);limit<=0 视为不限制。
+func (s *Store) ListPriorDoneResearchRuns(ctx context.Context, code, excludeRunID string, limit int) ([]ResearchRun, error) {
+	q := `SELECT ` + researchRunCols + ` FROM research_runs
+	      WHERE code=$1 AND status='done'`
+	args := []any{NormalizeCode(code)}
+	if excludeRunID != "" {
+		args = append(args, excludeRunID)
+		q += ` AND run_id <> $2`
+	}
+	q += ` ORDER BY as_of DESC, created_at DESC`
+	if limit > 0 {
+		q += ` LIMIT $` + strconv.Itoa(len(args)+1)
+		args = append(args, limit)
+	}
+	rows, err := s.Pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[ResearchRun])
+}
+
 // ListResearchRunsByIDs 按 research_runs.id(UUID)批量取报告 —— 决策记录 P6-4 回读用。
 // 只取 done 状态:决策关联的应是已产出的报告,半成品/失败的不该出现在"当时在看什么"。
 func (s *Store) ListResearchRunsByIDs(ctx context.Context, ids []string) ([]ResearchRun, error) {

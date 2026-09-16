@@ -64,6 +64,8 @@ export default function Page() {
 
   const lintOK = d.lint?.passed ?? false;
   const gateOK = d.gate?.passed ?? false;
+  // issue #8:本份参考了几份历史研报（后端落 metrics.meta.prior_runs，零 schema）。
+  const priorRuns = Number(d.metrics?.meta?.prior_runs ?? 0);
 
   return (
     <div className="mx-auto max-w-[1100px]">
@@ -109,6 +111,11 @@ export default function Page() {
           <div className="mt-4">
             <FactSection metrics={d.metrics} evidence={d.evidence ?? []} />
           </div>
+          {priorRuns > 0 && (
+            <div className="mt-3 text-[12px] text-faint">
+              本份参考了 {priorRuns} 份既往研报（AI 研判中的「较上次」对比即源于此）
+            </div>
+          )}
           <OpinionSection synthesis={d.synthesis} model={d.model} tokens={d.tokens} />
           <GatePanel lint={d.lint} gate={d.gate} />
 

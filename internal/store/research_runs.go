@@ -51,6 +51,112 @@ func NormalizeCode(symbol string) string {
 	return s
 }
 
+// IsStockCode 是否为合法 A 股 6 位数字代码。
+// ⚠️ NormalizeCode 只剥前缀、不校验数字:股票名称(如「海南橡胶」)会原样穿过,
+// 一路传到编排层(Python resolve_symbol 拿名字 int() 即炸,issue #2)。所有
+// 代码进入下游(编排/入库/聚合)前都应先过这一关。
+func IsStockCode(code string) bool {
+	if len(code) != 6 {
+		return false
+	}
+	for i := 0; i < len(code); i++ {
+		if code[i] < '0' || code[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// ValidStockCode 归一后校验:合法则返回 6 位代码,否则返回 ""(调用方据此报错,
+// 不要把归一后的名称当代码用)。
+func ValidStockCode(symbol string) string {
+	code := NormalizeCode(symbol)
+	if IsStockCode(code) {
+		return code
+	}
+	return ""
+}
+
+// ---- 主体轴(P9 / issue #10):研报的主体不一定是个股 ----
+
+// 主体类型。研报三类(行业/公司/宏观)共用一套版面,差异由 subject_type + 章节清单驱动
+// (docs/phase9/design/report-layout.md D-R2/D-R3)。
+const (
+	// SubjectIndustry 申万行业指数。写法 sw + 6 位申万代码。
+	// 前缀选 sw(而非裸 6 位数字)是为了与 A 股代码**语法上互斥**:
+	// NormalizeCode 只剥 sh/sz/bj 且要求 len==前缀+6,对 sw801010 原样穿过;
+	// IsStockCode 见非数字即 false —— 股票逻辑因此天然忽略行业码,零冲突。
+	SubjectIndustry = "industry"
+	// SubjectMacro 宏观。写法 macro:<key>(预留,#13)。
+	SubjectMacro = "macro"
+	// SubjectCompany 个股 = 既有行为,6 位数字代码。
+	SubjectCompany = "company"
+)
+
+// 行业主体写法:sw + 6 位申万数字代码(如 sw801010 农林牧渔 / sw851251 白酒Ⅲ)。
+// ⚠️ 申万代码 ↔ 名称**必须查表**:801010 是农林牧渔(104 只),不是「食品饮料」。
+const industryCodePrefix = "sw"
+
+// NormalizeSubject 归一主体码,返回 (主体类型, **规范主体码**)。
+// 无法识别 → ("", "")。
+//
+// 规范主体码(P9 D-R3):
+//   - 公司 600519      —— 裸 6 位,与既有 code 列语义一致
+//   - 行业 sw801010    —— **带 sw 前缀**。刻意存带前缀的形式:裸 801010 在库里
+//     与北交所股票(SubjectFullCode → bj801010)无法区分,会把行业 run 误当个股。
+//     带前缀后,主体类型可由码本身判定,前端无需额外字段。
+//   - 宏观 macro:cpi   —— #13 预留
+//
+// 识别顺序:行业 → 宏观 → 公司。行业必须先于公司:sw 前缀不是 6 位数字,不会误入公司分支,
+// 但显式排序可防未来规则变更时静默漂移。
+func NormalizeSubject(symbol string) (subjectType, subjectCode string) {
+	s := strings.TrimSpace(strings.ToLower(symbol))
+
+	// 行业:sw + 恰好 6 位数字(与申万原生 801010.SI 的写法解耦:接受 sw801010,
+	// 不接受 801010.SI —— 后者含 `.` 会污染产物文件名与 run_id)。
+	if rest, ok := strings.CutPrefix(s, industryCodePrefix); ok && IsStockCode(rest) {
+		return SubjectIndustry, industryCodePrefix + rest
+	}
+	// 宏观:macro:<key>(#13 预留,当前无产出方)
+	if rest, ok := strings.CutPrefix(s, "macro:"); ok && rest != "" {
+		return SubjectMacro, "macro:" + rest
+	}
+	// 公司:既有归一语义不变(full_code → 6 位)
+	if c := ValidStockCode(s); c != "" {
+		return SubjectCompany, c
+	}
+	return "", ""
+}
+
+// ActiveResearchStatuses 进行中的状态集(SQL 与 Go 判定共用同一来源,勿分散硬编码)。
+// 放 store 而非 research:store 持有 SQL;且 research 已 import store(不可反向依赖)。
+// ⚠️ 前端镜像见 frontend/src/hooks/useResearchRun.ts 的 ACTIVE(改这里须同步)。
+var ActiveResearchStatuses = []string{"pending", "gathering", "synthesizing", "verifying"}
+
+// FindActiveResearchRun 查同 code+profile 最近一条「进行中」的 run(无则 nil)。
+// 触发侧防重用:同秒双击由 run_id 秒级时间戳挡住,但隔几秒的重复触发挡不住
+// (实测 600519 prebuy 15:38:46 与 15:39:39 各落一行)。此查询让 web 端点复用在跑的那一回。
+// 只匹配进行中状态 —— done/failed 不算,历史版本是刻意保留的时间序列(决策记录依赖)。
+func (s *Store) FindActiveResearchRun(ctx context.Context, code, profile string) (*ResearchRun, error) {
+	rows, err := s.Pool.Query(ctx,
+		`SELECT `+researchRunCols+` FROM research_runs
+		 WHERE code=$1 AND profile=$2 AND status = ANY($3)
+		 ORDER BY created_at DESC LIMIT 1`,
+		NormalizeCode(code), profile, ActiveResearchStatuses)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	r, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[ResearchRun])
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
 // CreateResearchRun 建行(status=pending);run_id 冲突时走幂等(同 run_id 不新增)。
 // 返回是否新建(false = 已存在,调用方可跳过重跑)。
 func (s *Store) CreateResearchRun(ctx context.Context, r *ResearchRun) (bool, error) {
@@ -135,6 +241,31 @@ func (s *Store) ListResearchRuns(ctx context.Context, code string, limit int) ([
 	if code != "" {
 		args = append(args, NormalizeCode(code))
 		q += ` WHERE code=$1`
+	}
+	q += ` ORDER BY as_of DESC, created_at DESC`
+	if limit > 0 {
+		q += ` LIMIT $` + strconv.Itoa(len(args)+1)
+		args = append(args, limit)
+	}
+	rows, err := s.Pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[ResearchRun])
+}
+
+// ListPriorDoneResearchRuns 取同 code 既往**已完成**的报告(issue #8:新一期把旧研报作输入)。
+// 只取 status='done':半成品/失败的报告没有可信结论,不该喂给 LLM 当"上次怎么看"。
+// excludeRunID 排除本次 run(它此刻还是 pending,本不会命中,但显式排除更稳)。
+// 按 as_of DESC(最近的在最前);limit<=0 视为不限制。
+func (s *Store) ListPriorDoneResearchRuns(ctx context.Context, code, excludeRunID string, limit int) ([]ResearchRun, error) {
+	q := `SELECT ` + researchRunCols + ` FROM research_runs
+	      WHERE code=$1 AND status='done'`
+	args := []any{NormalizeCode(code)}
+	if excludeRunID != "" {
+		args = append(args, excludeRunID)
+		q += ` AND run_id <> $2`
 	}
 	q += ` ORDER BY as_of DESC, created_at DESC`
 	if limit > 0 {

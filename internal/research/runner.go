@@ -25,7 +25,8 @@ const (
 // 使「产物契约 + 状态机」可在无 Python 运行时下验证(§5.6 最小版本测试)。
 type cliRunner interface {
 	gather(ctx context.Context, code, profile string, days int, outDir, runID string) (string, error)
-	synthesize(ctx context.Context, dir, code, synthFile string) (string, error)
+	// priorMetricsPath 非空 = 该文件的历史数字并入 Number Lint 的 known 集(issue #8)。
+	synthesize(ctx context.Context, dir, code, synthFile, priorMetricsPath string) (string, error)
 	gate(ctx context.Context, dir, code string) (string, error)
 }
 
@@ -124,8 +125,14 @@ func (r *runner) gather(ctx context.Context, code, profile string, days int, out
 }
 
 // synthesize 把 LLM 三段定性渲染进报告 + Number Lint。
-func (r *runner) synthesize(ctx context.Context, dir, code, synthFile string) (string, error) {
-	return r.exec(ctx, TimeoutSynth, "synthesize", dir, code, "--synthesis-file", synthFile)
+// priorMetricsPath 非空时透传 --prior-metrics,让历史研报的数字并入 known 集(issue #8);
+// 为空则命令行与改动前逐字节一致(首次研报 / 未开 PriorRuns)。
+func (r *runner) synthesize(ctx context.Context, dir, code, synthFile, priorMetricsPath string) (string, error) {
+	args := []string{"synthesize", dir, code, "--synthesis-file", synthFile}
+	if priorMetricsPath != "" {
+		args = append(args, "--prior-metrics", priorMetricsPath)
+	}
+	return r.exec(ctx, TimeoutSynth, args...)
 }
 
 // gate 六项 Quality Gate 机检。

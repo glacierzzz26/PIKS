@@ -1375,11 +1375,146 @@ select.f-sel {
 .prose-piks strong {
   @apply font-bold;
 }
+/* 正文链接（§5.3）：此前无规则，链接样式散在调用点，统一收口于此 */
+.prose-piks a {
+  @apply text-accent underline;
+  text-underline-offset: 2px;
+}
+.prose-piks a:hover {
+  color: var(--brand-2);
+}
 .prose-piks hr {
   @apply my-5 border-line;
 }
 .prose-piks code {
   @apply rounded-[5px] bg-bg-soft px-1.5 py-0.5 font-mono text-[13px];
+}
+
+/* ============================================================
+   研报版面（P9-2，design report-layout.md §4 / §5.2）
+   单栏正文（~720px）+ 左侧固定目录。视觉一律走 :root token，无新增颜色字面值。
+   ============================================================ */
+.report-grid {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  align-items: start;
+  gap: 28px;
+}
+
+/* 封面头（§4.2）：主体名/码 + 类型 chip + 副信息 + 结论/可溯源/机检徽标 */
+.report-cover {
+  @apply mb-5 px-7 py-6;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow);
+}
+.report-cover h1 {
+  @apply m-0 flex flex-wrap items-baseline gap-2.5 text-[24px] font-extrabold;
+  letter-spacing: 0.5px;
+}
+.report-cover h1 .code {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+.report-cover .sub {
+  @apply mt-1.5 text-[12.5px];
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.report-cover .badges {
+  @apply mt-3.5 flex flex-wrap items-center gap-2;
+}
+
+/* 目录（§4.7）：sticky 左栏；当前章节高亮由 IntersectionObserver 加 .on */
+.report-toc {
+  position: sticky;
+  top: 20px;
+  font-size: 13px;
+}
+.report-toc .ttl {
+  @apply mb-2 text-[11px] font-bold uppercase tracking-widest;
+  color: var(--ink-faint);
+}
+.report-toc a {
+  @apply mb-0.5 block rounded-sm px-2.5 py-1.5 no-underline;
+  color: var(--muted);
+  border-left: 2px solid transparent;
+}
+.report-toc a:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+.report-toc a.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-left-color: var(--accent);
+  font-weight: 700;
+}
+.report-toc .idx {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  margin-right: 6px;
+  font-size: 12px;
+}
+
+/* 正文列（§4.1） */
+.report-body {
+  @apply px-7 py-7;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow);
+}
+.report-body .prose-piks {
+  max-width: 68ch; /* 可读性（§5.3） */
+}
+/* 章节标题 + 右侧三域标签；标题由 React 渲染（带锚点 id），故不复用 markdown 的 h2 规则 */
+.report-body .sec-head {
+  @apply mb-3 mt-7 flex flex-wrap items-center gap-2 border-b border-line pb-2;
+}
+.report-body .sec-head.first {
+  @apply mt-0;
+}
+.report-body .sec-head h2 {
+  @apply m-0 border-0 p-0 text-[16px] font-bold;
+}
+.report-body h1 {
+  @apply mb-3 mt-6 text-[18px] font-extrabold;
+}
+
+/* 页脚（§4.6）：与正文视觉分离 */
+.report-foot {
+  @apply mt-5 px-7 py-5 text-[12px];
+  color: var(--ink-faint);
+  border-top: 1px solid var(--line);
+  line-height: 1.9;
+}
+
+/* 三域标签基类（§4.3）：颜色复用 .st 色板，不新增颜色 */
+.domain-tag {
+  @apply inline-block whitespace-nowrap text-[10px] font-bold;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+}
+
+/* 机检折叠区（D-R9）：从正文移出，降为封面头可展开面板 —— 保留不删除 */
+.report-checks {
+  @apply mt-3 pt-3 text-[12.5px];
+  border-top: 1px solid var(--line);
+}
+.report-checks summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 600;
+}
+.report-checks .row {
+  @apply mt-1.5 flex items-baseline gap-2;
+  color: var(--ink-faint);
 }
 
 /* 事件详情抽屉（原 framer-motion，改纯 CSS，去掉死依赖） */
@@ -1646,6 +1781,33 @@ select.f-sel {
   }
   .rvrow .rs {
     text-align: left;
+  }
+  /* 研报：目录由左侧栏折叠为横向 chip 行（§4.7），正文恢复单栏 */
+  .report-grid {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .report-toc {
+    position: static;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 14px;
+  }
+  .report-toc .ttl {
+    width: 100%;
+    margin-bottom: 4px;
+  }
+  .report-toc a {
+    margin: 0;
+    border-left: 0;
+    border-radius: var(--radius-sm);
+    background: var(--bg-soft);
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+  .report-toc a.on {
+    background: var(--accent-soft);
   }
 }
 @media (max-width: 560px) {

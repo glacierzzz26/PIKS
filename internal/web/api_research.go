@@ -6,6 +6,7 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -25,6 +26,7 @@ type apiResearchRun struct {
 	RunID     string          `json:"run_id"`
 	Code      string          `json:"code"`
 	Symbol    string          `json:"symbol"`
+	Name      string          `json:"name"` // 公司名(仅展示;经 entities.detail.code → name 富化,缺则不臆测)
 	Profile   string          `json:"profile"`
 	AsOf      string          `json:"as_of"`
 	Status    string          `json:"status"`
@@ -39,6 +41,10 @@ type apiResearchRun struct {
 	Tokens    int64           `json:"tokens"`
 	CreatedAt string          `json:"created_at"`
 	UpdatedAt string          `json:"updated_at"`
+	// P9-2 研报版面:主体判别 + 展示名。公司/行业/宏观共用一套版面,差异由此驱动
+	// (design report-layout.md D-R2)。前端据此选报告类型 chip 与标题,不必猜 code 形态。
+	SubjectType string `json:"subject_type"`
+	DisplayName string `json:"display_name"`
 }
 
 // apiResearchRunSummary 列表项(不带宽字段 markdown/metrics,列表页只要元信息 + 机检徽标)。
@@ -48,6 +54,7 @@ type apiResearchRunSummary struct {
 	RunID   string `json:"run_id"`
 	Code    string `json:"code"`
 	Symbol  string `json:"symbol"`
+	Name    string `json:"name"` // 公司名(展示富化;缺则空,前端不臆测)
 	Profile string `json:"profile"`
 	AsOf    string `json:"as_of"`
 	Status  string `json:"status"`
@@ -56,6 +63,9 @@ type apiResearchRunSummary struct {
 	Error   string `json:"error"`
 	Model   string `json:"model"`
 	Tokens  int64  `json:"tokens"`
+	// 同 apiResearchRun:主体判别 + 展示名(P9-2)。
+	SubjectType string `json:"subject_type"`
+	DisplayName string `json:"display_name"`
 }
 
 // ==================== 路由 ====================
@@ -96,7 +106,7 @@ func (s *Server) handleAPIResearchRun(w http.ResponseWriter, r *http.Request) {
 		apiErrJSON(w, http.StatusNotFound, "报告不存在: "+runID)
 		return
 	}
-	s.writeJSON(w, toAPIResearchRun(row))
+	s.writeJSON(w, toAPIResearchRun(row, s.researchNames(r.Context(), []store.ResearchRun{*row})[row.Code]))
 }
 
 // ==================== 处理 ====================
@@ -122,9 +132,10 @@ func (s *Server) researchRunsList(w http.ResponseWriter, r *http.Request) {
 		s.apiErr(w, "research-runs", err)
 		return
 	}
+	names := s.researchNames(r.Context(), rows)
 	out := make([]apiResearchRunSummary, 0, len(rows))
 	for i := range rows {
-		out = append(out, toSummary(&rows[i]))
+		out = append(out, toSummary(&rows[i], names[rows[i].Code]))
 	}
 	s.writeJSON(w, map[string]any{"runs": out})
 }
@@ -144,9 +155,13 @@ func (s *Server) researchRunTrigger(w http.ResponseWriter, r *http.Request) {
 		apiErrJSON(w, http.StatusBadRequest, "请求体解析失败: "+err.Error())
 		return
 	}
-	code := store.NormalizeCode(req.Code)
-	if code == "" {
-		apiErrJSON(w, http.StatusBadRequest, "缺少股票代码 code")
+	// 主体感知(P9 / issue #10):研报主体不限于个股 —— 行业(sw+6 位申万码)亦合法。
+	// 归一后必须能识别为主体:实体库页可能传来股票名称(detail.code 为名称时),
+	// 名称原样进编排会造出 run_id 含名称的失败记录(issue #2),此处拦在入口。
+	subjectType, code := store.NormalizeSubject(req.Code)
+	if subjectType == "" {
+		apiErrJSON(w, http.StatusBadRequest, fmt.Sprintf(
+			"无法识别的主体(收到 %q;公司应为 6 位数字,行业应为 sw+6 位申万代码)", strings.TrimSpace(req.Code)))
 		return
 	}
 	profile := req.Profile
@@ -154,14 +169,33 @@ func (s *Server) researchRunTrigger(w http.ResponseWriter, r *http.Request) {
 		profile = "complete-stock"
 	}
 
+	// 触发侧防重(issue #7):同 code+profile 已有「进行中」的 run → 复用它,不落新行。
+	// 同秒双击本由 run_id 的秒级时间戳 + ON CONFLICT 挡住,但隔几秒的重复触发挡不住
+	// (实测 600519 prebuy 15:38:46 与 15:39:39 各落一行)。刷新页面/多标签也走这里。
+	// ⚠️ 只复用进行中的:done/failed 不算 —— 已完成后再点「重新分析」是刻意保留的
+	// 时间序列(决策记录 based_on 边指向 research_runs.id,不能被覆盖)。
+	if active, err := s.store.FindActiveResearchRun(r.Context(), code, profile); err != nil {
+		s.apiErr(w, "research-trigger", err)
+		return
+	} else if active != nil && !s.researchRunStale(active) {
+		// 陈旧判定兜底:服务重启会让状态永远卡在 gathering/synthesizing(没人再推进它),
+		// 此时不该无限复用一个死 run,照常新建。
+		s.writeJSON(w, map[string]any{
+			"run_id": active.RunID, "status": active.Status, "reused": true,
+		})
+		return
+	}
+
 	// per-run 可取消:请求断开不该杀后台任务,故用独立的 Background ctx + 编排总超时兜底。
 	ctx, cancel := context.WithTimeout(context.Background(), research.TimeoutTotal)
 
 	o := research.New(s.store, s.researchProvider(), s.cfg.AIDailyTokenBudget)
 	// 先占位建行(同步),前端马上拿到 run_id;失败即报,不留悬挂行。
+	// code 是**规范主体码**(公司=裸 6 位,行业=sw801010),它同时是产物文件名前缀与
+	// Python CLI 入参 —— 三处必须是同一串(行业裸码会被 Python 当北交所股票)。
 	runID := research.NewRunID(code, profile, time.Now())
 	created, err := s.store.CreateResearchRun(ctx, &store.ResearchRun{
-		RunID: runID, Code: code, Symbol: research.ToFullCode(code),
+		RunID: runID, Code: code, Symbol: research.SubjectFullCode(code),
 		Profile: profile, AsOf: time.Now(), Status: research.StatusPending,
 	})
 	if err != nil {
@@ -178,7 +212,13 @@ func (s *Server) researchRunTrigger(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		defer cancel()
-		if _, err := o.Run(ctx, research.Options{RunID: runID, Code: code, Profile: profile, Days: req.Days, RequireSynthesis: !req.Quick}); err != nil {
+		// RequireSynthesis=!Quick(P7):快速模式无 AI 也出确定性结论,不被网关阻塞。
+		// PriorRuns=2(P9/issue #8):新一期把最近两份 done 研报作合成输入,可对比。
+		if _, err := o.Run(ctx, research.Options{
+			RunID: runID, Code: code, Profile: profile, Days: req.Days,
+			RequireSynthesis: !req.Quick,
+			PriorRuns:        research.PriorRunLimit,
+		}); err != nil {
 			// 编排自身的失败已落 research_runs.error;此处只记服务端日志。
 			log.Printf("research-run %s 编排失败: %v", runID, err)
 		}
@@ -186,6 +226,14 @@ func (s *Server) researchRunTrigger(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusAccepted)
 	s.writeJSON(w, map[string]any{"run_id": runID, "status": research.StatusPending})
+}
+
+// researchRunStale 判断一条「进行中」的 run 是否已死(不该再被复用)。
+// 编排总上限 TimeoutTotal 之后必然有定论(done/failed)——若状态仍是进行中,
+// 说明推进它的进程没了(服务重启/容器重建),该 run 永远不会再变。
+// 留 5 分钟余量,避免把正在收尾的 run 误判为死。
+func (s *Server) researchRunStale(r *store.ResearchRun) bool {
+	return time.Since(r.CreatedAt) > research.TimeoutTotal+5*time.Minute
 }
 
 // researchProvider 构造 AI provider(与 settings/trades 同源:app_config)。
@@ -210,42 +258,97 @@ func (s *Server) researchProvider() ai.Provider {
 
 // ==================== 转换 ====================
 
-func toAPIResearchRun(r *store.ResearchRun) apiResearchRun {
+// researchNames 批量取 code → 公司名(展示富化)。查库失败不阻断报告渲染:名称是锦上添花,
+// 缺了退回代码即可,不该让整个请求失败(如实降级)。
+func (s *Server) researchNames(ctx context.Context, rows []store.ResearchRun) map[string]string {
+	codes := make([]string, 0, len(rows))
+	for i := range rows {
+		if rows[i].Code != "" {
+			codes = append(codes, rows[i].Code)
+		}
+	}
+	names, err := s.store.CompanyNamesByCodes(ctx, codes)
+	if err != nil {
+		return map[string]string{}
+	}
+	return names
+}
+
+func toAPIResearchRun(r *store.ResearchRun, name string) apiResearchRun {
 	md := ""
 	if r.Markdown != nil {
 		md = *r.Markdown
 	}
+	subjectType, displayName := subjectPresentation(r, name)
 	return apiResearchRun{
-		RunID: r.RunID, Code: r.Code, Symbol: r.Symbol, Profile: r.Profile,
+		RunID: r.RunID, Code: r.Code, Symbol: r.Symbol, Name: name, Profile: r.Profile,
 		AsOf: fmtDate(r.AsOf.In(cst)), Status: r.Status,
 		Metrics: r.Metrics, Synthesis: r.Synthesis, Markdown: md,
 		Lint: r.Lint, Gate: r.Gate, Evidence: r.Evidence,
 		Error: orStr(r.Error, ""), Model: r.Model, Tokens: r.Tokens,
-		CreatedAt: r.CreatedAt.UTC().Format(time.RFC3339),
-		UpdatedAt: r.UpdatedAt.UTC().Format(time.RFC3339),
+		CreatedAt:   r.CreatedAt.UTC().Format(time.RFC3339),
+		UpdatedAt:   r.UpdatedAt.UTC().Format(time.RFC3339),
+		SubjectType: subjectType, DisplayName: displayName,
 	}
 }
 
-func toSummary(r *store.ResearchRun) apiResearchRunSummary {
+func toSummary(r *store.ResearchRun, name string) apiResearchRunSummary {
+	subjectType, displayName := subjectPresentation(r, name)
 	return apiResearchRunSummary{
 		ID:    r.ID,
 		RunID: r.RunID,
-		Code:  r.Code, Symbol: r.Symbol, Profile: r.Profile,
+		Code:  r.Code, Symbol: r.Symbol, Name: name, Profile: r.Profile,
 		AsOf: fmtDate(r.AsOf.In(cst)), Status: r.Status,
 		LintOK: research.JSONPassed(r.Lint),
 		GateOK: research.JSONPassed(r.Gate),
 		Error:  orStr(r.Error, ""), Model: r.Model, Tokens: r.Tokens,
+		SubjectType: subjectType, DisplayName: displayName,
 	}
 }
 
-// runTitle 决策记录引用用的可读标题:code + profile(研报无自有 title 字段)。
-func runTitle(r store.ResearchRun) string {
-	code := r.Code
-	if r.Symbol != "" {
-		code = r.Symbol
+// subjectPresentation 主体判别 + 展示名(P9-2 研报版面)。
+//
+// subject_type 由 code 形态判定(`SubjectTypeOf` 复用 #10 的归一规则),前端据此选
+// 报告类型 chip 与标题,不必猜 code 形态。
+//
+// display_name 的取法与 name 同源、分主体:
+//   - 公司:entities.detail.code → name 富化(name 参数),缺则空(不臆测 —— 前端退回代码)
+//   - 行业:研报正文的 `industry_index.ref.name`(如「农林牧渔」)。**不查申万表** ——
+//     那是 research 侧的知识,Go 侧复制一份就违反了 D-11 独立性;指标卡里已有此字段,直读即可。
+//
+// 读 metrics 失败(旧产物/无 metrics)一律退回空串,不阻断报告渲染 —— 展示名是锦上添花。
+func subjectPresentation(r *store.ResearchRun, name string) (subjectType, displayName string) {
+	subjectType = research.SubjectTypeOf(r.Code)
+	if subjectType != store.SubjectIndustry {
+		return subjectType, name // 公司:沿用实体富化名;宏观:#13 预留
 	}
-	if r.Profile != "" {
-		return code + " · " + r.Profile
+	if len(r.Metrics) == 0 {
+		return subjectType, ""
 	}
-	return code
+	var m struct {
+		IndustryIndex struct {
+			Ref struct {
+				Name string `json:"name"`
+			} `json:"ref"`
+		} `json:"industry_index"`
+	}
+	if err := json.Unmarshal(r.Metrics, &m); err != nil {
+		return subjectType, ""
+	}
+	return subjectType, m.IndustryIndex.Ref.Name
+}
+
+// researchRunTitle 决策记录引用用的可读标题:有公司名 → 「名称(代码)」,否则退回代码(不臆测)。
+func researchRunTitle(code, symbol, name, profile string) string {
+	label := code
+	if symbol != "" {
+		label = symbol
+	}
+	if name != "" {
+		label = name + "(" + code + ")"
+	}
+	if profile != "" {
+		return label + " · " + profile
+	}
+	return label
 }

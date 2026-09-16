@@ -40,7 +40,7 @@ function AnalystInner() {
     <div>
       <div className="page-head">
         <div>
-          <h1>研究报告</h1>
+          <h1>个股分析</h1>
           <div className="psub">
             输入 6 位代码，选报告类型 —— 让 AI 做一次深度分析
           </div>

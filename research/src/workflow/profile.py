@@ -54,6 +54,13 @@ SECTION_REQUIREMENTS = {
     "events": {"providers": ["news"], "analysis": ["events"]},
     "announcements": {"providers": ["announcement"], "analysis": []},
     "industry": {"providers": ["industry"], "analysis": []},
+    # 行业**本体**研报(P9 #12):主体是申万行业指数,而非「个股所处的行业」。
+    # 与上面的 "industry" 是两个不同语义 —— 前者答「这票的同业怎么样」,
+    # 后者答「这个行业本身怎么样」,故 JSON 键与 section 名都独立。
+    # 三节同源(都读 industry_index provider 的产物),分列以便版面各成章节。
+    "industry_index": {"providers": ["industry_index"], "analysis": ["industry_index"]},
+    "industry_valuation": {"providers": ["industry_index"], "analysis": []},
+    "industry_structure": {"providers": ["industry_index"], "analysis": []},
     "risk": {"providers": [], "analysis": ["risk"]},
     "patterns": {"providers": ["market"], "analysis": ["patterns"]},
     "conclusion": {"providers": [], "analysis": ["scorecard"]},

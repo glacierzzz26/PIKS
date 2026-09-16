@@ -4,7 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { apiGet, apiPost, ENDPOINTS } from "@/lib/api";
 import type { ResearchRun, ResearchStatus, ResearchTrigger } from "@/lib/types";
 
-/** 进行中的状态（轮询期间）；终态 done/failed 停轮询。 */
+/** 进行中的状态（轮询期间）；终态 done/failed 停轮询。
+ *  ⚠️ 服务端镜像见 internal/store/research_runs.go 的 ActiveResearchStatuses（触发防重用），改这里须同步。 */
 const ACTIVE: ResearchStatus[] = [
   "pending",
   "gathering",

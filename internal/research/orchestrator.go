@@ -3,7 +3,6 @@ package research
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -41,6 +40,9 @@ type Options struct {
 	// 记空 synthesis 继续,markdown 保留骨架(含「待 AI 综合研判」占位)——用于「买入前速评」,
 	// 结论取自确定性评分卡 + 风险规则,不被 AI 网关阻塞。
 	RequireSynthesis bool
+	// PriorRuns 引用几份既往 done 研报作合成输入(issue #8;0 = 关,新档默认关)。
+	// 关时产物与改动前逐字节一致 —— 首次研报与独立 CLI 路径零回归。
+	PriorRuns int
 }
 
 // Orchestrator 深研编排:exec Python → LLM 合成 → 机检 → 落 PG。
@@ -78,15 +80,16 @@ type Result struct {
 // Run 执行完整编排(设计 §4.4 六步)。
 // 任何一步失败都如实落 status=failed + error,不掩盖;机检未过 ≠ 失败(报告仍可用)。
 func (o *Orchestrator) Run(ctx context.Context, opt Options) (*Result, error) {
-	code := store.NormalizeCode(opt.Code)
-	if code == "" {
-		return nil, errors.New("股票代码为空")
+	// 主体归一(P9):公司=6 位数字,行业=sw+6 位申万码,宏观=macro:<key>。
+	subjectType, code := store.NormalizeSubject(opt.Code)
+	if subjectType == "" {
+		return nil, fmt.Errorf("无法识别的主体码 %q(公司应为 6 位数字,行业应为 sw+6 位申万代码)", opt.Code)
 	}
 	if opt.Profile == "" {
 		opt.Profile = "complete-stock"
 	}
 
-	symbol := ToFullCode(code)
+	symbol := SubjectFullCode(opt.Code)
 	asOf := time.Now()
 
 	// 运行身份(Identity)与产物目录绑定:续跑沿用同一 run_id + 同一目录,
@@ -228,7 +231,7 @@ func (o *Orchestrator) execute(ctx context.Context, opt Options, code, symbol, r
 	if err := o.store.UpdateResearchRunStatus(ctx, runID, StatusSynthesizing, ""); err != nil {
 		return err
 	}
-	if err := o.synthesizeStep(ctx, arts, runID, code, res, opt.RequireSynthesis); err != nil {
+	if err := o.synthesizeStep(ctx, arts, runID, code, res, opt.RequireSynthesis, opt.PriorRuns); err != nil {
 		return err
 	}
 
@@ -263,7 +266,8 @@ func (o *Orchestrator) execute(ctx context.Context, opt Options, code, symbol, r
 // synthesizeStep 执行合成步。requireSynth=true(深研语义):LLM 缺失/失败/超预算 → 返回 error,
 // 整轮 failed,不降级不编造。requireSynth=false(快速模式):上述情况记空 synthesis 继续,
 // markdown 用骨架(含「待 AI 综合研判」占位),让确定性分析(评分卡/风险/量价形态)照常产出。
-func (o *Orchestrator) synthesizeStep(ctx context.Context, arts *artifacts, runID, code string, res *Result, requireSynth bool) error {
+// priorRuns>0 时把最近几份 done 研报作合成输入(issue #8),并落 {code}_prior_metrics.json 供 lint 放开 known 集。
+func (o *Orchestrator) synthesizeStep(ctx context.Context, arts *artifacts, runID, code string, res *Result, requireSynth bool, priorRuns int) error {
 	dir := arts.dir
 
 	prompt, err := readText(arts.promptPath())
@@ -271,6 +275,15 @@ func (o *Orchestrator) synthesizeStep(ctx context.Context, arts *artifacts, runI
 		return fmt.Errorf("读合成提示失败(指标卡不可得?): %v", err)
 	}
 
+	// issue #8:既往 done 研报作合成输入。用 Python 的 prompt 原文 + 追加历史摘要段,
+	// 并把这些 metrics 落成 {code}_prior_metrics.json 供 lint 放开 known 集。
+	// 无历史(priorRuns=0 或首次研报)→ 下面三步全是 no-op,产物与改动前逐字节一致。
+	priors, priorMetrics := o.loadPriorRuns(ctx, code, runID, priorRuns)
+	prompt += priorPromptBlock(priors)
+	priorMetricsPath, err := writePriorMetrics(dir, code, priorMetrics)
+	if err != nil {
+		return fmt.Errorf("写历史研报数字失败: %w", err)
+	}
 	// 预算护栏:今日已用 ≥ 预算 → 深研如实失败;快速模式改走骨架。
 	if err := o.checkBudget(ctx); err != nil {
 		if requireSynth {
@@ -304,7 +317,8 @@ func (o *Orchestrator) synthesizeStep(ctx context.Context, arts *artifacts, runI
 		return fmt.Errorf("写合成结果失败: %w", err)
 	}
 	// 渲染进报告 + Number Lint(未过退出码 2,已落产物)。
-	if _, err := o.runner.synthesize(ctx, dir, code, arts.synthPath()); err != nil {
+	// priorMetricsPath 为空(synthesize 自动跳过)或指向历史 metrics → lint 把历史数字并入 known。
+	if _, err := o.runner.synthesize(ctx, dir, code, arts.synthPath(), priorMetricsPath); err != nil {
 		return fmt.Errorf("渲染/机检失败: %w", err)
 	}
 	lint, err := readJSON(arts.lintPath())
@@ -329,6 +343,21 @@ func (o *Orchestrator) synthesizeStep(ctx context.Context, arts *artifacts, runI
 		Model: model, Tokens: usage.Total(),
 	}); err != nil {
 		return fmt.Errorf("落合成/机检成果失败: %w", err)
+	}
+	// issue #8:把"参考了 N 份历史研报"标进 metrics.meta(零 schema;前端可如实展示)。
+	// 无历史 → annotatePriorRuns 是 no-op,metrics 保持 Python 产物原样。
+	if len(priorMetrics) > 0 {
+		// metrics 是 Python 产物文件(合成步内自取 —— 抽取 synthesizeStep 后不再有
+		// execute 作用域里的同名变量)。
+		metrics, err := readJSON(arts.metricsPath())
+		if err != nil {
+			return fmt.Errorf("读指标卡失败(无法标注历史研报引用): %w", err)
+		}
+		if err := o.store.SaveResearchArtifacts(ctx, runID, &store.ResearchRun{
+			Metrics: annotatePriorRuns(metrics, len(priorMetrics)),
+		}); err != nil {
+			return fmt.Errorf("标注历史研报引用失败: %w", err)
+		}
 	}
 	res.Tokens, res.Model = usage.Total(), model
 	res.Lint = !lintFailed(lint)
@@ -394,13 +423,16 @@ func (o *Orchestrator) finishTask(ctx context.Context, id int64, status string, 
 	}
 }
 
-// NewRunID 生成一次深研的 run_id(code+profile+时间戳)。
+// NewRunID 生成一次深研的 run_id(主体 full_code + profile + 时间戳)。
 // 触发端(web)先建 pending 行并立即返回它,后台 goroutine 再按同一 id 续跑 —— 见 §4.8。
+// P9:主体感知 —— 行业主体为 sw801010_industry_...,不再被误加 bj 前缀。
 func NewRunID(code, profile string, t time.Time) string {
-	return fmt.Sprintf("%s_%s_%s", ToFullCode(code), profile, t.Format("20060102_150405"))
+	return fmt.Sprintf("%s_%s_%s", SubjectFullCode(code), profile, t.Format("20060102_150405"))
 }
 
 // ToFullCode 6 位代码 → research full_code(与 src/models/symbol.py resolve_symbol 同规则)。
+// ⚠️ 只用于**股票**:它把 8/43/83/87/88 开头当北交所,会把申万行业码 850111 误标成 bj850111。
+// 非股票主体走 SubjectFullCode。
 func ToFullCode(code string) string {
 	switch {
 	case hasPrefix(code, "600", "601", "603", "605", "688", "689"):
@@ -411,6 +443,28 @@ func ToFullCode(code string) string {
 		return "bj" + code
 	}
 	return code
+}
+
+// SubjectFullCode 主体码 → research full_code(P9 / issue #10,主体轴泛化)。
+// 行业/宏观的规范码已自带前缀(sw801010 / macro:cpi),原样返回 ——
+// 它们不是股票,**不得**加交易所前缀(加 sh/sz/bj 会造出 bj801010 这种错码,
+// 且 Python 侧 resolve_symbol 会把行业码按北交所给 30% 涨跌停,实测)。
+// 公司走既有 ToFullCode,逐字节不变。
+func SubjectFullCode(symbol string) string {
+	subjectType, code := store.NormalizeSubject(symbol)
+	switch subjectType {
+	case store.SubjectIndustry, store.SubjectMacro:
+		return code // 规范码自带前缀
+	default:
+		return ToFullCode(code) // 公司(或不可识别时原样,与既有行为一致)
+	}
+}
+
+// SubjectTypeOf 主体类型(company / industry / macro);不可识别返回 ""。
+// 供 web 层与 DTO 做主体感知分支,不改变任何既有行为。
+func SubjectTypeOf(symbol string) string {
+	st, _ := store.NormalizeSubject(symbol)
+	return st
 }
 
 func hasPrefix(s string, ps ...string) bool {

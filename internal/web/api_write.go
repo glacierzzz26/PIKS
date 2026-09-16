@@ -200,9 +200,10 @@ func (s *Server) tradeAddAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimSpace(p.Name)
-	code := strings.TrimSpace(p.Code)
+	// 代码必须是 6 位数字:手动录入同样不能拿名称当代码(issue #2)。
+	code := store.ValidStockCode(p.Code)
 	if name == "" || code == "" || (p.Side != "buy" && p.Side != "sell") {
-		apiErrJSON(w, http.StatusBadRequest, "请填写证券名称、代码与买卖方向。")
+		apiErrJSON(w, http.StatusBadRequest, "请填写证券名称、6 位数字代码与买卖方向。")
 		return
 	}
 	if p.Qty <= 0 || p.Price < 0 {
@@ -438,15 +439,21 @@ func (s *Server) tradeConfirmAPI(w http.ResponseWriter, r *http.Request) {
 		s.tradeConfirmWatchlist(w, r, &p)
 		return
 	}
+	// 无 6 位代码而被跳过的行数(持仓 + 交易共用);>0 时随响应如实回传,不静默丢数据。
+	skippedNoCode := 0
 	if p.Kind == "position" {
 		var ps []model.Position
 		for _, row := range p.Positions {
 			if !row.Include || strings.TrimSpace(row.Name) == "" {
 				continue
 			}
-			code := strings.TrimSpace(row.Code)
+			// code 只接受 6 位数字;名称绝不充当代码(否则会写进 trades/positions/entities
+			// 的 code 列,污染深研与个股聚合 —— issue #2)。无有效代码:跳过该行并如实计数,
+			// 不臆测、不静默 —— 名称本就只该进 name。
+			code := store.ValidStockCode(row.Code)
 			if code == "" {
-				code = row.Name
+				skippedNoCode++
+				continue
 			}
 			qty, _ := strconv.Atoi(row.Qty)
 			if qty <= 0 {
@@ -466,14 +473,14 @@ func (s *Server) tradeConfirmAPI(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if len(ps) == 0 {
-			apiErrJSON(w, http.StatusBadRequest, "没有勾选任何持仓行。")
+			apiErrJSON(w, http.StatusBadRequest, "没有勾选任何有效持仓行(每行需含 6 位股票代码)。")
 			return
 		}
 		if err := s.store.InsertPositions(ctx, ps); err != nil {
 			apiErrJSON(w, http.StatusInternalServerError, "持仓入库失败: "+err.Error())
 			return
 		}
-		s.writeJSON(w, map[string]bool{"ok": true})
+		s.writeJSON(w, map[string]any{"ok": true, "skipped_no_code": skippedNoCode})
 		return
 	}
 
@@ -482,9 +489,11 @@ func (s *Server) tradeConfirmAPI(w http.ResponseWriter, r *http.Request) {
 		if !row.Include || strings.TrimSpace(row.Name) == "" {
 			continue
 		}
-		code := strings.TrimSpace(row.Code)
+		// 同持仓:code 必须为 6 位数字,名称不充当代码(issue #2)。
+		code := store.ValidStockCode(row.Code)
 		if code == "" {
-			code = row.Name
+			skippedNoCode++
+			continue
 		}
 		if row.Side != "buy" && row.Side != "sell" {
 			continue
@@ -509,14 +518,14 @@ func (s *Server) tradeConfirmAPI(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if len(ts) == 0 {
-		apiErrJSON(w, http.StatusBadRequest, "没有勾选任何交易行。")
+		apiErrJSON(w, http.StatusBadRequest, "没有勾选任何有效交易行(每行需含 6 位股票代码)。")
 		return
 	}
 	if err := s.store.InsertTrades(ctx, ts); err != nil {
 		apiErrJSON(w, http.StatusInternalServerError, "交易入库失败: "+err.Error())
 		return
 	}
-	s.writeJSON(w, map[string]bool{"ok": true})
+	s.writeJSON(w, map[string]any{"ok": true, "skipped_no_code": skippedNoCode})
 }
 
 // tradeConfirmWatchlist 应用自选镜像(设计 frontend-ia §2.4):请求体即用户编辑过的 diff,confirm 不重算,

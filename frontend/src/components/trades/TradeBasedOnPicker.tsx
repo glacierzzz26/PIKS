@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useData } from "@/hooks/useData";
 import { ENDPOINTS } from "@/lib/api";
+import { isStockCode } from "@/lib/format";
 import RefPicker from "@/components/note/RefPicker";
 import type { StockHub, TradeBasedOn } from "@/lib/types";
 
@@ -24,7 +25,7 @@ export default function TradeBasedOnPicker({
   onChange: (v: TradeBasedOn) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const valid = /^\d{6}$/.test(code);
+  const valid = isStockCode(code);
   const hub = useData<StockHub>({
     path: valid ? ENDPOINTS.stock.replace(":code", code) : null,
   });

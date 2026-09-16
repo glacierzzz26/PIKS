@@ -1007,10 +1007,11 @@ func (s *Server) decisionRefsForTrades(ctx context.Context, tradeIDs []string) (
 	if err != nil {
 		return nil, err
 	}
+	names := s.researchNames(ctx, runs)
 	for _, r := range runs {
 		runMeta[r.ID] = struct {
 			Title, Date, RunID string
-		}{runTitle(r), fmtDate(r.AsOf.In(cst)), r.RunID}
+		}{researchRunTitle(r.Code, r.Symbol, names[r.Code], r.Profile), fmtDate(r.AsOf.In(cst)), r.RunID}
 	}
 	evTitle := map[string]string{}
 	evDate := map[string]string{}

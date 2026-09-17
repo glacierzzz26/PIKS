@@ -347,14 +347,9 @@ def analyze_macro_risk(m: MacroMetrics, as_of: date) -> MacroRiskMetrics:
                             overall_level=overall, items=items)
 
 
-# --- 供渲染层复用的披露语句（保持正文与口径说明同源） ---
-
-GDP_CUMULATIVE_NOTE = (
-    "单季水平由同年内累计差分所得，**非原始披露值**；"
-    "本报告不提供单季同比（需跨年两跳，且会与累计同比并列成两个不同数值）。"
-)
-
-LEVEL_IS_INDEX_NOTE = (
-    "「当月」列为**指数（上年同月=100）**，不是百分比；"
-    "同比/环比为百分比。两者量纲不同，不可混读。"
-)
+# ⚠️ 此模块**不**定义披露语句常量。
+# 「口径说明」的**单一真源**是 provider 维度表的 `MacroSpec.caliber`
+# （见 `providers/macro/macro_provider.py`），渲染层只读 `ref.caliber` 一处。
+# 曾在此处另设 GDP_CUMULATIVE_NOTE / LEVEL_IS_INDEX_NOTE 常量并被渲染层追加，
+# 结果同一份披露语在正文里出现两遍（一是 caliber 原文、一是常量）—— 两处真源
+# 必然漂移。DI 意义上「知识表单一真源」同理适用于文案。

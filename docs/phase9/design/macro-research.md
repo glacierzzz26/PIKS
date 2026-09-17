@@ -367,4 +367,78 @@ scorecard: {dimensions: []}
 
 ## 12. 实施记录
 
-> **本节留空待回填**（照 `company-analysis-split.md:304-352` 的体例）。实施完成后回填：各阶段实际交付、端到端实测结果（机检项数 / `data_completeness` / `pytest` 计数 / `go build,v et,test` / `tsc` + `vite build` / 独立性检查）、与本文档的偏离及原因。
+> 体例照 `company-analysis-split.md:304-352`。本节在实现阶段回填;**如实记录与设计的偏离**。
+
+### 12.1 阶段交付
+
+| 阶段 | 状态 | 交付物 |
+|---|---|---|
+| **P9-5a** 主体解析 + 数据源 | ✅ 完成（`344df75`） | `models/symbol.py` 宏观分支（`full_code` 与 Go `NormalizeSubject` **逐字节相同**）；`providers/macro/macro_provider.py`（月频 + 季频两路径，四个维度）；`tests/test_macro_provider.py`（29 例）+ `test_symbol.py` 宏观组 |
+| **P9-5b** 分析层 + 报告装配 | ✅ 完成 | `analysis/macro.py`；`add_macro_evidence`；`workflow/{profile,plan,engine}.py`；`profiles/macro.yaml`；`report/{sections,markdown,json_report,synthesis}.py`；`quality_gate.py` 四处；Go `subjectPresentation` 宏观分支 + 错误文案；`tests/test_macro.py`（29 例）+ `internal/web/api_research_subject_test.go`（7 例） |
+| **P9-5c** GDP + 全链路 E2E | ✅ 完成 | 季频/累计解析与单季差分（P9-5a 已落地，此处补齐披露与抑制规则）；CLI 三步链含冒号文件名实测；`research/README.md` 补 `as_of` 语义与主体码说明 |
+| **P9-5d** 前端触发 UI | ⏳ 待做 | 见 §7 |
+
+### 12.2 端到端实测结果
+
+四个维度**实跑**（非打桩），每个都跑完 collect → analyze → report 全链：
+
+| 维度 | success | Number Lint | Quality Gate |
+|---|---|---|---|
+| `macro:cn_cpi` | ✅ | 0 问题（扫描 212 个数字，212 匹配） | 6/6 通过 |
+| `macro:cn_ppi` | ✅ | 0 问题 | 6/6 通过 |
+| `macro:cn_m2` | ✅ | 0 问题 | 6/6 通过 |
+| `macro:cn_gdp` | ✅ | 0 问题 | 6/6 通过 |
+
+CLI 三步链（`research` → `synthesize` → `gate`）以 `macro:cn_gdp` 走通，产物文件名含冒号（`macro:cn_gdp_final.md` 等）全部正常读写；`run_meta.json` 的 `run_id` = `macro:cn_gdp_macro_20260917_150405`。
+
+```
+pytest tests/                    → 235 passed（P9-5a 时 206，本期 +29）
+go build ./... / go vet ./...    → 通过
+go test ./internal/...           → 全部 ok
+scripts/check-research-isolation.sh → ✓ 通过
+```
+
+### 12.3 与设计的偏离（均为**实测发现**，非偏好）
+
+**偏离 1：M2/GDP 的水平分位无信息量（设计文档未预见）**
+
+设计文档 §4.1 把 `percentile_level` 无条件列作合法指标。**实测发现** M2/GDP 是**名义总量**、随经济增长长期单调上行，其水平分位恒为 100.0% —— 风险引擎据此报「读数位于历史区间上沿，需关注**均值回归**压力」：既是噪声，且「均值回归」对货币供应量/经济体量**不成立**（那是推断，违反 §4.2）。
+
+处置：`MacroSpec` 加 `level_percentile_meaningful`（默认 True，M2/GDP 置 False），随 `MacroRef` 下传使风险引擎无需再查表；规则按该开关分派。`percentile_level` **照常产出**（它是事实），只是不拿它当信号。正文对应位置显式标注「**不具位置信息量**」。
+
+**偏离 2：值域格式化禁止科学计数法（设计文档 §2.7 预判了约束，但没预判到触发它的实现）**
+
+设计文档 §2.7 正确预判「期号必须可对账」，但没预判到**大数渲染**这条路径：初版用 `'{:,.4g}'`，亿元级水平渲染成 `3.568e+06`。`number_lint._NUMBER_RE` 的正则**没有指数部分**，只匹配到 `3.568`，永远对不上卡里的 `3568083.6` —— M2/GDP 分别挂 34 / 24 个 lint 问题（CPI/PPI 水平在 100 量级，恰好躲过）。
+
+处置：新增 `_fmt_level`，按量级分派（千以上千分位 + 1 位小数，千以下 2 位），**结构性禁止科学计数法**。
+
+**偏离 3：累计口径的 `delta_level` 一律不产出（设计文档只说「跨年不可比」）**
+
+设计文档 §4.2 只禁止了「单季 GDP 同比」，未提 `delta_level`。实测发现累计序列的「本期 − 上期」有**两种**不可用情形：
+
+- **跨年**（2026 Q1 − 2025 Q1-4）：两个不同跨度累计总量之差，实测必为负。
+- **同年内**（2026 Q1-2 − Q1）：结果**恒等于** `single_quarter_level` —— 同一增量在正文里出现两遍，且 §2.4c 只允许它以「单季水平」一种形式面世。
+
+故一条规则覆盖两种情形：累计序列**一律不出** `delta_level`；正文对应行改为「见「单季水平」（累计口径不作跨期差）」。（`delta_yoy` 只抑制跨年 —— 同比在同年内可比。）
+
+**偏离 4：免责声明的「前复权」行（设计文档未涉及）**
+
+`markdown.py` 的免责声明**无条件**印「价格指标基于前复权计算」。宏观报告没有价格、行业报告也没有 —— 这是对**不存在口径**的虚假声明。按主体分化：宏观印统计期、行业印「未做复权处理」、个股逐字节不变。
+
+**偏离 5：口径说明删去重复常量（实现中发现的自造问题）**
+
+初版在 `analysis/macro.py` 另设 `GDP_CUMULATIVE_NOTE` 常量并由渲染层追加到 `ref.caliber` 之后 —— GDP 报告里同一份披露语**出现两遍**（一处 caliber 原文、一处常量）。已删除两个常量：`MacroSpec.caliber` 是口径说明的**单一真源**，「知识表单一真源」同样适用于文案。
+
+### 12.4 设计文档 §5.6 未写但结构上必需的改动
+
+两处**不在**设计文档 §5 清单内，但不改则宏观报告必然崩：
+
+1. **`generate_markdown` 的 `macro_metrics` 形参 + 封面第三分支**（§5.3 只列了 builders 登记）。封面原只有「行业 / 个股」两分支，宏观两者皆无 → `price_metrics.period_days` 会既错又崩。
+2. **`risk` 渲染器的第三个分支**（`_build_macro_risk_section`）。§5.7 只说「复用 risk 节 key」，但渲染器是按主体分派的，不加分支会走个股渲染器读 `veto_buy`。
+
+### 12.5 未验证项（如实列出）
+
+- **Go→PG 全链路集成测试**（`PIKS_TEST_INTEGRATION=1` + 真 Postgres）**未在本机跑**：沙箱内无可达的 dev PG（5433 探测超时）。已用**等价方式**覆盖其唯一新风险点 —— 冒号文件名/目录：Python `open`/`listdir` 与 Go `os.WriteFile`/`os.MkdirAll` 均实测正常；`exec.Command` 传 argv 数组不经 shell，无引号注入面。**仍建议**在 P9-5d 部署验证时按 `TestOrchestratorIndustrySubject` 的体例补一个 `TestOrchestratorMacroSubject`。
+- **前端**（`tsc` / `vite build` / 触发 UI）属 P9-5d，本期未动。
+- **`as_of` 之外的时区**：`source_lag_days` 用本地 `date.today()` 与源站期末相减，跨时区容器未测。
+

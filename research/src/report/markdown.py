@@ -463,11 +463,9 @@ def _build_macro_level_section(mm: Optional[Any]) -> str:
 
     # 口径说明:量纲差异(指数 vs 百分比)必须逐维度讲清,否则读者会把
     # 「100.8」当百分比读。GDP 另加累计差分的披露语。
-    notes = [ref.caliber]
-    if mm.latest_single_quarter_level is not None:
-        from ..analysis.macro import GDP_CUMULATIVE_NOTE
-        notes.append(GDP_CUMULATIVE_NOTE)
-    lines += ["", f"> 口径说明：{chr(10).join('> ' + n for n in notes).lstrip()}",
+    # 口径说明:单一真源是 provider 维度表的 `MacroSpec.caliber`(经 `ref.caliber`
+    # 下传)—— 渲染层**不另写**披露语,否则同一事实两处真源必然漂移。
+    lines += ["", f"> 口径说明：{ref.caliber}",
               f"> 数据来源：{ref.source}。统计期与报告生成日不同，见封面「数据截止」。"]
     return "\n".join(lines) + "\n"
 

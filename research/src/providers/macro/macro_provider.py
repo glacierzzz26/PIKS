@@ -128,6 +128,15 @@ class MacroSpec:
 
     columns : 语义名 → akshare 返回列名。语义名只有 level/yoy/mom 三种，
               量纲差异由 `level_label` 逐维度说明（CPI 是指数、M2 是亿元）。
+    level_percentile_meaningful
+            : **水平**的历史分位是否有信息量。实测发现这是必须逐维度区分的：
+              CPI/PPI 的水平是「上年同月=100」的指数，长期在 100 附近震荡
+              ⇒ 分位是真实的位置信息；而 M2/GDP 是**名义总量**，随经济增长
+              长期单调上行 ⇒ 分位恒为 ~100%，把它当「位置信号」是噪声
+              （且会诱导出「均值回归」这类对货币供应量不成立的推断）。
+              为 False 时风险引擎**不**据水平分位出风险项，改用**同比**分位
+              （同比是可平稳比较的读数）。这不是少算一个数 —— 指标卡里
+              `percentile_level` 照常产出（它是事实），只是不拿它当信号。
     """
     key: str                 # "cn_cpi" —— 与 Go 规范主体的 key 部分一致
     name: str                # 展示名（Go 侧读指标卡取名，不建表）
@@ -138,6 +147,7 @@ class MacroSpec:
     level_label: str         # 水平列的量纲说明（**不是**百分比）
     source: str
     caliber: str             # 上屏的口径说明段
+    level_percentile_meaningful: bool = True
 
 
 _CN_NBS_SOURCE = "国家统计局（经东方财富数据中心）"
@@ -188,8 +198,12 @@ _DIMENSIONS: Dict[str, MacroSpec] = {
         source=_CN_NBS_SOURCE,
         caliber=(
             "M2（货币和准货币）口径。水平为**亿元**（原始值，展示可折万亿元）；"
-            "同比/环比为百分比。同一接口另有 M1/M0，本报告只取 M2。"
+            "同比/环比为百分比。同一接口另有 M1，本报告只取 M2。"
+            "⚠️ 名义总量随经济增长长期上行，故**水平的历史分位恒接近 100%**，"
+            "不具位置信息量 —— 本报告的定位判断以**同比**分位为准。"
         ),
+        # 名义总量单调上行 ⇒ 水平分位无信息量（实测 100.0%）。见 MacroSpec 说明。
+        level_percentile_meaningful=False,
     ),
     "cn_gdp": MacroSpec(
         key="cn_gdp",
@@ -208,7 +222,11 @@ _DIMENSIONS: Dict[str, MacroSpec] = {
             "⚠️ **累计口径**：绝对值是「年初至本季累计」，非单季值；同比是**累计同比**。"
             "本报告的「单季水平」由同年内累计差分所得，**非原始披露值**。"
             "本报告不提供单季同比（需跨年两跳，且会与累计同比并列成两个不同数值）。"
+            "⚠️ 累计总量逐年抬升，**水平分位受累计口径影响**，不具位置信息量 —— "
+            "定位判断以**累计同比**分位为准。"
         ),
+        # 累计口径 + 逐年抬升 ⇒ 水平分位无意义（实测 78.0%，且随季度在年内摆动）。
+        level_percentile_meaningful=False,
     ),
 }
 
@@ -223,6 +241,9 @@ class MacroRef:
     source: str
     caliber: str
     level_label: str
+    # 水平分位是否有信息量（见 MacroSpec.level_percentile_meaningful）。
+    # 随 ref 一起下传，使风险引擎无需再查表（保持「知识表单一真源」）。
+    level_percentile_meaningful: bool = True
 
 
 @dataclass
@@ -309,6 +330,7 @@ class MacroProvider:
         return MacroRef(
             key=spec.key, name=spec.name, unit=spec.unit, cadence=spec.cadence,
             source=spec.source, caliber=spec.caliber, level_label=spec.level_label,
+            level_percentile_meaningful=spec.level_percentile_meaningful,
         )
 
     def known_keys(self) -> List[str]:

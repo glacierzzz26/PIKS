@@ -171,6 +171,85 @@ def add_industry_evidence(
         ))
 
 
+def add_macro_evidence(
+    store: EvidenceStore,
+    macro_metrics,
+    macro_risk,
+) -> None:
+    """宏观主体(P9-5 / #13)的 Evidence。
+
+    与 `run_analysis` 并列,理由同 `add_industry_evidence`:宏观序列不是个股 bars
+    —— 那个函数会顺手跑 analyze_price/analyze_volume,对宏观序列产出「换手率」
+    「年化波动率」等**无口径依据**的字段。此处只登记宏观报告真正上屏的数字。
+
+    登记范围与 `markdown.py` 的三个 builder 一一对应:
+      - `_build_macro_level_section`(最新读数 + 序列)→ section="macro_level"
+      - `_build_macro_position_section`(分位/窗口/趋势)→ section="macro_position"
+      - `_build_macro_risk_section`(等级 + 逐条依据)→ section="risk"
+    """
+    if macro_metrics is not None:
+        m = macro_metrics
+        p = m.period
+        hist_span = f"{p.history_periods} 期" if p else "全历史"
+        store.add(evidence_from_metric(
+            "latest_level", m.latest_level,
+            "akshare_macro", m.ref.name, {"level_label": m.ref.level_label},
+            section="macro_level",
+        ))
+        store.add(evidence_from_metric(
+            "latest_yoy", m.latest_yoy,
+            "akshare_macro", m.ref.name, {"unit": "%"},
+            section="macro_level",
+        ))
+        if m.latest_mom is not None:
+            store.add(evidence_from_metric(
+                "latest_mom", m.latest_mom,
+                "akshare_macro", m.ref.name, {"unit": "%"},
+                section="macro_level",
+            ))
+        if m.latest_single_quarter_level is not None:
+            store.add(evidence_from_metric(
+                "latest_single_quarter_level", m.latest_single_quarter_level,
+                "akshare_macro", "同年内累计差分所得",
+                {"cumulative_disclosure": "非原始披露值"},
+                section="macro_level",
+            ))
+
+        store.add(evidence_from_metric(
+            "percentile_level", m.percentile_level,
+            "macro_analysis", hist_span,
+            {"history_start": p.history_start.isoformat() if p and p.history_start else None,
+             "meaningful": m.ref.level_percentile_meaningful},
+            section="macro_position",
+        ))
+        store.add(evidence_from_metric(
+            "percentile_yoy", m.percentile_yoy,
+            "macro_analysis", hist_span,
+            {"history_periods": p.history_periods if p else None},
+            section="macro_position",
+        ))
+        store.add(evidence_from_metric(
+            "window_median_level", m.window_median_level,
+            "macro_analysis", f"近 {p.window_periods} 期" if p else "展示窗口",
+            {"window_min": m.window_min_level, "window_max": m.window_max_level},
+            section="macro_position",
+        ))
+        store.add(evidence_from_metric(
+            "direction_run", m.direction_run,
+            "macro_analysis", "同比连续同向期数",
+            {"from": m.direction_from_label},
+            section="macro_position",
+        ))
+
+    if macro_risk is not None:
+        store.add(evidence_from_metric(
+            "risk_level", macro_risk.overall_level,
+            "macro_risk_engine", "current",
+            {"risk_count": len(macro_risk.items)},
+            section="risk",
+        ))
+
+
 def add_fundamental_evidence(
     store: EvidenceStore,
     financial: Optional[FinancialMetrics],

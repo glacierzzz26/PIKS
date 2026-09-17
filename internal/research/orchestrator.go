@@ -83,7 +83,9 @@ func (o *Orchestrator) Run(ctx context.Context, opt Options) (*Result, error) {
 	// 主体归一(P9):公司=6 位数字,行业=sw+6 位申万码,宏观=macro:<key>。
 	subjectType, code := store.NormalizeSubject(opt.Code)
 	if subjectType == "" {
-		return nil, fmt.Errorf("无法识别的主体码 %q(公司应为 6 位数字,行业应为 sw+6 位申万代码)", opt.Code)
+		return nil, fmt.Errorf(
+			"无法识别的主体码 %q(公司应为 6 位数字,行业应为 sw+6 位申万代码,宏观应为 macro:<维度> 如 macro:cn_cpi)",
+			opt.Code)
 	}
 	if opt.Profile == "" {
 		opt.Profile = "complete-stock"

@@ -141,6 +141,9 @@ def run_quality_gate(
         "industry_index": "industry_index",
         "industry_valuation": "industry_index",
         "industry_structure": "industry_index",
+        # 宏观维度主体(P9-5 / #13):两节同源于 macro 指标卡。
+        "macro_level": "macro",
+        "macro_position": "macro",
         "risk": "risk",
         "conclusion": "scorecard",
     }
@@ -180,6 +183,9 @@ def run_quality_gate(
         "industry_index": "industry_index",
         "industry_valuation": "industry_valuation",
         "industry_structure": "industry_structure",
+        # 宏观主体:两节的 Evidence 由 add_macro_evidence 按此 section 登记。
+        "macro_level": "macro_level",
+        "macro_position": "macro_position",
     }
     missing_ev = []
     for sec in profile_sections:
@@ -223,7 +229,8 @@ def run_quality_gate(
     # ---- 4. Time Boundary：as_of + period 存在 ----
     # 行业主体无 price 节(行业指数不是个股行情),时间边界落在 industry_index.price。
     # 公司研报(P9-4)同样无 price —— 它不采行情,时间边界落在**财报报告期**
-    # (financial_snapshots[].report_date)。三态各自取对应来源,判定的是
+    # (financial_snapshots[].report_date)。宏观研报(P9-5)三处皆无,边界落在
+    # macro.period(统计期 + 滞后天数)。四态各自取对应来源,判定的是
     # 「有没有时间边界」,不是「边界一定长在 price 上」。
     meta = json_report.get("meta", {})
     has_as_of = bool(meta.get("as_of"))
@@ -235,6 +242,12 @@ def run_quality_gate(
     if not has_period:
         snaps = json_report.get("financial_snapshots") or []
         has_period = any(s.get("report_date") for s in snaps)
+    # 宏观路径兜底:有 period 块(统计期末 + 期号)即视为有明确时间边界。
+    # ⚠️ 判的是 `period_end` 而非 `label` —— label 是展示原文,period_end 才是
+    # 机器可比的边界值。缺 period 块的宏观报告仍须 FAIL(反向守卫见测试)。
+    if not has_period:
+        macro_period = (json_report.get("macro") or {}).get("period") or {}
+        has_period = bool(macro_period.get("period_end"))
     gate.add(
         GateCheck(
             name="time_boundary",

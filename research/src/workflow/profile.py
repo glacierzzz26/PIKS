@@ -61,6 +61,11 @@ SECTION_REQUIREMENTS = {
     "industry_index": {"providers": ["industry_index"], "analysis": ["industry_index"]},
     "industry_valuation": {"providers": ["industry_index"], "analysis": []},
     "industry_structure": {"providers": ["industry_index"], "analysis": []},
+    # 宏观**维度**研报(P9-5 / issue #13):主体是宏观指标序列,而非个股或行业。
+    # 两节同源(都读 macro provider 的产物),分列以便版面各成章节 ——
+    # 与上面的 industry_index/industry_valuation 同一手法。
+    "macro_level": {"providers": ["macro"], "analysis": ["macro"]},
+    "macro_position": {"providers": ["macro"], "analysis": []},
     "risk": {"providers": [], "analysis": ["risk"]},
     "patterns": {"providers": ["market"], "analysis": ["patterns"]},
     "conclusion": {"providers": [], "analysis": ["scorecard"]},

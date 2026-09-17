@@ -1,0 +1,41 @@
+name: macro
+version: "1.0.0"
+description: 宏观研报(宏观指标序列主体,表达为 macro:<key>;#13)
+
+mode: full
+
+# ⚠️ 与个股/行业 profile 的关键差异(数据源决定,非取舍):
+# - 无 financial/valuation provider:宏观维度没有财报,也没有「估值」这一概念。
+# - 无 volume/turnover/patterns 章节:宏观序列**没有 OHLC、没有成交量** ——
+#   采集即编造。年化波动率同样不产出(月频统计量年化是双重计数)。
+# - 无 events/announcements:宏观指标没有公告;宏观舆情需单独源,不在本次范围。
+# - **一维度一 run**:`macro:cn_cpi` / `cn_ppi` / `cn_m2` / `cn_gdp` 各成一份报告。
+#   理由:一份报告只有一个 as_of,而各维度频率不同(月频 + 季频、GDP 累计)——
+#   合一会让「数据截止」无法诚实地用单值表达(见设计文档 §3.1)。
+period:
+  display:
+    macro: 36m           # 展示窗口:近 36 期(月频≈3 年;季频=9 年)
+  compute:
+    macro: 600m          # 历史分位用**全历史**;上限即全量(CPI 实测 224 期)
+  unit:
+    macro: calendar      # 月/季是**日历期**,不是交易日(个股/行业用 trading)
+
+sections:
+  - macro_level      # 一、宏观指标读数(最新值/同比/环比 + 近 N 期序列)
+  - macro_position   # 二、历史定位与趋势(水平分位/同比分位/窗口统计/连续同向)
+  - risk             # 三、风险提示
+
+# 评分卡:**不启用**。个股评分卡维度(业务质量/基本面趋势/估值/近期事件)对宏观
+# 无对应数据源 —— 硬凑分数即编造。宏观研报的「结论」由 AI 三段定性(研判域)
+# 加上规则判定的**风险等级**承担。⚠️ 因无评分卡,封面结论 chip 的唯一来源即
+# 风险章(report.ts 取 `scorecard.overall_label ?? risk.overall_level`),
+# 故 risk 节对宏观是**承重**而非装饰,不可删。
+scorecard:
+  dimensions: []
+  overall_rule: simple_sum
+  scale: [-2, -1, 0, +1, +2]
+
+thresholds:
+  abnormal_volume_multiplier: 2.0
+  abnormal_volume_lookback: 20
+  turnover_percentile_window: 520

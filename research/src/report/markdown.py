@@ -46,6 +46,27 @@ def _fmt_pct(value) -> str:
     return f"{value:+.2f}%"
 
 
+def _fmt_level(value, signed: bool = False) -> str:
+    """宏观水平读数格式化(P9-5 / #13) —— **禁止科学计数法**。
+
+    历史上用 `'{:,.4g}'`,大数(亿元量级)会输出 `3.568e+06`,两个问题:
+    1. 财经正文不该出现科学计数法;
+    2. `number_lint._NUMBER_RE` 的正则**没有指数部分**,只匹配到 `3.568`
+       丢掉 `e+06`,于是永远对不上指标卡里的 `3568083.6` → lint 必挂。
+
+    故按量级分派:千以上用千分位 + 1 位小数(亿元级足够),千以下保留 2 位
+    (CPI/PPI 水平是「上年同月=100」的指数,两位小数可读且可对账)。
+    """
+    if value is None:
+        return "N/A"
+    if not isinstance(value, (int, float)):
+        return str(value)
+    big = abs(value) >= 1000
+    if signed:
+        return ("{:+,.1f}" if big else "{:+,.2f}").format(value)
+    return ("{:,.1f}" if big else "{:,.2f}").format(value)
+
+
 def generate_markdown(
     symbol: str,
     as_of: date,
@@ -60,6 +81,7 @@ def generate_markdown(
     industry: Optional[Any] = None,
     patterns: Optional[PatternMetrics] = None,
     industry_metrics: Optional[Any] = None,
+    macro_metrics: Optional[Any] = None,
     data_source: str = "腾讯财经/akshare",
     sections: Optional[List[str]] = None,
 ) -> str:
@@ -67,6 +89,8 @@ def generate_markdown(
 
     industry_metrics: 行业**本体**指标卡(P9 #12,主体=申万行业指数)。给了它就渲染
         行业三章(行情/估值/成分),而非个股的「行业对比」章。
+    macro_metrics: 宏观**维度**指标卡(P9-5 / #13,主体=宏观指标序列)。给了它就渲染
+        宏观两章(读数/定位),而非个股或行业章节。
     sections: Profile 要求的报告章节（如 ["market","volume","events",...]），
               决定渲染哪些章节；默认全部（兼容旧调用）。
 
@@ -77,9 +101,12 @@ def generate_markdown(
 
     fin_section = _build_financial_section(fin_metrics, snapshots)
     event_section = _build_event_section(event_metrics)
-    # 风险章节(P9 #12):行业主体的 risk_metrics 是 IndustryRiskMetrics(无 veto_buy、
-    # 无涨跌停/流动性依据),走独立渲染器;个股路径逐字节不变。
-    if industry_metrics is not None:
+    # 风险章节:三种主体各走独立渲染器(个股/行业/宏观)。行业主体的 risk_metrics 是
+    # IndustryRiskMetrics、宏观是 MacroRiskMetrics(两者都无 veto_buy、无涨跌停/
+    # 流动性依据);个股路径逐字节不变。
+    if macro_metrics is not None:
+        risk_section = _build_macro_risk_section(risk_metrics)
+    elif industry_metrics is not None:
         risk_section = _build_industry_risk_section(risk_metrics)
     else:
         risk_section = _build_risk_section(risk_metrics)
@@ -99,6 +126,8 @@ def generate_markdown(
         "industry_index": lambda: _build_industry_price_section(industry_metrics),
         "industry_valuation": lambda: _build_industry_valuation_section(industry_metrics),
         "industry_structure": lambda: _build_industry_structure_section(industry_metrics),
+        "macro_level": lambda: _build_macro_level_section(macro_metrics),
+        "macro_position": lambda: _build_macro_position_section(macro_metrics),
         "capital": lambda: capital_section,
         "risk": lambda: risk_section,
         "conclusion": lambda: scorecard_section,
@@ -126,13 +155,32 @@ def generate_markdown(
             )
         add_section(ch.title, builder())
 
+    # 免责声明末行按主体分化:宏观报告**没有价格**,写「价格指标基于前复权计算」
+    # 是对不存在口径的虚假声明(行业研报同样无 price,故一并分化)。
+    if macro_metrics is not None:
+        disclaimer_extra = f"- 统计期为 {macro_metrics.period.label}，数据截止见封面「数据截止」。"
+    elif industry_metrics is not None:
+        disclaimer_extra = "- 行业指数点位由源站直接提供，未做复权处理。"
+    else:
+        disclaimer_extra = "- 价格指标基于前复权计算。"
     add_section(DISCLAIMER_TITLE, f"""- 本报告数据来源于 {data_source}，仅供参考，不构成投资建议。
-- 价格指标基于前复权计算。
+{disclaimer_extra}
 - 报告生成时间：{as_of.isoformat()}。""")
 
-    # 封面头:主体感知(P9 #12)。行业主体没有 price_metrics(profile 不含 price 分析),
-    # 硬套「个股研究报告」与 price_metrics.period_days 会既错又崩。
-    if industry_metrics is not None:
+    # 封面头:主体感知(P9 #12 / P9-5)。行业主体没有 price_metrics(profile 不含
+    # price 分析),硬套「个股研究报告」与 price_metrics.period_days 会既错又崩;
+    # 宏观主体两者皆无,故排在第一个判断。
+    if macro_metrics is not None:
+        ref, p = macro_metrics.ref, macro_metrics.period
+        title = f"宏观研究报告：{ref.name}"
+        # ⚠️ 宏观的**数据边界**与**报告生成日**必须分开写(D-M3):统计期总落后于
+        # 生成日(实测 CPI 滞后 17 天、GDP 滞后 79 天)。混成一句会让人误读
+        # 「数据到今天」。下面第一行是数据边界,上方保留生成日。
+        period_line = (
+            f"> 数据截止：{p.period_end.isoformat()}（{p.label}，"
+            f"较报告生成日滞后 {p.source_lag_days} 天）"
+        )
+    elif industry_metrics is not None:
         ref = industry_metrics.ref
         title = f"行业研究报告：{ref.name}（{ref.level_label} {ref.code}）"
         period_line = f"> 研究周期：近 {industry_metrics.price.period_days} 个交易日"
@@ -359,6 +407,141 @@ def _build_industry_structure_section(im: Optional[Any]) -> str:
 
 > 口径说明：用**中位数**而非均值（财务比率受极值影响大）。成分财务为个股当期快照。
 """
+
+
+def _build_macro_level_section(mm: Optional[Any]) -> str:
+    """宏观读数章(P9-5 / #13)。
+
+    ⚠️ 期号字段(2026 / 08)与数值**都必须进指标卡** —— 正文印源站期号
+    (「2026年08月份」)时,`number_lint._mask_text` 掩不掉它,其中的数字会被当
+    数据数字扫描。指标卡里 `period_year`/`period_month` 存为 **int** 正是为此
+    (str 会被 `collect_numbers_from_json` 跳过)。
+    """
+    if mm is None:
+        return "_宏观数据暂不可得。_\n"
+    ref = mm.ref
+
+    lines = [
+        f"**{ref.name}**",
+        "",
+        "| 指标 | 数值 |",
+        "|---|---|",
+        f"| 统计期 | {mm.period.label} |",
+        f"| 最新读数 | {_fmt_level(mm.latest_level)}（{ref.level_label}） |",
+        f"| 同比 | {format_optional(mm.latest_yoy, '{:+.2f}', '%')} |",
+        f"| 环比 | {format_optional(mm.latest_mom, '{:+.2f}', '%')} |",
+    ]
+    # GDP 专用:累计差分出的单季水平(附披露语,见下)
+    if mm.latest_single_quarter_level is not None:
+        lines.append(
+            f"| **单季水平** | {mm.latest_single_quarter_level:,.1f} 亿元 |"
+        )
+    if mm.prev_label:
+        lines.append(f"| 上期（{mm.prev_label}） | {_fmt_level(mm.prev_level)}"
+                     f"（同比 {format_optional(mm.prev_yoy, '{:+.2f}', '%')}） |")
+        # 累计口径不呈现「读数较上期」:同年内该增量恒等于「单季水平」(重复),
+        # 跨年则是两个不同跨度累计总量之差(不可比)。分析层已不产出该字段,
+        # 此处如实说明「为什么不给」—— 读者看到残缺行会以为缺数据。
+        if mm.period.cumulative:
+            lines.append("| 读数较上期 | 见「单季水平」（累计口径不作跨期差） |")
+        else:
+            lines.append(f"| 读数较上期 | {_fmt_level(mm.delta_level, signed=True)} |")
+        lines.append(f"| 同比较上期 | {format_optional(mm.delta_yoy, '{:+.2f}', ' 个百分点')} |")
+
+    # 序列明细(近 N 期)
+    if mm.readings:
+        lines += ["", f"### 近 {mm.period.window_periods} 期读数", ""]
+        lines.append("| 统计期 | 读数 | 同比 | 环比 |")
+        lines.append("|---|---|---|---|")
+        for r in mm.readings:
+            lines.append(
+                f"| {r.period_label} | "
+                f"{_fmt_level(r.level)} | "
+                f"{format_optional(r.yoy, '{:+.2f}', '%')} | "
+                f"{format_optional(r.mom, '{:+.2f}', '%')} |"
+            )
+
+    # 口径说明:量纲差异(指数 vs 百分比)必须逐维度讲清,否则读者会把
+    # 「100.8」当百分比读。GDP 另加累计差分的披露语。
+    notes = [ref.caliber]
+    if mm.latest_single_quarter_level is not None:
+        from ..analysis.macro import GDP_CUMULATIVE_NOTE
+        notes.append(GDP_CUMULATIVE_NOTE)
+    lines += ["", f"> 口径说明：{chr(10).join('> ' + n for n in notes).lstrip()}",
+              f"> 数据来源：{ref.source}。统计期与报告生成日不同，见封面「数据截止」。"]
+    return "\n".join(lines) + "\n"
+
+
+def _build_macro_position_section(mm: Optional[Any]) -> str:
+    """宏观历史定位章(P9-5 / #13)。分位与趋势均为**确定性计算**,无预测。"""
+    if mm is None:
+        return "_宏观定位数据暂不可得。_\n"
+    ref, p = mm.ref, mm.period
+
+    # 水平分位:仅在**有意义**的维度上呈现为定位依据(M2/GDP 是名义总量,
+    # 分位恒接近 100%,见 provider 的 level_percentile_meaningful)。
+    if ref.level_percentile_meaningful:
+        level_pct_line = (
+            f"| 水平历史分位 | {format_optional(mm.percentile_level, '{:.1f}', '%')} |"
+        )
+        level_note = "水平为其**指数/可平稳比较**读数，故水平分位具位置信息量。"
+    else:
+        level_pct_line = (
+            f"| 水平历史分位 | {format_optional(mm.percentile_level, '{:.1f}', '%')}"
+            f"（**不具位置信息量**，见口径） |"
+        )
+        level_note = ("本维度为**名义总量**，随经济增长长期上行，水平分位恒接近 100%，"
+                      "故定位判断以**同比**分位为准。")
+
+    dir_line = "N/A"
+    if mm.direction_run > 0:
+        dir_line = f"同比已连续 {mm.direction_run} 期回升"
+    elif mm.direction_run < 0:
+        dir_line = f"同比已连续 {abs(mm.direction_run)} 期回落"
+    elif mm.direction_from_label:
+        dir_line = "无连续同向变化"
+
+    return f"""| 指标 | 数值 |
+|---|---|
+| 全历史区间 | {p.history_start.isoformat() if p.history_start else 'N/A'} 起，共 {p.history_periods} 期 |
+{level_pct_line}
+| 同比历史分位 | {format_optional(mm.percentile_yoy, '{:.1f}', '%')} |
+| 近 {p.window_periods} 期中位 | {_fmt_level(mm.window_median_level)} |
+| 近 {p.window_periods} 期最小 | {_fmt_level(mm.window_min_level)} |
+| 近 {p.window_periods} 期最大 | {_fmt_level(mm.window_max_level)} |
+| 连续同向 | {dir_line} |
+
+> 口径说明：分位基于**全部可用历史**（{p.history_periods} 期，自
+> {p.history_start.isoformat() if p.history_start else 'N/A'} 起），非展示窗口。
+> 水平分位与同比分位**刻度不同**，分别命名、不可混读。{level_note}
+> 近 {p.window_periods} 期用**中位数与极值**，不用均值（宏观序列极值影响大）。
+> 「连续同向」是**状态描述**（可从序列直接数出），不含任何外推或预测。
+"""
+
+
+def _build_macro_risk_section(risk_metrics: Optional[Any]) -> str:
+    """宏观风险章(P9-5 / #13):纯文字,无 emoji(强制规则 3)。
+
+    ⚠️ 本章是封面结论 chip 的**唯一来源** —— 宏观无评分卡(D-M5),前端取
+    `scorecard.overall_label ?? risk.overall_level`。
+    """
+    if risk_metrics is None:
+        return "_风险分析暂不可得。_\n"
+
+    level_word = {"low": "低", "medium": "中", "high": "高"}
+    lines = [f"**综合风险等级**: {level_word.get(risk_metrics.overall_level, risk_metrics.overall_level)}", ""]
+
+    if risk_metrics.items:
+        lines.append("| 风险类别 | 等级 | 依据 | 说明 |")
+        lines.append("|---|---|---|---|")
+        for item in risk_metrics.items:
+            lines.append(f"| {item.category} | {item.level.upper()} | {item.evidence} | {item.description} |")
+    else:
+        lines.append("未触发任何风险规则：当前读数**未处于**历史极端位置，且同比无连续同向变化。")
+    lines.append("")
+    lines.append("> 口径说明：以上全部为**确定性规则**判定（分位位置 + 连续同向状态），"
+                 "不构成对宏观走势的预测，亦不构成任何资产配置建议。")
+    return "\n".join(lines) + "\n"
 
 
 def _build_event_section(event_metrics: Optional[EventMetrics]) -> str:

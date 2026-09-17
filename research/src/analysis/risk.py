@@ -29,54 +29,63 @@ class RiskMetrics:
 
 
 def analyze_risk(
-    price: PriceMetrics,
-    volume: VolumeMetrics,
-    financial: Optional[FinancialMetrics],
+    symbol: str,
+    as_of: date,
+    price: Optional[PriceMetrics] = None,
+    volume: Optional[VolumeMetrics] = None,
+    financial: Optional[FinancialMetrics] = None,
     announcements: Optional[List[Announcement]] = None,
 ) -> RiskMetrics:
     """
     基于规则的风险分析。
     不做预测，只基于已有数据标记已知风险。
+
+    量价可选(P9-4,issue #11):公司研报不采行情,此时 price/volume 为 None,
+    规则 1-3(波动率/回撤/流动性)整条跳过 —— 不猜、不补 —— 而规则 4-7
+    (负债率/净利同比/重大公告/估值缺失)纯基本面,照常独立运行。
+    `symbol`/`as_of` 由调用方显式传入(原先从 price 借,无量价时无法借)。
     """
     items = []
 
     # 1. 市场风险：高波动
-    if price.volatility_annual > 40:
-        items.append(RiskItem(
-            category="Market",
-            level="high",
-            evidence=f"年化波动率 {price.volatility_annual:.1f}%",
-            description="股价波动剧烈，短期风险较高",
-        ))
-    elif price.volatility_annual > 25:
-        items.append(RiskItem(
-            category="Market",
-            level="medium",
-            evidence=f"年化波动率 {price.volatility_annual:.1f}%",
-            description="股价波动中等，注意仓位控制",
-        ))
+    if price is not None:
+        if price.volatility_annual > 40:
+            items.append(RiskItem(
+                category="Market",
+                level="high",
+                evidence=f"年化波动率 {price.volatility_annual:.1f}%",
+                description="股价波动剧烈，短期风险较高",
+            ))
+        elif price.volatility_annual > 25:
+            items.append(RiskItem(
+                category="Market",
+                level="medium",
+                evidence=f"年化波动率 {price.volatility_annual:.1f}%",
+                description="股价波动中等，注意仓位控制",
+            ))
 
-    # 2. 市场风险：大幅回撤
-    if price.period_return_pct < -15:
-        items.append(RiskItem(
-            category="Market",
-            level="high",
-            evidence=f"区间跌幅 {price.period_return_pct:.1f}%",
-            description="近期股价大幅下跌，趋势偏弱",
-        ))
+        # 2. 市场风险：大幅回撤
+        if price.period_return_pct < -15:
+            items.append(RiskItem(
+                category="Market",
+                level="high",
+                evidence=f"区间跌幅 {price.period_return_pct:.1f}%",
+                description="近期股价大幅下跌，趋势偏弱",
+            ))
 
     # 3. 流动性风险：低换手 + 低成交额
     # 低换手不等于流动性差（大盘股常态），需结合成交额判断
-    avg_turnover = volume.avg_turnover_20d or volume.avg_turnover_5d
-    avg_amount = volume.avg_amount_20d or volume.avg_amount_5d
-    if avg_turnover is not None and avg_turnover < 0.15:
-        if avg_amount is None or avg_amount < 1e8:  # 日均成交 < 1亿元
-            items.append(RiskItem(
-                category="Liquidity",
-                level="medium",
-                evidence=f"20日平均换手率 {avg_turnover:.2f}%，日均成交额 {avg_amount/1e8:.2f}亿" if avg_amount else f"20日平均换手率 {avg_turnover:.2f}%",
-                description="交易活跃度较低，大额进出可能影响价格",
-            ))
+    if volume is not None:
+        avg_turnover = volume.avg_turnover_20d or volume.avg_turnover_5d
+        avg_amount = volume.avg_amount_20d or volume.avg_amount_5d
+        if avg_turnover is not None and avg_turnover < 0.15:
+            if avg_amount is None or avg_amount < 1e8:  # 日均成交 < 1亿元
+                items.append(RiskItem(
+                    category="Liquidity",
+                    level="medium",
+                    evidence=f"20日平均换手率 {avg_turnover:.2f}%，日均成交额 {avg_amount/1e8:.2f}亿" if avg_amount else f"20日平均换手率 {avg_turnover:.2f}%",
+                    description="交易活跃度较低，大额进出可能影响价格",
+                ))
 
     # 4. 财务风险：高负债
     if financial and financial.latest_debt_ratio is not None:
@@ -147,8 +156,8 @@ def analyze_risk(
         veto = False
 
     return RiskMetrics(
-        symbol=price.symbol,
-        as_of=price.as_of,
+        symbol=symbol,
+        as_of=as_of,
         overall_level=overall,
         items=items,
         veto_buy=veto,

@@ -97,7 +97,7 @@ def run_analysis(
         ))
 
     # 风险分析 —— 无论是否触发 veto 都记录 Evidence（无风险也是结论）
-    risk = analyze_risk(price, volume, financial, announcements)
+    risk = analyze_risk(price.symbol, as_of, price, volume, financial, announcements)
     store.add(evidence_from_metric(
         "risk_level", risk.overall_level,
         "risk_engine", "current",
@@ -168,4 +168,62 @@ def add_industry_evidence(
             "industry_risk_engine", "current",
             {"risk_count": len(industry_risk.items)},
             section="risk",
+        ))
+
+
+def add_fundamental_evidence(
+    store: EvidenceStore,
+    financial: Optional[FinancialMetrics],
+    risk: Optional[RiskMetrics],
+    events: Optional[EventMetrics] = None,
+) -> None:
+    """纯基本面主体(P9-4,issue #11)的 Evidence。
+
+    与 `run_analysis` 并列,理由同 `add_industry_evidence`:公司研报不采行情,
+    `_refresh_evidence` 被 `if not bars: return` 挡住 ⇒ Evidence 全空 ⇒ 机检
+    `evidence_completeness` 必失败。此处只登记基本面报告真正上屏的那几个数字。
+
+    登记范围与 `markdown.py` 两个 builder 一一对应:
+      - `_build_financial_section`(最近季度表 + 估值)→ section="financial"
+      - `_build_risk_section`(等级 + 逐条依据)→ section="risk"
+    """
+    if financial is not None:
+        # 与 _build_financial_section 的「最近季度」表逐行对齐
+        for name, value, period in (
+            ("revenue_yoy", financial.latest_revenue_yoy, "最新季报"),
+            ("net_profit_yoy", financial.latest_net_profit_yoy, "最新季报"),
+            ("roe", financial.latest_roe, "最新季报"),
+            ("gross_margin", financial.latest_gross_margin, "最新季报"),
+            ("net_margin", financial.latest_net_margin, "最新季报"),
+            ("debt_ratio", financial.latest_debt_ratio, "最新季报"),
+            ("pe_ttm", financial.pe_ttm, "当期快照"),
+            ("pb", financial.pb, "当期快照"),
+        ):
+            if value is not None:
+                store.add(evidence_from_metric(
+                    name, value, "akshare_financial", period,
+                    section="financial",
+                ))
+
+    if risk is not None:
+        store.add(evidence_from_metric(
+            "risk_level", risk.overall_level,
+            "risk_engine", "current",
+            {"risk_count": len(risk.items), "veto_buy": risk.veto_buy},
+            section="risk",
+        ))
+        if risk.veto_buy:
+            store.add(evidence_from_metric(
+                "risk_veto", True,
+                "risk_engine", "current",
+                {"overall_level": risk.overall_level, "risk_count": len(risk.items)},
+                section="risk",
+            ))
+
+    if events is not None:
+        store.add(evidence_from_metric(
+            "news_count", events.total_news,
+            "akshare_news", "30d",
+            {"earnings_mentions": events.earnings_mentions},
+            section="events",
         ))

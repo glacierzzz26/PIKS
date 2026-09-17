@@ -2,11 +2,10 @@
 
 import { Link } from "react-router-dom";
 import { ArrowLeft, Microscope } from "lucide-react";
-import DeepResearchButton from "@/components/research/DeepResearchButton";
 import type { StockEntity, StockIndustry } from "@/lib/types";
 
 /**
- * 个股中心页头：代码/名称/所属行业 + 深研入口。
+ * 个股中心页头：代码/名称/所属行业。
  * entity 可为 null（未建公司实体）：仍显示代码，名称退化为「未知标的」，如实不编造。
  */
 export default function StockHeader({
@@ -41,7 +40,10 @@ export default function StockHeader({
         </div>
       </div>
       <div className="meta">
-        <DeepResearchButton code={code} />
+        {/* 触发入口已下放到「深研报告」区按功能分块（公司质地 / 个股分析 各自发起，
+            P9-4 / issue #11）—— 这里不再放一个含义模糊的「深研」按钮。
+            买入前体检走下方「买入前速评」卡。 */}
+        <span className="text-[12px] text-faint">买入前体检见下方「买入前速评」</span>
       </div>
     </div>
   );

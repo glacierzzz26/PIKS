@@ -94,10 +94,12 @@ export default function Page() {
         <div className="section-head">
           <span className="bar" />
           <h2>深研报告</h2>
-          <span className="hint">点右上「深研」发起一次新的 AI 分析</span>
+          <span className="hint">
+            按功能分两块 —— 公司质地（季频文档）与个股分析（日频速览），各自独立发起
+          </span>
         </div>
         <div className="panel panel-pad">
-          <StockResearch runs={d.research} />
+          <StockResearch runs={d.research} code={d.code} />
         </div>
       </section>
 

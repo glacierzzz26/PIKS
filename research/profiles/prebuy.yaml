@@ -1,0 +1,55 @@
+name: prebuy
+version: "1.0.0"
+description: 买入前速评（确定性优先，跳过行业对比以提速；结论取自评分卡 + 风险规则，AI 综合研判可选）
+
+mode: express
+
+period:
+  display:
+    price: 60d
+    volume: 60d
+    turnover: 60d
+    news: 30d
+    announcement: 30d
+    financial: 4q
+    valuation: 3y
+  compute:
+    price: 260d
+    turnover: 260d
+  unit:
+    price: trading
+    volume: trading
+    turnover: trading
+    news: calendar
+    announcement: calendar
+
+# 除 industry 外全要：保留完整 6 维评分卡（含 risk），去掉最重的 SW 行业成员采集。
+# 行业对比仍由「完整深研」(complete-stock) 覆盖。
+sections:
+  - company
+  - market
+  - volume
+  - turnover
+  - patterns          # 量价形态（规则判定）+ 逐日序列（双轴图数据源）
+  - financial
+  - valuation
+  - events
+  - announcements
+  - risk
+  - conclusion
+
+scorecard:
+  dimensions:
+    - business_quality
+    - fundamental_trend
+    - market_trend
+    - valuation
+    - recent_events
+    - risk
+  overall_rule: simple_sum
+  scale: [-2, -1, 0, +1, +2]
+
+thresholds:
+  abnormal_volume_multiplier: 2.0
+  abnormal_volume_lookback: 20
+  turnover_percentile_window: 260

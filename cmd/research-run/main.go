@@ -62,6 +62,7 @@ func main() {
 	res, err := o.Run(ctx, research.Options{
 		Code: code, Profile: *profile, Days: *days,
 		RunID: *runID, Force: *force, OutDir: *outDir,
+		RequireSynthesis: true, // CLI 深研:必须有 AI(快速模式仅 web 速评端点用)
 	})
 	if err != nil {
 		fatal("research-run:", err)

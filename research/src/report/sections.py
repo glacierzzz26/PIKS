@@ -57,6 +57,9 @@ class Chapter:
 CHAPTERS: Tuple[Chapter, ...] = (
     Chapter("price", "股价表现", ("fact", "calc"), ("market", "company")),
     Chapter("volume", "成交量与换手率", ("fact", "calc"), ("volume", "turnover")),
+    # 量价形态(P7,规则判定)。master 线在 volume 之后、financial 之前渲染;
+    # 域为 数据+计算 —— 标签与共振结论皆由确定性规则算出,无 AI 叙述。
+    Chapter("patterns", "量价形态", ("fact", "calc"), ("patterns",)),
     Chapter("financial", "基本面分析", ("fact", "calc"), ("financial", "valuation")),
     Chapter("events", "近期事件与新闻", ("fact",), ("events", "announcements")),
     # 个股主体的「同业横比」章(与下面的行业**本体**三章互斥:profile 决定谁出现)

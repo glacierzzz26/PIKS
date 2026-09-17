@@ -52,7 +52,10 @@ RUN sed -i "s|deb.debian.org|${APT_MIRROR}|g; s|security.debian.org|${APT_MIRROR
     && rm -f /etc/nginx/sites-enabled/default
 # 容器内无 .git,血缘字段取此烘焙值
 ARG GIT_SHORT=unknown
-ENV PIKS_GIT_SHORT=${GIT_SHORT}
+# 版本号:未发版恒为 v0.0.0(见 CLAUDE.md 发布纪律);发版时由 deploy.sh 取 git tag 传入。
+ARG PIKS_VERSION=v0.0.0
+ENV PIKS_GIT_SHORT=${GIT_SHORT} \
+    PIKS_VERSION=${PIKS_VERSION}
 WORKDIR /app
 # research 依赖层独立缓存:requirements.txt 不变则不重装(akshare 装一次较慢)。
 # 镜像源不稳定(files.pythonhosted.org 时长读超时),加重试与超时兜底;

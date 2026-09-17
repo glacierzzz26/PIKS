@@ -10,6 +10,7 @@ from ..analysis.events import EventMetrics
 from ..analysis.risk import RiskMetrics
 from ..analysis.capital import CapitalMetrics
 from ..analysis.scorecard import Scorecard
+from ..analysis.patterns import PatternMetrics
 from ..analysis.industry import IndustryMetrics
 from ..models.financial import FinancialSnapshot
 from .sections import DEFAULT_SECTIONS, build_manifest
@@ -27,6 +28,7 @@ def generate_json(
     capital_metrics: Optional[CapitalMetrics] = None,
     scorecard: Optional[Scorecard] = None,
     industry: Optional[Any] = None,
+    patterns: Optional[PatternMetrics] = None,
     industry_metrics: Optional[IndustryMetrics] = None,
     sections: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
@@ -140,6 +142,9 @@ def generate_json(
 
     if capital_metrics:
         result["capital"] = asdict(capital_metrics)
+
+    if patterns:
+        result["patterns"] = asdict(patterns)
 
     if scorecard:
         result["scorecard"] = {

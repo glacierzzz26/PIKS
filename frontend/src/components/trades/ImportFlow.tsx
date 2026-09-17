@@ -1,96 +1,17 @@
 "use client";
 
-import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { apiPost, apiUpload, ENDPOINTS } from "@/lib/api";
+import { useTradeImport, isConfigError } from "@/hooks/useTradeImport";
 import ImportControls from "@/components/trades/ImportControls";
 import TradePreviewTable from "@/components/trades/TradePreviewTable";
 import PositionPreviewTable from "@/components/trades/PositionPreviewTable";
 import WatchPreviewTable from "@/components/trades/WatchPreviewTable";
 import type { ImportPreview, PreviewPosition, PreviewTrade, PreviewWatch } from "@/lib/types";
 
-type Kind = "" | "trade" | "position" | "watchlist";
-
-/** 配置类错误（AI/视觉模型未配）→ 提示去 /settings，其余错误原样展示（不误导）。 */
-function isConfigError(msg: string): boolean {
-  return /配置|设置|未配置/.test(msg);
-}
-
 /** 截图导入：选类型 → 上传识别 → 预览可编辑(勾选) → 确认入库（含自选镜像） */
 export default function ImportFlow({ onDone }: { onDone: () => void }) {
-  const [kind, setKind] = useState<Kind>("");
-  const [file, setFile] = useState<File | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
-  const [preview, setPreview] = useState<ImportPreview | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const upload = async () => {
-    if (!kind || !file) return;
-    setBusy(true);
-    setErr(null);
-    setPreview(null);
-    setMsg(null);
-    try {
-      const fd = new FormData();
-      fd.append("type", kind);
-      fd.append("file", file);
-      setPreview(await apiUpload<ImportPreview>(ENDPOINTS.tradesImport, fd));
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const patch = <S extends "trades" | "positions" | "watch", T>(
-    section: S,
-    i: number,
-    p: Partial<T>
-  ) =>
-    setPreview((prev) => {
-      if (!prev) return prev;
-      const arr = [...(prev[section] as unknown as T[])];
-      arr[i] = { ...arr[i], ...p };
-      return { ...prev, [section]: arr };
-    });
-
-  // 整组取消/恢复移出勾选（仅影响 change==='remove' 行）
-  const toggleRemoveAll = (include: boolean) =>
-    setPreview((prev) =>
-      prev
-        ? {
-            ...prev,
-            watch: prev.watch.map((w) =>
-              w.change === "remove" ? { ...w, include } : w
-            ),
-          }
-        : prev
-    );
-
-  const confirm = async () => {
-    if (!preview) return;
-    setBusy(true);
-    setErr(null);
-    try {
-      await apiPost<{ ok?: boolean; applied?: number }>(ENDPOINTS.tradesConfirm, preview);
-      setMsg(preview.kind === "watchlist" ? "自选已同步" : "已确认入库");
-      reset();
-      onDone();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const reset = () => {
-    setPreview(null);
-    setFile(null);
-    setKind("");
-    if (inputRef.current) inputRef.current.value = "";
-  };
+  const imp = useTradeImport(onDone);
+  const { kind, file, busy, err, msg, preview, inputRef } = imp;
 
   return (
     <div className="panel panel-pad flex flex-col gap-3">
@@ -118,29 +39,23 @@ export default function ImportFlow({ onDone }: { onDone: () => void }) {
           file={file}
           busy={busy}
           inputRef={inputRef}
-          onKind={setKind}
+          onKind={imp.setKind}
           onFile={(f) => {
-            setFile(f);
-            setErr(null);
+            imp.setFile(f);
+            imp.setErr(null);
           }}
-          onClearFile={() => setFile(null)}
-          onUpload={upload}
+          onClearFile={() => imp.setFile(null)}
+          onUpload={imp.upload}
         />
       )}
 
       {preview && (
         <>
-          {preview.kind === "watchlist" ? (
-            <WatchPreviewTable rows={preview.watch} onPatch={(i, p) => patch<"watch", PreviewWatch>("watch", i, p)} onToggleRemoveAll={toggleRemoveAll} />
-          ) : preview.kind === "position" ? (
-            <PositionPreviewTable rows={preview.positions} onPatch={(i, p) => patch<"positions", PreviewPosition>("positions", i, p)} />
-          ) : (
-            <TradePreviewTable rows={preview.trades} onPatch={(i, p) => patch<"trades", PreviewTrade>("trades", i, p)} />
-          )}
+          <PreviewSection preview={preview} onPatch={imp.patch} onToggleRemoveAll={imp.toggleRemoveAll} />
 
           <div className="flex items-center gap-2">
             <button
-              onClick={confirm}
+              onClick={imp.confirm}
               disabled={busy}
               className="inline-flex h-8 items-center gap-1.5 rounded-[10px] bg-accent px-3 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
             >
@@ -148,9 +63,9 @@ export default function ImportFlow({ onDone }: { onDone: () => void }) {
             </button>
             <button
               onClick={() => {
-                reset();
-                setErr(null);
-                setMsg(null);
+                imp.reset();
+                imp.setErr(null);
+                imp.setMsg(null);
               }}
               className="inline-flex h-8 items-center rounded-[10px] border border-line bg-card px-3 text-xs text-muted hover:text-up"
             >
@@ -160,5 +75,40 @@ export default function ImportFlow({ onDone }: { onDone: () => void }) {
         </>
       )}
     </div>
+  );
+}
+
+/** 按类型分发到对应的宽表预览（桌面）。 */
+function PreviewSection({
+  preview,
+  onPatch,
+  onToggleRemoveAll,
+}: {
+  preview: ImportPreview;
+  onPatch: <S extends "trades" | "positions" | "watch", T>(s: S, i: number, p: Partial<T>) => void;
+  onToggleRemoveAll: (include: boolean) => void;
+}) {
+  if (preview.kind === "watchlist") {
+    return (
+      <WatchPreviewTable
+        rows={preview.watch}
+        onPatch={(i, p) => onPatch<"watch", PreviewWatch>("watch", i, p)}
+        onToggleRemoveAll={onToggleRemoveAll}
+      />
+    );
+  }
+  if (preview.kind === "position") {
+    return (
+      <PositionPreviewTable
+        rows={preview.positions}
+        onPatch={(i, p) => onPatch<"positions", PreviewPosition>("positions", i, p)}
+      />
+    );
+  }
+  return (
+    <TradePreviewTable
+      rows={preview.trades}
+      onPatch={(i, p) => onPatch<"trades", PreviewTrade>("trades", i, p)}
+    />
   );
 }

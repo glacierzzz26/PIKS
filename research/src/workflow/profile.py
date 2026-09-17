@@ -62,6 +62,7 @@ SECTION_REQUIREMENTS = {
     "industry_valuation": {"providers": ["industry_index"], "analysis": []},
     "industry_structure": {"providers": ["industry_index"], "analysis": []},
     "risk": {"providers": [], "analysis": ["risk"]},
+    "patterns": {"providers": ["market"], "analysis": ["patterns"]},
     "conclusion": {"providers": [], "analysis": ["scorecard"]},
 }
 

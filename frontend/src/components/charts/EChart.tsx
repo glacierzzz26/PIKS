@@ -2,8 +2,8 @@
 
 import { useEffect, useRef } from "react";
 import * as echarts from "echarts/core";
-import { BarChart } from "echarts/charts";
-import type { BarSeriesOption } from "echarts/charts";
+import { BarChart, LineChart } from "echarts/charts";
+import type { BarSeriesOption, LineSeriesOption } from "echarts/charts";
 import {
   GridComponent,
   TooltipComponent,
@@ -14,12 +14,12 @@ import { LabelLayout } from "echarts/features";
 import { CanvasRenderer } from "echarts/renderers";
 import type { ComposeOption } from "echarts/core";
 
-// 只注册本应用实际用到的图表与组件（柱状图 + 直角坐标系 + 提示框），
+// 只注册本应用实际用到的图表与组件（柱状 + 折线 + 直角坐标系 + 提示框），
 // 其余 echarts 模块由 tree-shaking 剔除，显著缩小体积。
-echarts.use([BarChart, GridComponent, TooltipComponent, LabelLayout, CanvasRenderer]);
+echarts.use([BarChart, LineChart, GridComponent, TooltipComponent, LabelLayout, CanvasRenderer]);
 
 export type PiksChartOption = ComposeOption<
-  BarSeriesOption | GridComponentOption | TooltipComponentOption
+  BarSeriesOption | LineSeriesOption | GridComponentOption | TooltipComponentOption
 >;
 
 /**

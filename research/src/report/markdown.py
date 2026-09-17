@@ -14,6 +14,7 @@ from ..analysis.events import EventMetrics
 from ..analysis.risk import RiskMetrics, RiskItem
 from ..analysis.capital import CapitalMetrics
 from ..analysis.scorecard import Scorecard
+from ..analysis.patterns import PatternMetrics
 from ..models.financial import FinancialSnapshot
 from .sections import (
     AI_SYNTHESIS_SLOT,
@@ -57,6 +58,7 @@ def generate_markdown(
     capital_metrics: Optional[CapitalMetrics] = None,
     scorecard: Optional[Scorecard] = None,
     industry: Optional[Any] = None,
+    patterns: Optional[PatternMetrics] = None,
     industry_metrics: Optional[Any] = None,
     data_source: str = "腾讯财经/akshare",
     sections: Optional[List[str]] = None,
@@ -82,6 +84,7 @@ def generate_markdown(
     else:
         risk_section = _build_risk_section(risk_metrics)
     capital_section = _build_capital_section(capital_metrics)
+    pattern_section = _build_pattern_section(patterns)
     scorecard_section = _build_scorecard_section(scorecard)
 
     # 章节 key → 渲染函数。key 与 `sections.py` 的 Chapter.key 一一对应
@@ -89,6 +92,7 @@ def generate_markdown(
     builders: Dict[str, Callable[[], str]] = {
         "price": lambda: _build_price_section(price_metrics),
         "volume": lambda: _build_volume_section(volume_metrics),
+        "patterns": lambda: pattern_section,
         "financial": lambda: fin_section,
         "events": lambda: event_section,
         "industry": lambda: _build_industry_section(industry),
@@ -530,6 +534,39 @@ def _build_risk_section(risk_metrics: Optional[RiskMetrics]) -> str:
         lines.append("未发现显著风险信号。")
         lines.append("")
 
+    return "\n".join(lines)
+
+
+def _build_pattern_section(patterns: Optional[PatternMetrics]) -> str:
+    """量价形态（规则判定）。只打印 JSON 中确有的数值，保证 Number Lint 可溯源；
+    逐日序列与每条标签的详细依据在个股页「买入前速评」卡片渲染（规则判定分区）。"""
+    if patterns is None:
+        return "_量价形态暂不可得。_\n"
+
+    lines = ["**换手率口径**：流通股本口径（数据源 腾讯财经/akshare），非自由流通口径。", ""]
+
+    if patterns.note:
+        lines.append(f"_{patterns.note}_")
+        lines.append("")
+    elif patterns.labels:
+        lines.append(f"近 {patterns.window_days} 个交易日识别到的量价形态（规则判定）：")
+        lines.append("")
+        for lb in patterns.labels:
+            lines.append(f"- {lb['date']} {lb['label']}")
+        lines.append("")
+    else:
+        lines.append(f"近 {patterns.window_days} 个交易日内未识别出显著量价形态。")
+        lines.append("")
+
+    d = patterns.divergence or {}
+    if d:
+        coincide = "是" if d.get("peak_high_coincide") else "否"
+        lines.append(
+            f"换手率峰值 {d.get('peak_turnover')}%（{d.get('peak_date')}）"
+            f"与股价高点 {d.get('high_close')} 元（{d.get('high_date')}）"
+            f"共振 {coincide}；峰值后至今 {d.get('after_peak_return_pct')}%。"
+        )
+        lines.append("")
     return "\n".join(lines)
 
 

@@ -49,6 +49,22 @@ export const VOLUME_ROWS: Row[] = [
   { key: "abnormal_volume_days", label: "放量异常日", kind: "days" },
 ];
 
+/** 财务基本面（metrics.financial）—— 最近季度，用于买入前体检 */
+export const FINANCIAL_ROWS: Row[] = [
+  { key: "latest_revenue_yoy", label: "营收同比", kind: "pct" },
+  { key: "latest_net_profit_yoy", label: "净利同比", kind: "pct" },
+  { key: "latest_roe", label: "ROE", kind: "pct" },
+  { key: "latest_gross_margin", label: "毛利率", kind: "pct" },
+  { key: "latest_net_margin", label: "净利率", kind: "pct" },
+  { key: "latest_debt_ratio", label: "资产负债率", kind: "pct" },
+];
+
+/** 估值（metrics.financial 同源）—— 买入前最关心的一项 */
+export const VALUATION_ROWS: Row[] = [
+  { key: "pe_ttm", label: "PE(TTM)", kind: "ratio" },
+  { key: "pb", label: "PB", kind: "ratio" },
+];
+
 /** 取数值（null/undefined → null，保持「缺失如实空态」）。 */
 export function numAt(
   obj: Record<string, unknown> | undefined,

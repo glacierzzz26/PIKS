@@ -35,6 +35,11 @@ type Options struct {
 	Force bool
 	// OutDir 产物目录;空 = 按 run_id 落临时根(续跑时能凭 run_id 找回原目录)。
 	OutDir string
+	// RequireSynthesis 为 true(默认)时,合成步必须有 LLM 且成功,否则整轮 failed
+	// (深研语义:无 AI 不产报告)。为 false(快速模式)时,LLM 缺失/失败/超预算不 fail:
+	// 记空 synthesis 继续,markdown 保留骨架(含「待 AI 综合研判」占位)——用于「买入前速评」,
+	// 结论取自确定性评分卡 + 风险规则,不被 AI 网关阻塞。
+	RequireSynthesis bool
 	// PriorRuns 引用几份既往 done 研报作合成输入(issue #8;0 = 关,新档默认关)。
 	// 关时产物与改动前逐字节一致 —— 首次研报与独立 CLI 路径零回归。
 	PriorRuns int
@@ -226,31 +231,80 @@ func (o *Orchestrator) execute(ctx context.Context, opt Options, code, symbol, r
 	if err := o.store.UpdateResearchRunStatus(ctx, runID, StatusSynthesizing, ""); err != nil {
 		return err
 	}
+	if err := o.synthesizeStep(ctx, arts, runID, code, res, opt.RequireSynthesis, opt.PriorRuns); err != nil {
+		return err
+	}
+
+	// ---- 3. verifying:六项 Quality Gate ----
+	if err := o.store.UpdateResearchRunStatus(ctx, runID, StatusVerifying, ""); err != nil {
+		return err
+	}
+	gateTR, err := o.startTask(ctx, "research-run:verify", map[string]any{"code": code})
+	if err != nil {
+		return err
+	}
+	if _, err := o.runner.gate(ctx, dir, code); err != nil {
+		o.finishTask(ctx, gateTR, "failed", err, nil)
+		return fmt.Errorf("机检执行失败: %w", err)
+	}
+	o.finishTask(ctx, gateTR, "success", nil, nil)
+	gate, err := readJSON(arts.gatePath())
+	if err != nil {
+		return fmt.Errorf("读机检结果失败: %w", err)
+	}
+	res.Gate = gatePassed(gate)
+
+	// ---- 4. done:机检未过也算 done(产物可用),问题清单原样落库 ----
+	if err := o.store.FinishResearchRun(ctx, runID, StatusDone, "", &store.ResearchRun{Gate: gate}); err != nil {
+		return err
+	}
+	res.Status = StatusDone
+	o.logf("run %s 完成: gate=%v lint=%v tokens=%d", runID, res.Gate, res.Lint, res.Tokens)
+	return nil
+}
+
+// synthesizeStep 执行合成步。requireSynth=true(深研语义):LLM 缺失/失败/超预算 → 返回 error,
+// 整轮 failed,不降级不编造。requireSynth=false(快速模式):上述情况记空 synthesis 继续,
+// markdown 用骨架(含「待 AI 综合研判」占位),让确定性分析(评分卡/风险/量价形态)照常产出。
+// priorRuns>0 时把最近几份 done 研报作合成输入(issue #8),并落 {code}_prior_metrics.json 供 lint 放开 known 集。
+func (o *Orchestrator) synthesizeStep(ctx context.Context, arts *artifacts, runID, code string, res *Result, requireSynth bool, priorRuns int) error {
+	dir := arts.dir
+
 	prompt, err := readText(arts.promptPath())
 	if err != nil || prompt == "" {
 		return fmt.Errorf("读合成提示失败(指标卡不可得?): %v", err)
 	}
+
 	// issue #8:既往 done 研报作合成输入。用 Python 的 prompt 原文 + 追加历史摘要段,
 	// 并把这些 metrics 落成 {code}_prior_metrics.json 供 lint 放开 known 集。
-	// 无历史(PriorRuns=0 或首次研报)→ 下面三步全是 no-op,产物与改动前逐字节一致。
-	priors, priorMetrics := o.loadPriorRuns(ctx, code, runID, opt.PriorRuns)
+	// 无历史(priorRuns=0 或首次研报)→ 下面三步全是 no-op,产物与改动前逐字节一致。
+	priors, priorMetrics := o.loadPriorRuns(ctx, code, runID, priorRuns)
 	prompt += priorPromptBlock(priors)
 	priorMetricsPath, err := writePriorMetrics(dir, code, priorMetrics)
 	if err != nil {
 		return fmt.Errorf("写历史研报数字失败: %w", err)
 	}
-	// 预算护栏:今日已用 ≥ 预算 → 如实失败,不降级不编造(设计 §4.4)。
+	// 预算护栏:今日已用 ≥ 预算 → 深研如实失败;快速模式改走骨架。
 	if err := o.checkBudget(ctx); err != nil {
-		return err
+		if requireSynth {
+			return err
+		}
+		return o.synthFallback(ctx, arts, runID, "预算护栏: "+err.Error())
 	}
+
 	synthTR, err := o.startTask(ctx, "research-run:synth", map[string]any{"code": code})
 	if err != nil {
 		return err
 	}
 	syn, usage, err := o.synthesize(ctx, prompt)
 	if err != nil {
-		o.finishTask(ctx, synthTR, "failed", err, nil)
-		return err
+		if requireSynth {
+			o.finishTask(ctx, synthTR, "failed", err, nil)
+			return err
+		}
+		// 快速模式:LLM 不可得不算失败,记因由后走骨架。
+		o.finishTask(ctx, synthTR, "skipped", err, nil)
+		return o.synthFallback(ctx, arts, runID, err.Error())
 	}
 	model := ""
 	if o.provider != nil {
@@ -262,7 +316,7 @@ func (o *Orchestrator) execute(ctx context.Context, opt Options, code, symbol, r
 	if err := writeJSON(arts.synthPath(), syn); err != nil {
 		return fmt.Errorf("写合成结果失败: %w", err)
 	}
-	// 第 4 步:渲染进报告 + Number Lint(未过退出码 2,已落产物)。
+	// 渲染进报告 + Number Lint(未过退出码 2,已落产物)。
 	// priorMetricsPath 为空(synthesize 自动跳过)或指向历史 metrics → lint 把历史数字并入 known。
 	if _, err := o.runner.synthesize(ctx, dir, code, arts.synthPath(), priorMetricsPath); err != nil {
 		return fmt.Errorf("渲染/机检失败: %w", err)
@@ -293,6 +347,12 @@ func (o *Orchestrator) execute(ctx context.Context, opt Options, code, symbol, r
 	// issue #8:把"参考了 N 份历史研报"标进 metrics.meta(零 schema;前端可如实展示)。
 	// 无历史 → annotatePriorRuns 是 no-op,metrics 保持 Python 产物原样。
 	if len(priorMetrics) > 0 {
+		// metrics 是 Python 产物文件(合成步内自取 —— 抽取 synthesizeStep 后不再有
+		// execute 作用域里的同名变量)。
+		metrics, err := readJSON(arts.metricsPath())
+		if err != nil {
+			return fmt.Errorf("读指标卡失败(无法标注历史研报引用): %w", err)
+		}
 		if err := o.store.SaveResearchArtifacts(ctx, runID, &store.ResearchRun{
 			Metrics: annotatePriorRuns(metrics, len(priorMetrics)),
 		}); err != nil {
@@ -301,32 +361,23 @@ func (o *Orchestrator) execute(ctx context.Context, opt Options, code, symbol, r
 	}
 	res.Tokens, res.Model = usage.Total(), model
 	res.Lint = !lintFailed(lint)
+	return nil
+}
 
-	// ---- 3. verifying:六项 Quality Gate ----
-	if err := o.store.UpdateResearchRunStatus(ctx, runID, StatusVerifying, ""); err != nil {
-		return err
+// synthFallback 快速模式下的合成降级:用骨架报告作 markdown,落 lint=未过(含 skipped 原因),
+// 不写 synthesis(前端据此如实显示「AI 综合研判未生成」)。确定性指标卡早已落库,不受影响。
+func (o *Orchestrator) synthFallback(ctx context.Context, arts *artifacts, runID, reason string) error {
+	o.logf("run %s: 快速模式跳过 AI 合成(%s),使用骨架报告", runID, reason)
+	skeleton, err := readText(arts.skeletonPath())
+	if err != nil || skeleton == "" {
+		return fmt.Errorf("读骨架报告失败(合成不可得且无兜底): %v", err)
 	}
-	gateTR, err := o.startTask(ctx, "research-run:verify", map[string]any{"code": code})
-	if err != nil {
-		return err
+	lint := json.RawMessage(`{"scanned":0,"matched":0,"ignored":0,"passed":false,"issues":[]}`)
+	if err := o.store.SaveResearchArtifacts(ctx, runID, &store.ResearchRun{
+		Markdown: &skeleton, Lint: lint,
+	}); err != nil {
+		return fmt.Errorf("落骨架报告失败: %w", err)
 	}
-	if _, err := o.runner.gate(ctx, dir, code); err != nil {
-		o.finishTask(ctx, gateTR, "failed", err, nil)
-		return fmt.Errorf("机检执行失败: %w", err)
-	}
-	o.finishTask(ctx, gateTR, "success", nil, nil)
-	gate, err := readJSON(arts.gatePath())
-	if err != nil {
-		return fmt.Errorf("读机检结果失败: %w", err)
-	}
-	res.Gate = gatePassed(gate)
-
-	// ---- 4. done:机检未过也算 done(产物可用),问题清单原样落库 ----
-	if err := o.store.FinishResearchRun(ctx, runID, StatusDone, "", &store.ResearchRun{Gate: gate}); err != nil {
-		return err
-	}
-	res.Status = StatusDone
-	o.logf("run %s 完成: gate=%v lint=%v tokens=%d", runID, res.Gate, res.Lint, res.Tokens)
 	return nil
 }
 

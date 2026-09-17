@@ -41,6 +41,7 @@ const PAGES = [
   { path: "/entities", kind: "spa" },
   { path: "/graph", kind: "graph" },
   { path: "/recon", kind: "spa" },
+  { path: "/m/upload", kind: "spa" }, // 手机截图投递页(AppShell 之外,无侧栏)
 ];
 
 let pass = 0;

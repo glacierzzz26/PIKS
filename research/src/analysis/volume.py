@@ -1,5 +1,5 @@
 """成交量/成交额/换手率分析引擎"""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from typing import List, Optional
 import numpy as np
@@ -39,6 +39,14 @@ class VolumeMetrics:
     # 量价关系（相关系数）
     price_volume_corr: Optional[float]
 
+    # 逐日明细(issue #3):每条 {date, volume, amount, threshold, ratio}。
+    # `threshold` 是该日**自身**的判定阈值 max(前20日均量×2, 前5日峰值),
+    # `ratio` = 当日量 / 该阈值 —— 皆由引擎算出落库,前端只展示不重算。
+    # 注意:窗口外(cap 前的)交易日不参与扫描,故此明细与 `pattern_metrics.series`
+    # 的 60 日窗口一致;更早的异常日不在此列(不臆造、不推算)。
+    # 置于末尾并给默认值:旧调用方/夹具按关键字构造不受影响。
+    abnormal_volume_detail: List[dict] = field(default_factory=list)
+
 
 def analyze_volume(bars: List[Bar], as_of: date) -> VolumeMetrics:
     """计算成交量/成交额/换手率指标"""
@@ -64,6 +72,7 @@ def analyze_volume(bars: List[Bar], as_of: date) -> VolumeMetrics:
     # 量能异常：当日量 > max(前20日均量 × 2, 前5日峰值)
     # 使用滚动窗口，每一天的 threshold 基于该日之前 20 个交易日
     abnormal_dates = []
+    abnormal_detail = []
     for i in range(n):
         if i < 20:
             continue  # 前20天无足够历史，跳过
@@ -72,6 +81,14 @@ def analyze_volume(bars: List[Bar], as_of: date) -> VolumeMetrics:
         threshold = max(vol_20_avg * 2, vol_5_max)
         if volumes[i] > threshold:
             abnormal_dates.append(bars[i].date)
+            abnormal_detail.append({
+                "date": bars[i].date.isoformat(),
+                "volume": int(volumes[i]),
+                "amount": float(amounts[i]),
+                "threshold": float(threshold),
+                # 放大倍数 = 当日量 / 该日自身阈值(>1 即为异常;引擎算,前端不重算)
+                "ratio": float(volumes[i] / threshold) if threshold > 0 else None,
+            })
 
     # 量价相关系数
     corr = None
@@ -98,5 +115,6 @@ def analyze_volume(bars: List[Bar], as_of: date) -> VolumeMetrics:
         min_turnover=float(np.min(turnovers)),
         abnormal_volume_days=len(abnormal_dates),
         abnormal_volume_dates=abnormal_dates,
+        abnormal_volume_detail=abnormal_detail,
         price_volume_corr=corr,
     )

@@ -45,7 +45,8 @@ function AnalystInner() {
         <div>
           <h1>个股分析</h1>
           <div className="psub">
-            输入 6 位代码，选类型：<b>个股分析</b>（日频量价速览）或 <b>公司研报</b>（季频基本面文档）
+            输入 6 位代码，选类型：<b>个股分析</b>（日频量价速览）或 <b>公司研报</b>（季频基本面文档）；
+            选 <b>宏观研报</b> 则按维度（CPI/PPI/M2/GDP）出报告
           </div>
         </div>
         <div className="meta">

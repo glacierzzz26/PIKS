@@ -87,7 +87,8 @@ const (
 	// NormalizeCode 只剥 sh/sz/bj 且要求 len==前缀+6,对 sw801010 原样穿过;
 	// IsStockCode 见非数字即 false —— 股票逻辑因此天然忽略行业码,零冲突。
 	SubjectIndustry = "industry"
-	// SubjectMacro 宏观。写法 macro:<key>(预留,#13)。
+	// SubjectMacro 宏观。写法 macro:<key>（key 如 cn_cpi / cn_ppi / cn_m2 / cn_gdp,
+	// 维度表归 research 侧,Go 只判形态 —— D-M2/D-11）。
 	SubjectMacro = "macro"
 	// SubjectCompany 个股 = 既有行为,6 位数字代码。
 	SubjectCompany = "company"
@@ -105,7 +106,7 @@ const industryCodePrefix = "sw"
 //   - 行业 sw801010    —— **带 sw 前缀**。刻意存带前缀的形式:裸 801010 在库里
 //     与北交所股票(SubjectFullCode → bj801010)无法区分,会把行业 run 误当个股。
 //     带前缀后,主体类型可由码本身判定,前端无需额外字段。
-//   - 宏观 macro:cpi   —— #13 预留
+//   - 宏观 macro:<key>  —— key 归 research 侧的维度表(D-M2),此处只判形态
 //
 // 识别顺序:行业 → 宏观 → 公司。行业必须先于公司:sw 前缀不是 6 位数字,不会误入公司分支,
 // 但显式排序可防未来规则变更时静默漂移。
@@ -117,7 +118,7 @@ func NormalizeSubject(symbol string) (subjectType, subjectCode string) {
 	if rest, ok := strings.CutPrefix(s, industryCodePrefix); ok && IsStockCode(rest) {
 		return SubjectIndustry, industryCodePrefix + rest
 	}
-	// 宏观:macro:<key>(#13 预留,当前无产出方)
+	// 宏观:macro:<key>(key 合法性归 Python 维度表,此处只拒空 —— D-M2)
 	if rest, ok := strings.CutPrefix(s, "macro:"); ok && rest != "" {
 		return SubjectMacro, "macro:" + rest
 	}

@@ -216,8 +216,9 @@ func TestSubjectFullCode(t *testing.T) {
 		{"sw801010", "sw801010"}, // 农林牧渔
 		{"sw851251", "sw851251"}, // 白酒Ⅲ
 		{"SW801010", "sw801010"}, // 归一为小写
-		// 宏观:#13 预留
+		// 宏观:不加前缀,原样 macro:<key>(#13 起为实产出方)
 		{"macro:cpi", "macro:cpi"},
+		{"macro:cn_cpi", "macro:cn_cpi"},
 		// 公司:与 ToFullCode 完全一致(零回归)
 		{"600519", "sh600519"},
 		{"000560", "sz000560"},
@@ -246,6 +247,8 @@ func TestSubjectTypeOf(t *testing.T) {
 		{"600519", "company"},
 		{"sh600519", "company"},
 		{"macro:cpi", "macro"},
+		{"macro:cn_cpi", "macro"},
+		{"macro:cn_gdp", "macro"},
 		{"海南橡胶", ""},
 		{"", ""},
 	}

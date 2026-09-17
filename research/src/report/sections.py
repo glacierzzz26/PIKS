@@ -72,6 +72,11 @@ CHAPTERS: Tuple[Chapter, ...] = (
     Chapter("industry_index", "行业行情", ("fact", "calc"), ("industry_index",)),
     Chapter("industry_valuation", "估值定位", ("fact",), ("industry_valuation",)),
     Chapter("industry_structure", "成分结构", ("fact", "calc"), ("industry_structure",)),
+    # 宏观维度主体(P9-5 / #13):两节同源于 macro 指标卡。域为 数据+计算 ——
+    # 读数/分位/窗口统计/连续同向期数**全部**由确定性规则算出,无 AI 叙述
+    # (AI 定性统一收在首章「执行摘要」)。
+    Chapter("macro_level", "宏观指标读数", ("fact", "calc"), ("macro_level",)),
+    Chapter("macro_position", "历史定位与趋势", ("fact", "calc"), ("macro_position",)),
     Chapter("capital", "资金面分析（龙虎榜）", ("fact",), ("capital",)),
     # 风险章是**确定性规则**算出来的(等级 + 逐条依据),不是 AI 叙述 ——
     # 故域为 数据+计算。design §4.4 的示意表把它标成「研判」,那是 AI 三段并入

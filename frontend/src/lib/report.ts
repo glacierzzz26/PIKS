@@ -120,6 +120,17 @@ function industryCard(run: ResearchRun): IndustryCard {
   return (raw ?? {}) as IndustryCard;
 }
 
+/** 宏观指标卡的窄类型（`metrics.macro` 是 Record<string, unknown>）。 */
+type MacroCard = {
+  ref?: { name?: string; level_label?: string };
+  period?: { label?: string; period_end?: string; source_lag_days?: number };
+};
+
+function macroCard(run: ResearchRun): MacroCard {
+  const raw = run.metrics?.macro;
+  return (raw ?? {}) as MacroCard;
+}
+
 /**
  * 封面头副信息行（§4.2 行 2）：层级 · 成分数 · 上级 · 数据截至。
  * 只写指标卡里**确实有**的字段 —— 缺则整段省略，不填占位。
@@ -133,6 +144,26 @@ export function coverSub(run: ResearchRun): string[] {
   if (card.ref?.parent) parts.push(`上级 ${card.ref.parent}`);
   const n = card.dispersion?.count ?? card.declared_count;
   if (typeof n === "number" && n > 0) parts.push(`成分 ${n} 只`);
+
+  // 宏观（P9-5 / #13）：**数据截止 ≠ 报告生成日**，二者必须分开写（D-M3）。
+  // 泛用的「数据截至 {as_of}」对宏观是**错的** —— as_of 是报告生成日，而宏观
+  // 统计期总落后于它（实测 CPI 滞后 17 天、GDP 滞后 79 天）。写成一句会让读者
+  // 以为「数据到今天」。故宏观走专门文案，用 period_end + 源站期号 + 滞后天数。
+  const macro = macroCard(run);
+  if (run.subject_type === "macro" || macro.period) {
+    if (macro.ref?.level_label) parts.push(macro.ref.level_label);
+    if (macro.period?.label) parts.push(`统计期 ${macro.period.label}`);
+    if (macro.period?.period_end) {
+      const lag = macro.period.source_lag_days;
+      parts.push(
+        typeof lag === "number"
+          ? `数据截止 ${macro.period.period_end}（较报告生成日滞后 ${lag} 天）`
+          : `数据截止 ${macro.period.period_end}`
+      );
+    }
+    if (run.as_of) parts.push(`报告生成 ${run.as_of}`);
+    return parts;
+  }
 
   if (run.as_of) parts.push(`数据截至 ${run.as_of}`);
   return parts;

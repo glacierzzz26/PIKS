@@ -1,6 +1,11 @@
-"""Markdown 报告生成器"""
+"""Markdown 报告生成器
+
+版面装配(P9 #12 / D-R6:「摘要前置、免责置尾」)由 `sections.py` 的章节清单驱动 ——
+章节顺序与标题是**单一真源**,与 `json_report.py` 产出的 `section_manifest`(供前端
+目录/三域标签)同源,故两者不会再错位。改造前本章节顺序散落在下面的 if 链里。
+"""
 from datetime import date
-from typing import Any, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from ..analysis.price import PriceMetrics
 from ..analysis.volume import VolumeMetrics
@@ -10,6 +15,20 @@ from ..analysis.risk import RiskMetrics, RiskItem
 from ..analysis.capital import CapitalMetrics
 from ..analysis.scorecard import Scorecard
 from ..models.financial import FinancialSnapshot
+from .sections import (
+    AI_SYNTHESIS_SLOT,
+    DEFAULT_SECTIONS,
+    DISCLAIMER_TITLE,
+    EXEC_SUMMARY_TITLE,
+    active_chapters,
+)
+
+# 中文序号:章节数超十后用阿拉伯数字兜底(与改造前一致)。
+CN_NUMS = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"]
+
+
+def _ordinal(idx: int) -> str:
+    return CN_NUMS[idx] if idx < len(CN_NUMS) else str(idx + 1)
 
 
 def format_optional(value, fmt="{:.2f}", suffix="") -> str:
@@ -48,11 +67,11 @@ def generate_markdown(
         行业三章(行情/估值/成分),而非个股的「行业对比」章。
     sections: Profile 要求的报告章节（如 ["market","volume","events",...]），
               决定渲染哪些章节；默认全部（兼容旧调用）。
+
+    版面装配由 `sections.py` 的章节清单驱动(D-R6:摘要前置、免责置尾):首章恒为
+    「执行摘要」(AI 三段容器)、末章恒为「数据说明与免责声明」,中间按清单顺序。
     """
-    sections = sections or [
-        "market", "volume", "turnover", "financial", "valuation",
-        "events", "announcements", "capital", "risk", "conclusion",
-    ]
+    sections = sections or list(DEFAULT_SECTIONS)
 
     fin_section = _build_financial_section(fin_metrics, snapshots)
     event_section = _build_event_section(event_metrics)
@@ -65,77 +84,47 @@ def generate_markdown(
     capital_section = _build_capital_section(capital_metrics)
     scorecard_section = _build_scorecard_section(scorecard)
 
-    # 按 Profile sections 决定渲染哪些章节（中文序号自动编号）
+    # 章节 key → 渲染函数。key 与 `sections.py` 的 Chapter.key 一一对应
+    # (新增章节两处都要登记:清单定顺序与标题,此处只提供内容)。
+    builders: Dict[str, Callable[[], str]] = {
+        "price": lambda: _build_price_section(price_metrics),
+        "volume": lambda: _build_volume_section(volume_metrics),
+        "financial": lambda: fin_section,
+        "events": lambda: event_section,
+        "industry": lambda: _build_industry_section(industry),
+        "industry_index": lambda: _build_industry_price_section(industry_metrics),
+        "industry_valuation": lambda: _build_industry_valuation_section(industry_metrics),
+        "industry_structure": lambda: _build_industry_structure_section(industry_metrics),
+        "capital": lambda: capital_section,
+        "risk": lambda: risk_section,
+        "conclusion": lambda: scorecard_section,
+    }
+
+    # 序号由清单位置决定,不再靠人工对齐散落在各 if 分支里。
     body: List[str] = []
-    cn_nums = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"]
 
     def add_section(title: str, content: str) -> None:
         idx = len(body)
-        body.append(f"## {cn_nums[idx] if idx < len(cn_nums) else idx + 1}、{title}\n\n{content}")
+        body.append(f"## {_ordinal(idx)}、{title}\n\n{content}")
 
-    if any(s in ("market", "company") for s in sections):
-        add_section("股价表现", f"""| 指标 | 数值 |
-|---|---|
-| 最新收盘价 | {price_metrics.end_price:.2f} 元 |
-| 区间涨跌幅 | {price_metrics.period_return_pct:+.2f}% |
-| 5 日涨跌幅 | {format_optional(price_metrics.return_pct_5d, '{:+.2f}', '%')} |
-| 20 日涨跌幅 | {format_optional(price_metrics.return_pct_20d, '{:+.2f}', '%')} |
-| 60 日涨跌幅 | {format_optional(price_metrics.return_pct_60d, '{:+.2f}', '%')} |
-| 区间最高价 | {price_metrics.max_price:.2f} 元 |
-| 区间最低价 | {price_metrics.min_price:.2f} 元 |
-| 最大回撤 | {price_metrics.max_drawdown_pct:.2f}% |
-| 年化波动率 | {price_metrics.volatility_annual:.2f}% |
-| 涨停天数 | {price_metrics.limit_up_days} 天 |
-| 跌停天数 | {price_metrics.limit_down_days} 天 |""")
+    # 一、执行摘要 —— AI 三段定性(研判域)。槽位在此,由 cli.py 的 synthesize 步
+    # 替换为「### 执行摘要 / ### 趋势解读 / ### 综合结论」三子段。
+    # ⚠️ 与末章免责一样**无条件**渲染:它们是研报体裁的固有骨架,不受 sections 影响。
+    add_section(EXEC_SUMMARY_TITLE, AI_SYNTHESIS_SLOT)
 
-    if any(s in ("volume", "turnover") for s in sections):
-        add_section("成交量与换手率", f"""| 指标 | 数值 |
-|---|---|
-| 区间总成交量 | {volume_metrics.total_volume:,.0f} 手 |
-| 5 日均量 | {format_optional(volume_metrics.avg_volume_5d, '{:,.0f}')} 手 |
-| 20 日均量 | {format_optional(volume_metrics.avg_volume_20d, '{:,.0f}')} 手 |
-| 5 日平均换手 | {format_optional(volume_metrics.avg_turnover_5d, '{:.2f}', '%')} |
-| 20 日平均换手 | {format_optional(volume_metrics.avg_turnover_20d, '{:.2f}', '%')} |
-| 60 日平均换手 | {format_optional(volume_metrics.avg_turnover_60d, '{:.2f}', '%')} |
-| 最大单日换手 | {volume_metrics.max_turnover:.2f}% |
-| 最小单日换手 | {volume_metrics.min_turnover:.2f}% |
-| 量能异常天数 | {volume_metrics.abnormal_volume_days} 天 |""")
+    for ch in active_chapters(sections):
+        builder = builders.get(ch.key)
+        if builder is None:
+            # 清单登记了章节却没给渲染函数 = 装配缺件。宁可显式报错,也不要静默少一章
+            # (TOC 仍会列出它,前端将指向不存在的锚点)。
+            raise KeyError(
+                f"章节 {ch.key!r}({ch.title})未在 markdown.py 的 builders 中登记渲染函数"
+            )
+        add_section(ch.title, builder())
 
-    if any(s in ("financial", "valuation") for s in sections):
-        add_section("基本面分析", fin_section)
-
-    if any(s in ("events", "announcements") for s in sections):
-        add_section("近期事件与新闻", event_section)
-
-    if "industry" in sections:
-        add_section("行业对比", _build_industry_section(industry))
-
-    # 行业本体三章(P9 #12):主体是行业指数,不是个股。与上面的「行业对比」互斥 ——
-    # industry profile 不含 "industry" section,个股 profile 不含这三个。
-    if "industry_index" in sections:
-        add_section("行业行情", _build_industry_price_section(industry_metrics))
-    if "industry_valuation" in sections:
-        add_section("估值定位", _build_industry_valuation_section(industry_metrics))
-    if "industry_structure" in sections:
-        add_section("成分结构", _build_industry_structure_section(industry_metrics))
-
-    if "capital" in sections:
-        add_section("资金面分析（龙虎榜）", capital_section)
-
-    if "risk" in sections:
-        add_section("风险分析", risk_section)
-
-    if "conclusion" in sections:
-        add_section("综合评分卡", scorecard_section)
-
-    add_section("数据说明与免责声明", f"""- 本报告数据来源于 {data_source}，仅供参考，不构成投资建议。
+    add_section(DISCLAIMER_TITLE, f"""- 本报告数据来源于 {data_source}，仅供参考，不构成投资建议。
 - 价格指标基于前复权计算。
 - 报告生成时间：{as_of.isoformat()}。""")
-    # AI 综合研判槽位（普通字符串，避免 f-string 转义）
-    body.append("""
-
-{{ai_synthesis}}
-""")
 
     # 封面头:主体感知(P9 #12)。行业主体没有 price_metrics(profile 不含 price 分析),
     # 硬套「个股研究报告」与 price_metrics.period_days 会既错又崩。
@@ -157,6 +146,37 @@ def generate_markdown(
 
 {"\n\n".join(body)}
 """
+
+
+def _build_price_section(price_metrics: PriceMetrics) -> str:
+    """个股行情章(个股 profile)。行业主体走 _build_industry_price_section。"""
+    return f"""| 指标 | 数值 |
+|---|---|
+| 最新收盘价 | {price_metrics.end_price:.2f} 元 |
+| 区间涨跌幅 | {price_metrics.period_return_pct:+.2f}% |
+| 5 日涨跌幅 | {format_optional(price_metrics.return_pct_5d, '{:+.2f}', '%')} |
+| 20 日涨跌幅 | {format_optional(price_metrics.return_pct_20d, '{:+.2f}', '%')} |
+| 60 日涨跌幅 | {format_optional(price_metrics.return_pct_60d, '{:+.2f}', '%')} |
+| 区间最高价 | {price_metrics.max_price:.2f} 元 |
+| 区间最低价 | {price_metrics.min_price:.2f} 元 |
+| 最大回撤 | {price_metrics.max_drawdown_pct:.2f}% |
+| 年化波动率 | {price_metrics.volatility_annual:.2f}% |
+| 涨停天数 | {price_metrics.limit_up_days} 天 |
+| 跌停天数 | {price_metrics.limit_down_days} 天 |"""
+
+
+def _build_volume_section(volume_metrics: VolumeMetrics) -> str:
+    return f"""| 指标 | 数值 |
+|---|---|
+| 区间总成交量 | {volume_metrics.total_volume:,.0f} 手 |
+| 5 日均量 | {format_optional(volume_metrics.avg_volume_5d, '{:,.0f}')} 手 |
+| 20 日均量 | {format_optional(volume_metrics.avg_volume_20d, '{:,.0f}')} 手 |
+| 5 日平均换手 | {format_optional(volume_metrics.avg_turnover_5d, '{:.2f}', '%')} |
+| 20 日平均换手 | {format_optional(volume_metrics.avg_turnover_20d, '{:.2f}', '%')} |
+| 60 日平均换手 | {format_optional(volume_metrics.avg_turnover_60d, '{:.2f}', '%')} |
+| 最大单日换手 | {volume_metrics.max_turnover:.2f}% |
+| 最小单日换手 | {volume_metrics.min_turnover:.2f}% |
+| 量能异常天数 | {volume_metrics.abnormal_volume_days} 天 |"""
 
 
 def _build_financial_section(

@@ -20,6 +20,7 @@ import {
   MessageSquare,
   Settings,
   Microscope,
+  BookOpen,
 } from "lucide-react";
 
 export type NavItem = { href: string; label: string; icon: LucideIcon };
@@ -44,7 +45,8 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     title: "研究",
     items: [
-      { href: "/research", label: "研究报告", icon: Microscope },
+      { href: "/reports", label: "研报", icon: BookOpen },
+      { href: "/research", label: "个股分析", icon: Microscope },
       { href: "/chat", label: "问 AI", icon: MessageSquare },
     ],
   },

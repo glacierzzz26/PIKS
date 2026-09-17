@@ -43,7 +43,7 @@ python3 -m src.cli gate <产物目录> <代码> [--json]
 | 文件 | 产出者 | 内容 |
 |---|---|---|
 | `run_meta.json` | research | `run_id` / `symbol` / `profile` / `mode` / `as_of` / `sections` / `provider_calls` / **`contract`** |
-| `{code}_metrics.json` | research | 指标卡(**数字唯一源 = Fact**)含 Evidence 链 |
+| `{code}_metrics.json` | research | 指标卡(**数字唯一源 = Fact**)含 Evidence 链;`meta.section_manifest` = 章节清单 `[{title,domains[]}]`(前端目录/三域标签的数据源,D-R8) |
 | `{code}_skeleton.md` | research | 骨架报告(模板槽位,数字已渲染) |
 | `{code}_synthesis_prompt.txt` | research | 给 LLM 的合成提示(含"只能引用指标卡数字"硬约束) |
 | `{code}_final.md` | synthesize | 渲染了三段定性的最终报告 |

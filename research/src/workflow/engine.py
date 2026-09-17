@@ -400,6 +400,8 @@ class WorkflowEngine:
             scorecard,
             industry=self.context.get("industry"),
             industry_metrics=industry_metrics,
+            # 章节清单与 markdown 同源(D-R8):前端 TOC/三域标记据此渲染。
+            sections=self.plan.sections,
         )
 
         evidence = self.context.get("evidence_store")

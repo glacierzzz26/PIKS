@@ -344,6 +344,22 @@ export type ResearchStatus =
   | "done"
   | "failed";
 
+/**
+ * 研报主体类型（P9-2 版面）。公司/行业/宏观共用一套版面，差异由此驱动
+ * （design report-layout.md D-R2）。与 internal/store/research_runs.go 的
+ * SubjectCompany/SubjectIndustry/SubjectMacro 一致。
+ */
+export type ResearchSubjectType = "company" | "industry" | "macro";
+
+/** 三域标记一条（D-R5）：域 key → 展示映射见 constants.DOMAIN_LABEL */
+export type ResearchDomain = "fact" | "calc" | "opinion";
+
+/** 章节清单一项（metrics.meta.section_manifest，D-R8）—— TOC 与域标签的数据源 */
+export type ResearchSection = {
+  title: string;
+  domains: ResearchDomain[];
+};
+
 /** Evidence 一条：Fact 的溯源凭证（research 的 Evidence 链，逐条落库） */
 export type ResearchEvidence = {
   id: string;
@@ -394,13 +410,16 @@ export type ResearchSynthesis = {
 
 /** metrics = Fact 区（确定性计算结果，按 section 组织） */
 export type ResearchMetrics = {
-  meta?: Record<string, unknown>;
+  /** meta.section_manifest = 章节清单（D-R8）；旧报告无此字段 → 前端走降级路径 */
+  meta?: { section_manifest?: ResearchSection[]; [k: string]: unknown };
   price?: Record<string, number | null>;
   volume?: Record<string, unknown>;
   financial?: Record<string, unknown>;
   events?: Record<string, unknown>;
   capital?: Record<string, unknown>;
   risk?: Record<string, unknown>;
+  /** 行业**本体**指标卡（P9 #12；主体=申万行业指数，非「个股所处行业」） */
+  industry_index?: Record<string, unknown>;
   scorecard?: {
     overall?: number | null;
     overall_label?: string;
@@ -435,6 +454,9 @@ export type ResearchRun = {
   tokens: number;
   created_at: string;
   updated_at: string;
+  /** 主体类型 + 展示名（P9-2 版面；后端按 code 形态判别，前端不必猜） */
+  subject_type: ResearchSubjectType;
+  display_name: string;
 };
 
 /** 列表项（GET /api/v1/research-runs，不含 markdown/metrics 宽字段） */
@@ -453,6 +475,8 @@ export type ResearchRunSummary = {
   error: string;
   model: string;
   tokens: number;
+  subject_type: ResearchSubjectType;
+  display_name: string;
 };
 
 export type ResearchRunList = { runs: ResearchRunSummary[] };

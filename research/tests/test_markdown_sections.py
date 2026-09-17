@@ -12,6 +12,7 @@ from datetime import date
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.report.markdown import generate_markdown
+from src.report.json_report import generate_json
 from src.report.synthesis import render_synthesis
 from src.analysis.price import PriceMetrics
 from src.analysis.volume import VolumeMetrics
@@ -51,7 +52,9 @@ class TestSectionClipping(unittest.TestCase):
                       "events", "announcements", "capital", "risk", "conclusion"],
         )
         secs = _sections(md)
-        self.assertEqual(len(secs), 8)
+        # 9 = 执行摘要(D-R6 前置,恒在) + 7 数据章 + 数据说明(D-R6 置尾,恒在)
+        self.assertEqual(len(secs), 9)
+        self.assertTrue(any("执行摘要" in s for s in secs))
         self.assertTrue(any("股价表现" in s for s in secs))
         self.assertTrue(any("成交量" in s for s in secs))
         self.assertTrue(any("基本面" in s for s in secs))
@@ -76,7 +79,8 @@ class TestSectionClipping(unittest.TestCase):
         md = generate_markdown("sh600519", date(2026, 9, 10), _price(), _volume(),
                                sections=["market"])
         secs = _sections(md)
-        self.assertEqual(len(secs), 2)  # 股价表现 + 数据说明
+        # 3 = 执行摘要(恒在) + 股价表现 + 数据说明(恒在)
+        self.assertEqual(len(secs), 3)
         self.assertNotIn("成交量", md)
 
     def test_ai_synthesis_slot_preserved(self):
@@ -86,12 +90,51 @@ class TestSectionClipping(unittest.TestCase):
         ok = "{ai_synthesis}" in md or "{{ai_synthesis}}" in md
         self.assertTrue(ok)
         out = render_synthesis(md, {"summary": "S", "trend": "T", "conclusion": "C"})
-        self.assertIn("九、AI 综合研判", out)
+        # 摘要前置(D-R6):AI 三子段注入在首章,不再另起「## 九、AI 综合研判」。
+        self.assertIn("### 执行摘要", out)
+        self.assertNotIn("## 九、AI 综合研判", out)
+
+    def test_summary_first_disclaimer_last(self):
+        """D-R6:执行摘要在正文之首、免责在之尾 —— 顺序不得再颠倒。"""
+        md = generate_markdown("sh600519", date(2026, 9, 10), _price(), _volume(),
+                               sections=["market", "conclusion"])
+        secs = _sections(md)
+        self.assertIn("执行摘要", secs[0])
+        self.assertIn("数据说明与免责声明", secs[-1])
 
     def test_conclusion_renders_scorecard_placeholder(self):
         md = generate_markdown("sh600519", date(2026, 9, 10), _price(), _volume(),
                                sections=["conclusion"], scorecard=None)
         self.assertIn("评分卡", md)
+
+
+class TestSectionManifest(unittest.TestCase):
+    """D-R8:章节清单是 TOC/三域标记的单一真源,须与正文 `## ` 标题一一对应。"""
+
+    def test_manifest_matches_headings_and_order(self):
+        sections = ["market", "volume", "turnover", "risk", "conclusion"]
+        md = generate_markdown("sh600519", date(2026, 9, 10), _price(), _volume(),
+                               sections=sections)
+        js = generate_json("sh600519", date(2026, 9, 10), _price(), _volume(),
+                           sections=sections)
+        manifest = js["meta"]["section_manifest"]
+        titles = [m["title"] for m in manifest]
+        # 正文标题(去掉「一、」序号前缀) === 清单标题,且次序一致
+        headings = [re.sub(r"^## [一二三四五六七八九十]+、", "", h) for h in _sections(md)]
+        self.assertEqual(titles, headings)
+
+    def test_domains_declared(self):
+        js = generate_json("sh600519", date(2026, 9, 10), _price(), _volume(),
+                           sections=["market", "risk"])
+        by_title = {m["title"]: m["domains"] for m in js["meta"]["section_manifest"]}
+        self.assertEqual(by_title["执行摘要"], ["opinion"])
+        self.assertEqual(by_title["股价表现"], ["fact", "calc"])
+        self.assertEqual(by_title["数据说明与免责声明"], [])
+
+    def test_manifest_default_when_sections_omitted(self):
+        js = generate_json("sh600519", date(2026, 9, 10), _price(), _volume())
+        titles = [m["title"] for m in js["meta"]["section_manifest"]]
+        self.assertTrue(titles[0] == "执行摘要" and titles[-1] == "数据说明与免责声明")
 
 
 class TestChineseDateMasking(unittest.TestCase):

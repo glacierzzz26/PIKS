@@ -41,6 +41,10 @@ type apiResearchRun struct {
 	Tokens    int64           `json:"tokens"`
 	CreatedAt string          `json:"created_at"`
 	UpdatedAt string          `json:"updated_at"`
+	// P9-2 研报版面:主体判别 + 展示名。公司/行业/宏观共用一套版面,差异由此驱动
+	// (design report-layout.md D-R2)。前端据此选报告类型 chip 与标题,不必猜 code 形态。
+	SubjectType string `json:"subject_type"`
+	DisplayName string `json:"display_name"`
 }
 
 // apiResearchRunSummary 列表项(不带宽字段 markdown/metrics,列表页只要元信息 + 机检徽标)。
@@ -59,6 +63,9 @@ type apiResearchRunSummary struct {
 	Error   string `json:"error"`
 	Model   string `json:"model"`
 	Tokens  int64  `json:"tokens"`
+	// 同 apiResearchRun:主体判别 + 展示名(P9-2)。
+	SubjectType string `json:"subject_type"`
+	DisplayName string `json:"display_name"`
 }
 
 // ==================== 路由 ====================
@@ -267,18 +274,21 @@ func toAPIResearchRun(r *store.ResearchRun, name string) apiResearchRun {
 	if r.Markdown != nil {
 		md = *r.Markdown
 	}
+	subjectType, displayName := subjectPresentation(r, name)
 	return apiResearchRun{
 		RunID: r.RunID, Code: r.Code, Symbol: r.Symbol, Name: name, Profile: r.Profile,
 		AsOf: fmtDate(r.AsOf.In(cst)), Status: r.Status,
 		Metrics: r.Metrics, Synthesis: r.Synthesis, Markdown: md,
 		Lint: r.Lint, Gate: r.Gate, Evidence: r.Evidence,
 		Error: orStr(r.Error, ""), Model: r.Model, Tokens: r.Tokens,
-		CreatedAt: r.CreatedAt.UTC().Format(time.RFC3339),
-		UpdatedAt: r.UpdatedAt.UTC().Format(time.RFC3339),
+		CreatedAt:   r.CreatedAt.UTC().Format(time.RFC3339),
+		UpdatedAt:   r.UpdatedAt.UTC().Format(time.RFC3339),
+		SubjectType: subjectType, DisplayName: displayName,
 	}
 }
 
 func toSummary(r *store.ResearchRun, name string) apiResearchRunSummary {
+	subjectType, displayName := subjectPresentation(r, name)
 	return apiResearchRunSummary{
 		ID:    r.ID,
 		RunID: r.RunID,
@@ -287,7 +297,40 @@ func toSummary(r *store.ResearchRun, name string) apiResearchRunSummary {
 		LintOK: research.JSONPassed(r.Lint),
 		GateOK: research.JSONPassed(r.Gate),
 		Error:  orStr(r.Error, ""), Model: r.Model, Tokens: r.Tokens,
+		SubjectType: subjectType, DisplayName: displayName,
 	}
+}
+
+// subjectPresentation 主体判别 + 展示名(P9-2 研报版面)。
+//
+// subject_type 由 code 形态判定(`SubjectTypeOf` 复用 #10 的归一规则),前端据此选
+// 报告类型 chip 与标题,不必猜 code 形态。
+//
+// display_name 的取法与 name 同源、分主体:
+//   - 公司:entities.detail.code → name 富化(name 参数),缺则空(不臆测 —— 前端退回代码)
+//   - 行业:研报正文的 `industry_index.ref.name`(如「农林牧渔」)。**不查申万表** ——
+//     那是 research 侧的知识,Go 侧复制一份就违反了 D-11 独立性;指标卡里已有此字段,直读即可。
+//
+// 读 metrics 失败(旧产物/无 metrics)一律退回空串,不阻断报告渲染 —— 展示名是锦上添花。
+func subjectPresentation(r *store.ResearchRun, name string) (subjectType, displayName string) {
+	subjectType = research.SubjectTypeOf(r.Code)
+	if subjectType != store.SubjectIndustry {
+		return subjectType, name // 公司:沿用实体富化名;宏观:#13 预留
+	}
+	if len(r.Metrics) == 0 {
+		return subjectType, ""
+	}
+	var m struct {
+		IndustryIndex struct {
+			Ref struct {
+				Name string `json:"name"`
+			} `json:"ref"`
+		} `json:"industry_index"`
+	}
+	if err := json.Unmarshal(r.Metrics, &m); err != nil {
+		return subjectType, ""
+	}
+	return subjectType, m.IndustryIndex.Ref.Name
 }
 
 // researchRunTitle 决策记录引用用的可读标题:有公司名 → 「名称(代码)」,否则退回代码(不臆测)。

@@ -45,8 +45,40 @@ class TestTemplateConstants(unittest.TestCase):
         rep = lint_text("收益率 262.01%。", known_values={1.0})
         self.assertFalse(rep.passed)
 
+class TestRealDataValueTraceable(unittest.TestCase):
     def test_real_data_value_traceable(self):
         rep = lint_text("最新收盘价 6.78 元。", known_values={6.78})
+        self.assertTrue(rep.passed, [str(i) for i in rep.issues])
+
+
+class TestCodeMaskingDoesNotEatDecimals(unittest.TestCase):
+    """股票代码掩码不得吞掉小数的整数部分（生产 macro:cn_gdp 实测缺陷）。
+
+    `_CODE_RE` 原为 `(?<!\\d)\\d{6}(?!\\d)`，`695704.0` 的整数部分形如 6 位码，
+    被整段掩成 `CODE.0`，残留的 `.0` 被当数据数字扫描 → GDP/亿元级读数必挂。
+    生产实证：`macro:cn_gdp` 报告 5 个问题全部形如「水平为CODE.0亿元」。
+    """
+
+    def test_six_digit_decimal_is_not_masked(self):
+        # GDP 亿元级水平：6 位整数 + 小数 —— 修复前扫成 '0' 判不可溯源
+        rep = lint_text(
+            "最新累计水平为695704.0亿元。", known_values={695704.0}
+        )
+        self.assertTrue(rep.passed, [str(i) for i in rep.issues])
+        self.assertEqual(rep.scanned, 1)
+
+    def test_seven_digit_decimal_still_matches(self):
+        rep = lint_text("累计水平1401879.2亿元。", known_values={1401879.2})
+        self.assertTrue(rep.passed, [str(i) for i in rep.issues])
+
+    def test_stock_code_still_masked(self):
+        # 回归守卫：真·6 位代码仍须掩掉，不得因放宽而把它当数据扫描
+        rep = lint_text("标的 000560 今日放量。", known_values=set())
+        self.assertTrue(rep.passed, [str(i) for i in rep.issues])
+        self.assertEqual(rep.scanned, 0)
+
+    def test_stock_code_with_exchange_prefix_still_masked(self):
+        rep = lint_text("标的 sz000560 今日放量。", known_values=set())
         self.assertTrue(rep.passed, [str(i) for i in rep.issues])
 
 

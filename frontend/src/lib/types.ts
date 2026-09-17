@@ -416,6 +416,24 @@ export type PatternPoint = {
   volume: number;
 };
 
+/**
+ * 放量异常日逐日明细（issue #3）—— `metrics.volume.abnormal_volume_detail`。
+ *
+ * 数值全部由引擎算出后落库（Fact），前端只展示不重算。
+ * - `threshold`：该日**自身**的判定阈值 `max(前20日均量×2, 前5日峰值)`
+ * - `ratio`：`volume / threshold`，>1 即为异常（放大倍数）
+ *
+ * ⚠️ 窗口外（bars cap 之前）的交易日不参与扫描，故本明细与量价形态 60 日窗口一致；
+ * 更早的异常日不在列 —— 如实不补。
+ */
+export type AbnormalVolumeDay = {
+  date: string;
+  volume: number;
+  amount: number;
+  threshold: number;
+  ratio: number | null;
+};
+
 /** 量价形态标签（规则判定 = Inference，非遗事实；每条带 evidence 可核对） */
 export type PatternLabel = {
   code: string;

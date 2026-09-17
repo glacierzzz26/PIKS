@@ -1,6 +1,6 @@
 # 公司研报与个股分析拆分（功能分工）
 
-> 状态：**待定稿门**（本文档通过前，不写业务代码）。
+> 状态：**✅ 已定稿并实施**（2026-09-17 过定稿门 → 同日实现，见 §10 实施记录）。
 > 阶段定位：phase9 续作 —— 在 P9 研报体裁与版面（`report-layout.md`，已上生产）之上，按**功能**把「公司研报」与「个股分析」拆开。
 > 关联：issue **#11**；硬前置 = 主体轴泛化 #10（已合并 PR #15）、研报版面 P9-2（已合并 PR #16）。
 > 前序文档：[`report-layout.md`](./report-layout.md)（版面规格，本文档**复用**它，不重做）。
@@ -107,12 +107,17 @@ Chapter("price", "股价表现", ("fact", "calc"), ("market", "company")),
 
 | profile | 功能 | 主体 | 入口 | sections（按功能定） |
 |---|---|---|---|---|
-| **`company`**（新） | **公司研报** | 6 位股票码 | `/reports` | `company, financial, valuation, industry, risk, conclusion` |
-| **`stock`**（新） | **个股分析** | 6 位股票码 | `/research` | `market, volume, turnover, patterns, conclusion` |
+| **`company`**（新） | **公司研报** | 6 位股票码 | `/reports` | `company, financial, valuation, events, announcements, industry, risk, conclusion` |
+| **`stock`**（新） | **个股分析** | 6 位股票码 | `/research` · `/stock/:code` | `market, volume, turnover, patterns, events, announcements, conclusion` |
 | `prebuy` | 买入前速评（不变） | 6 位股票码 | `/stock/:code` 速评卡 | 维持现状 |
 | `short-term` | 短线视角（不变） | 6 位股票码 | `/research` | 维持现状 |
 | `complete-stock` | **兼容档案**（不废弃） | 6 位股票码 | 不出现在选择器 | 维持现状（历史 run 可读） |
 | `industry` | 行业研报（已上生产） | `sw` + 6 位 | `/reports` | 维持现状 |
+
+> `events`/`announcements` 是 §1.2 认定的**共享节**，两个 profile 都含：
+> ① `company` 的评分卡有 `recent_events` 维度，不含事件数据该维度恒 N/A；
+> ② 风险规则 6「近 30 天重大公告」是 §2.1「无量价也有 4 条基本面规则」的主力之一，
+> 不采公告则风险章被削弱。初稿的 sections 清单漏了这两个，实现时按 §1.2 补回。
 
 **关键**：`complete-stock` **保留不删** —— 生产有 7 份历史 run 用它（含 `run_id` 前缀），删除会破坏「多份 run = 时间序列」与决策记录 `based_on` 边。它只是从**新建选择器**里隐去。
 
@@ -293,3 +298,55 @@ Chapter("price", "股价表现", ("fact", "calc"), ("market",)),
 | #13 宏观研报 | 后续；同样复用版面，主体 = `macro:<key>` |
 | dev↔master 分叉 | ✅ 已消解（PR #20 并轨 + PR #21 发布纪律），见 §6.1 |
 | `report-layout.md` §7 | 「#11 的 profile 关系需在 #11 内单独定夺」—— 本文档即该定夺 |
+
+---
+
+## 10. 实施记录（2026-09-17）
+
+### 10.1 阶段落地
+
+| 阶段 | 落点 | 结果 |
+|---|---|---|
+| **P9-4a** 风险引擎可选化 | `analysis/risk.py`（签名 + 规则 1-3 守卫）、`workflow/engine.py:304`、`analysis/engine.py:100` | ✅ |
+| **P9-4b** 章节解耦 | `report/sections.py:58`（`("market","company")` → `("market",)`） | ✅ 零回归（实测三个含 `company` 的 profile 全含 `market`） |
+| **P9-4c** Evidence + 新 profile | `analysis/engine.py` 新增 `add_fundamental_evidence`；`workflow/engine.py` risk 分支挂载；`profiles/company.yaml`、`profiles/stock.yaml` | ✅ |
+| **P9-4d** 前端 | `lib/constants.ts`、`DeepResearchButton`（默认改 `company` + `label`）、`stock/StockProfileBlock.tsx`（新）、`stock/StockResearch.tsx`（固定两块）、`StockHeader`（撤掉页头按钮）、`analyst.tsx`/`AnalyzerTrigger` 文案、`glossary.ts`/`help.tsx` 术语 | ✅ |
+
+### 10.2 设计未预见的结构缺口：`time_boundary`
+
+实施中发现 **§7 验收漏了一项**：机检第 4 项 `time_boundary` 原判定只认
+`price.period_days` / `industry_index.price.period_days`。公司研报不采行情 ⇒ 两者皆无 ⇒
+**机检恒失败**（即使在 §4.2.1 修好 Evidence 之后）。
+
+**修法**（`quality_gate.py`）：补第三条时间边界 —— 财报报告期
+（`financial_snapshots[].report_date`）。三态各自取对应来源：
+个股走 `price`、行业走 `industry_index.price`、公司走财报期。
+判定语义不变（「有没有明确时间边界」），只是边界不再假定长在 `price` 上。
+
+> 已补回归测试 `tests/test_p9_4_split.py::TestTimeBoundaryForFundamentalReport`，
+> 含「无边界仍应失败」的放水防护。
+
+### 10.3 端到端验收（本地确定性模拟，无网络）
+
+构造公司研报的完整 JSON + Evidence 后跑机检：**6/6 通过**。
+
+- `data_completeness` 100%；`evidence_completeness` 覆盖 `events/financial/risk`
+- `time_boundary` ✓（走新加的财报报告期分支）
+- 评分卡 = **中性**（非「结论受限」）—— 证明 §4.2 的正面副作用成立
+- 风险项 = `Financial` + `Business`（纯基本面规则 4/5 触发）
+- 章节清单**不含**「股价表现」「成交量与换手率」
+
+### 10.4 测试
+
+`research/tests/test_p9_4_split.py` 新增 18 例：风险引擎量价可选（5）、章节解耦零回归（3）、
+两 profile 装配契约（5）、基本面 Evidence（2）、`time_boundary` 三态（3）。
+全库 **164 passed**（原 146 + 18）。Go `build/vet/test` 全绿，research 隔离检查通过，
+`tsc --noEmit` + `vite build` 通过。
+
+### 10.5 前端的两个实现取舍
+
+1. **`/stock/:code` 用「固定两块」而非「按 profile 平铺任意分组」** —— 功能边界是**确定的**
+   （公司质地 / 个股分析），不是「碰巧有多少种报告类型」。其余档案（`complete-stock` 兼容档案 /
+   `short-term` / `prebuy`）若有历史 run，合并进「其它历史报告」，不隐藏用户已有数据。
+2. **撤掉 `/stock/:code` 页头的通用「深研」按钮** —— 触发入口下放到两块各自发起，
+   避免三个含义模糊的按钮。页头改为一句话指路到「买入前速评」。

@@ -1,0 +1,55 @@
+name: stock
+version: "1.0.0"
+description: 个股分析(日频速览;行情/量价/换手/形态;中立日常视角;#11)
+
+# 功能定位(设计 §1.1):回答「这票**现在**能不能动」—— 日频、便宜、天天跑无妨。
+# 与 `company`(季频成篇文档)、`prebuy`(买入前快动作,含买入视角话术)三者并存:
+#   company = 公司质地(季频文档)  stock = 日常中立速览  prebuy = 决策前快评
+# 依据用户决策 D-2:prebuy 与 stock **职责分开** —— 前者带买入视角、一键现跑;
+# 后者中立,不含买入话术。
+#
+# 本 profile 只用量价侧数据,不采财务 → 评分卡**不含** fundamental_trend:
+# 它是敏感维度,不在本档案范围内就不会触发「结论受限」(见 scorecard.py
+# analyze_scorecard 的 dimensions 语义:「不在本档案范围」≠「数据缺失」)。
+mode: express
+
+period:
+  display:
+    price: 60d
+    volume: 60d
+    turnover: 60d
+    news: 30d
+    announcement: 30d
+  compute:
+    price: 260d
+    turnover: 260d
+  unit:
+    price: trading
+    volume: trading
+    turnover: trading
+    news: calendar
+    announcement: calendar
+
+sections:
+  - market            # 一、股价表现
+  - volume            # 二、成交量与换手率
+  - turnover          # 并入上文(同 JSON key)
+  - patterns          # 三、量价形态(规则判定 + 逐日序列)
+  - events            # 四、近期事件与新闻(共享节;供评分卡 recent_events)
+  - announcements     # 并入事件章(同 JSON key)
+  - conclusion        # 五、综合评分卡(量价维度)
+
+# 只保留**量价侧**维度:market_trend 主评,recent_events 可用时纳入。
+# 不给 business_quality / fundamental_trend / valuation —— 本档案不采财务,
+# 纳入只会恒为 N/A;fundamental_trend 更是敏感维度,纳入即误报「结论受限」。
+scorecard:
+  dimensions:
+    - market_trend
+    - recent_events
+  overall_rule: simple_sum
+  scale: [-2, -1, 0, +1, +2]
+
+thresholds:
+  abnormal_volume_multiplier: 2.0
+  abnormal_volume_lookback: 20
+  turnover_percentile_window: 260

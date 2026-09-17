@@ -222,13 +222,19 @@ def run_quality_gate(
 
     # ---- 4. Time Boundary：as_of + period 存在 ----
     # 行业主体无 price 节(行业指数不是个股行情),时间边界落在 industry_index.price。
-    # 判定的是「有没有时间边界」,不是「一定在 price 里」—— 故按主体取对应来源。
+    # 公司研报(P9-4)同样无 price —— 它不采行情,时间边界落在**财报报告期**
+    # (financial_snapshots[].report_date)。三态各自取对应来源,判定的是
+    # 「有没有时间边界」,不是「边界一定长在 price 上」。
     meta = json_report.get("meta", {})
     has_as_of = bool(meta.get("as_of"))
     period_src = json_report.get("price") or (
         (json_report.get("industry_index") or {}).get("price") or {}
     )
     has_period = bool(period_src.get("period_days"))
+    # 基本面路径兜底:有财报快照即视为有明确时间边界(最新报告期)。
+    if not has_period:
+        snaps = json_report.get("financial_snapshots") or []
+        has_period = any(s.get("report_date") for s in snaps)
     gate.add(
         GateCheck(
             name="time_boundary",

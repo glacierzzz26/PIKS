@@ -301,12 +301,30 @@ class WorkflowEngine:
                     add_industry_evidence(
                         store, im, self.context["industry_risk_metrics"]
                     )
-            elif price and volume:
+            elif price or volume or financial or announcements:
+                # 量价可选(P9-4,issue #11):公司研报不采行情,靠基本面规则出风险章。
                 self.context["risk_metrics"] = analyze_risk(
-                    price, volume, financial, announcements
+                    self.symbol.code, self.as_of,
+                    price, volume, financial, announcements,
                 )
             else:
                 self.context["risk_metrics"] = None
+
+            # 无行情主体(公司研报)的 Evidence:_refresh_evidence 被 `if not bars`
+            # 挡住,不在此补登记则机检 evidence_completeness 必失败。与行业路径
+            # (上面的 add_industry_evidence)对称 —— 只在 bars 为空时走这条。
+            if im is None and not bars:
+                from ..analysis.engine import add_fundamental_evidence
+                store = self.context.get("evidence_store")
+                if store is None:
+                    store = EvidenceStore()
+                    self.context["evidence_store"] = store
+                add_fundamental_evidence(
+                    store,
+                    self.context.get("financial_metrics"),
+                    self.context.get("risk_metrics"),
+                    self.context.get("event_metrics"),
+                )
 
         elif analysis_name == "patterns":
             # 量价形态（规则判定）；无 bars 时留空，不阻断

@@ -7,7 +7,7 @@ import { isStockCode } from "@/lib/format";
 import { useResearchTrigger } from "@/hooks/useResearchTrigger";
 
 /**
- * 分析师触发条：6 位代码输入 + 报告类型（profile）+ 触发。
+ * 研究触发条：6 位代码输入 + 研究类型（profile）+ 触发。
  * 独立页入口 —— 不依赖实体库/持仓。
  * 校验：非 6 位数字不发请求，内联提示；触发失败内联 error 原文。
  * profile 选择受控（父级写入 URL query，规则 7）。
@@ -72,7 +72,7 @@ export default function AnalystTrigger({
             ) : (
               <Microscope size={13} />
             )}
-            {busy ? "提交中…" : "开始深研"}
+            {busy ? "提交中…" : "开始分析"}
           </span>
         </button>
       </form>
@@ -84,7 +84,7 @@ export default function AnalystTrigger({
         </div>
       ) : (
         <p className="mt-2 text-[12px] text-faint">
-          输入 6 位 A 股代码，选报告类型，回车或点「开始深研」。采集+合成通常 10~60 秒。
+          输入 6 位 A 股代码，选类型，回车或点「开始分析」。采集+合成通常 10~60 秒。
         </p>
       )}
     </div>

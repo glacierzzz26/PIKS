@@ -313,3 +313,85 @@ func TestOrchestratorIndustrySubject(t *testing.T) {
 		t.Errorf("落库 symbol = %q, want %q(不得带交易所前缀)", row.Symbol, subject)
 	}
 }
+
+// TestOrchestratorMacroSubject 宏观主体(P9-5 / issue #13)端到端接线:
+// 传入 macro:cn_cpi → 编排把**含冒号的规范主体码**原样传给 CLI 并用它命名产物。
+//
+// 为何单列一条:冒号在 Linux 文件名合法,但在 Windows / 某些 shell 引用下会出问题 ——
+// 本用例的存在即是「Go 侧只用 argv 数组、不拼 shell 字符串」这条约束的**回归防线**。
+// (设计文档 §12.5 把这条列为部署验证项;此处补齐,与行业主体同开关。)
+func TestOrchestratorMacroSubject(t *testing.T) {
+	if os.Getenv("PIKS_TEST_INTEGRATION") == "" {
+		t.Skip("PIKS_TEST_INTEGRATION not set (integration off by default)")
+	}
+	dsn := os.Getenv("PIKS_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("PIKS_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	pool, err := store.Open(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := store.New(pool)
+	t.Cleanup(func() { pool.Close() })
+
+	dir := t.TempDir()
+	const subject = "macro:cn_cpi"
+	runID := "p9-macro-" + time.Now().Format("20060102150405.000000")
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM research_runs WHERE run_id=$1`, runID)
+		_, _ = pool.Exec(ctx, `DELETE FROM task_runs WHERE command LIKE 'research-run:%' AND created_at > now() - interval '1 minute'`)
+	})
+
+	cli := &fakeCLI{files: map[string]string{
+		"run_meta.json": `{"run_id":"` + runID + `","symbol":"macro:cn_cpi","profile":"macro",` +
+			`"as_of":"2026-09-17","sections":["macro_level"],"contract":1}`,
+		"{code}_metrics.json": `{"meta":{"symbol":"macro:cn_cpi","as_of":"2026-09-17"},` +
+			`"macro":{"ref":{"key":"cn_cpi","name":"全国居民消费价格指数(CPI)"},` +
+			`"period":{"label":"2026年08月份","period_end":"2026-08-31","period_year":2026,"period_month":8},` +
+			`"latest_yoy":0.8},` +
+			`"evidence":[{"id":"e1","type":"fact","tier":"structured","section":"macro_level",` +
+			`"statement":"latest_yoy = 0.8"}]}`,
+		"{code}_synthesis_prompt.txt": "你是一名 A 股研究分析师，正在撰写 macro:cn_cpi 的宏观研究报告。\n指标卡见下…",
+		"{code}_skeleton.md":          "# 骨架报告\n\n宏观水平定位",
+	}}
+
+	o := New(s, ai.NewMock(), 0)
+	o.runner = cli
+
+	if _, err := s.CreateResearchRun(ctx, &store.ResearchRun{
+		RunID: runID, Code: subject, Symbol: subject,
+		Profile: "macro", AsOf: time.Now(), Status: StatusPending,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := o.Run(ctx, Options{RunID: runID, Code: subject, Profile: "macro", OutDir: dir})
+	if err != nil {
+		t.Fatalf("编排报错: %v", err)
+	}
+	if res.Status != StatusDone {
+		t.Fatalf("status = %s, want done(error=%s)", res.Status, res.Error)
+	}
+
+	// 核心断言 1:CLI 收到含冒号的规范主体码,未被切分、未被加交易所前缀。
+	if cli.gotCode != subject {
+		t.Errorf("gather 收到 code = %q, want %q(宏观码须原样穿过)", cli.gotCode, subject)
+	}
+	// 核心断言 2:产物文件名含冒号仍能成功写入并读回。
+	if _, err := os.Stat(filepath.Join(dir, subject+"_final.md")); err != nil {
+		t.Errorf("产物 %s_final.md 应存在(冒号文件名): %v", subject, err)
+	}
+	// 核心断言 3:落库 code = 规范主体码 → 读时 SubjectTypeOf 才认得出宏观。
+	row, err := s.GetResearchRun(ctx, runID)
+	if err != nil || row == nil {
+		t.Fatalf("读回落库行失败: %v", err)
+	}
+	if row.Code != subject {
+		t.Errorf("落库 code = %q, want %q", row.Code, subject)
+	}
+	if got := SubjectTypeOf(row.Code); got != store.SubjectMacro {
+		t.Errorf("SubjectTypeOf(%q) = %q, want %q", row.Code, got, store.SubjectMacro)
+	}
+}

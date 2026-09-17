@@ -376,7 +376,7 @@ scorecard: {dimensions: []}
 | **P9-5a** 主体解析 + 数据源 | ✅ 完成（`344df75`） | `models/symbol.py` 宏观分支（`full_code` 与 Go `NormalizeSubject` **逐字节相同**）；`providers/macro/macro_provider.py`（月频 + 季频两路径，四个维度）；`tests/test_macro_provider.py`（29 例）+ `test_symbol.py` 宏观组 |
 | **P9-5b** 分析层 + 报告装配 | ✅ 完成 | `analysis/macro.py`；`add_macro_evidence`；`workflow/{profile,plan,engine}.py`；`profiles/macro.yaml`；`report/{sections,markdown,json_report,synthesis}.py`；`quality_gate.py` 四处；Go `subjectPresentation` 宏观分支 + 错误文案；`tests/test_macro.py`（29 例）+ `internal/web/api_research_subject_test.go`（7 例） |
 | **P9-5c** GDP + 全链路 E2E | ✅ 完成 | 季频/累计解析与单季差分（P9-5a 已落地，此处补齐披露与抑制规则）；CLI 三步链含冒号文件名实测；`research/README.md` 补 `as_of` 语义与主体码说明 |
-| **P9-5d** 前端触发 UI | ⏳ 待做 | 见 §7 |
+| **P9-5d** 前端触发 UI | ✅ 完成 | `constants.ts`（`MACRO_DIMENSIONS` / `macroSubject` / `RESEARCH_PROFILE_LABEL.macro`）；`format.ts`（`isMacroCode`）；`MacroDimensionPicker.tsx`；`AnalystTrigger.tsx`（双输入模式 + 宏观 chip）；`report.ts` 的 `coverSub` 宏观分支；`glossary.ts` / `help.tsx` 术语 |
 
 ### 12.2 端到端实测结果
 
@@ -438,7 +438,13 @@ scripts/check-research-isolation.sh → ✓ 通过
 
 ### 12.5 未验证项（如实列出）
 
-- **Go→PG 全链路集成测试**（`PIKS_TEST_INTEGRATION=1` + 真 Postgres）**未在本机跑**：沙箱内无可达的 dev PG（5433 探测超时）。已用**等价方式**覆盖其唯一新风险点 —— 冒号文件名/目录：Python `open`/`listdir` 与 Go `os.WriteFile`/`os.MkdirAll` 均实测正常；`exec.Command` 传 argv 数组不经 shell，无引号注入面。**仍建议**在 P9-5d 部署验证时按 `TestOrchestratorIndustrySubject` 的体例补一个 `TestOrchestratorMacroSubject`。
-- **前端**（`tsc` / `vite build` / 触发 UI）属 P9-5d，本期未动。
+- **Go→PG 全链路集成测试**（`PIKS_TEST_INTEGRATION=1` + 真 Postgres）**未在本机跑**：沙箱内无可达的 dev PG（5433 探测超时）。已用**等价方式**覆盖其唯一新风险点 —— 冒号文件名/目录：Python `open`/`listdir` 与 Go `os.WriteFile`/`os.MkdirAll` 均实测正常；`exec.Command` 传 argv 数组不经 shell，无引号注入面。**P9-5d 已按 `TestOrchestratorIndustrySubject` 体例补出 `TestOrchestratorMacroSubject`**（断言：CLI 收到含冒号码原样、产物 `macro:cn_cpi_final.md` 可写可读、`SubjectTypeOf` 认作 `macro`）—— 该用例与既有集成测试同开关，**部署验证时随 `PIKS_TEST_INTEGRATION=1` 一并执行**；本机仍不满足开关条件，故仍列为未验证。
+- **前端**（`tsc --noEmit`）零错误；`vite build` 通过（产物 1040.93 kB / gzip 334.52 kB）。触发 UI 的**交互**未在浏览器实测（无头环境），已验证的是类型、构建与分支分派逻辑。
 - **`as_of` 之外的时区**：`source_lag_days` 用本地 `date.today()` 与源站期末相减，跨时区容器未测。
+
+### 12.6 P9-5d 实现中的两处判断（补记）
+
+1. **触发校验按档案分派，不放开任意字符串**（§7 已列要求，此处记实现）：`AnalystTrigger` 分两条路 —— 个股档案仍 `isStockCode` 硬锁 6 位 + `replace(/\D/g,"")`；宏观档案由**维度按钮**拼出 `macro:<key>`，输入框整体不出现。**不给宏观开一个自由文本输入框**：那会让 issue #2 的脏 code 从入口回来，且 key 的合法取值是 research 侧维度表的知识（D-M2），前端列按钮即让非法 key 无从产生。`isMacroCode` 只作其它入口（如深链）的形态兜底。
+2. **`coverSub` 的宏观分支按「有 period 即走」而非仅按 `subject_type`**：`subject_type` 由后端从 `code` 重算，旧 run 或异常数据可能缺失；而 `metrics.macro.period` 存在本身就是「这是宏观报告」的充分证据。两者取或，缺字段时逐项省略，绝不填占位。
+
 

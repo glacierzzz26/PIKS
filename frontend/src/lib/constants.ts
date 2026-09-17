@@ -46,16 +46,36 @@ export const RESEARCH_PROFILES = [
 ];
 
 /**
+ * 宏观维度（P9-5 / #13）→ 中文标签。
+ *
+ * ⚠️ 主体码是 `macro:<key>`,key **只**能是后端已支持的维度(`cn_cpi` / `cn_ppi` /
+ * `cn_m2` / `cn_gdp`,真源在 Python 侧的维度表)—— 前端不给用户自由输入 key 的机会,
+ * 只列这几个按钮。新增维度须后端先支持、再同步此处(前端不猜可用取值)。
+ * 键序即展示序(CPI → PPI → M2 → GDP,先月频后季频)。
+ */
+export const MACRO_DIMENSIONS = [
+  { key: "cn_cpi", label: "CPI" },
+  { key: "cn_ppi", label: "PPI" },
+  { key: "cn_m2", label: "M2" },
+  { key: "cn_gdp", label: "GDP" },
+];
+
+/** 宏观维度选择产出的主体码(`macro:<key>`)。 */
+export const macroSubject = (key: string) => `macro:${key}`;
+
+/**
  * profile key → 中文标签（未知 key 原样回显）。
- * 含**不在选择器里**的 profile（`complete-stock` 兼容档案、`industry` 行业研报），
- * 否则历史 run 会显示英文 key。行业研报主体是 sw+6 位码，不在本页 6 位代码
- * 输入的触发范围内，故不入选择器但需能回显。
+ * 含**不在选择器里**的 profile（`complete-stock` 兼容档案、`industry` 行业研报、
+ * `macro` 宏观研报），否则历史 run 会显示英文 key。行业研报主体是 sw+6 位码，
+ * 宏观主体是 macro:<key>，二者都不在本页 6 位代码输入的触发范围内，故不入
+ * profile 选择器但需能回显（宏观维度选择器见 AnalystTrigger）。
  */
 export const RESEARCH_PROFILE_LABEL: Record<string, string> = {
   ...Object.fromEntries(RESEARCH_PROFILES.map((p) => [p.key, p.label])),
   "complete-stock": "全面深研（旧）",
   "prebuy": "买入前速评",
   "industry": "行业研报",
+  "macro": "宏观研报",
 };
 
 /**

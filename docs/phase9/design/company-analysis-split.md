@@ -53,7 +53,7 @@ sections: [company, market, volume, turnover, financial, valuation,
 
 | 依赖 | 位置 | 后果 |
 |---|---|---|
-| `risk` 分析要求 price + volume **都在** | `workflow/engine.py:303` `elif price and volume:` | 去掉 → `risk_metrics = None` → **风险章空** |
+| `risk` 分析要求 price + volume **都在** | `workflow/engine.py:304` `elif price and volume:` | 去掉 → `risk_metrics = None` → **风险章空** |
 | 评分卡 `market_trend` 维度读 price | `analysis/scorecard.py:291` | 无 price → 该维度 `unavailable` |
 | `fundamental_trend` / `risk` 是**敏感维度** | `analysis/scorecard.py:47` | risk 一缺 → 结论降级「**结论受限**」|
 | `analyze_price(bars)` bars 空即抛错 | `analysis/price.py:51` | 不采行情就无法跑 price 分析 |
@@ -137,7 +137,7 @@ def analyze_risk(symbol: str, as_of: date,
 - `symbol` / `as_of` 由调用方显式传入（不再从 `price` 借）；
 - 规则 4–7 无条件照跑。
 
-**调用点同步**（`workflow/engine.py:303`）：
+**调用点同步**（`workflow/engine.py:304`）：
 
 ```python
 # 现状：price 与 volume 缺一即 risk_metrics = None
@@ -163,22 +163,23 @@ else:
 **问题**：`run_analysis`（`analysis/engine.py:36`）同时负责算指标**和登记 Evidence**，而它的调用点被 bars 守住：
 
 ```python
-# workflow/engine.py:336-338
+# workflow/engine.py:335-347
 def _refresh_evidence(self):
+    ...
     bars = self.context.get("bars", [])
     if not bars:
         return          # ← 无 bars 直接返回,证据一条不登记
 ```
 
-公司研报不采行情 ⇒ `bars` 空 ⇒ **Evidence 全空** ⇒ 机检 `evidence_completeness` 失败（`quality_gate.py:189`），且 `risk` 的 Evidence（`engine.py:100-112`）也登记不上 ⇒ 封面机检徽标显示「未过」。
+公司研报不采行情 ⇒ `bars` 空 ⇒ **Evidence 全空** ⇒ 机检 `evidence_completeness` 失败（`quality_gate.py:189`），且 `risk` 的 Evidence（`analysis/engine.py:100-112`，`run_analysis` 内）也登记不上 ⇒ 封面机检徽标显示「未过」。
 
-**这不是新坑**：P9-3 行业研报撞的是同一个（其注释在 `engine.py:233` 明写「个股的 Evidence 由 `_refresh_evidence` 建（它要求 bars，对指数不适用）」），解法是**并列的独立登记函数** `add_industry_evidence`（`analysis/engine.py:125`）。
+**这不是新坑**：P9-3 行业研报撞的是同一个（其注释在 `engine.py:234` 明写「个股的 Evidence 由 `_refresh_evidence` 建（它要求 bars，对指数不适用）」），解法是**并列的独立登记函数** `add_industry_evidence`（`analysis/engine.py:125`）。
 
 **解法**：照此先例，为基本面主体新增 `add_fundamental_evidence(store, financial, risk, events)`：
 
 - 登记「基本面分析」章的来源数字（ROE / 净利率 / 负债率 / 营收同比 / 净利同比 / PE/PB）→ `section="financial"`；
 - 登记风险项（`risk_level` / `risk_veto`）→ `section="risk"`；
-- 在 `_execute_analyze` 的 `risk` 分支（`engine.py:286`）中，当 `industry_metrics is None` **且 bars 为空**时调用它（仿 `add_industry_evidence` 的挂载位置）。
+- 在 `_execute_analyze` 的 `risk` 分支（`engine.py:287`）中，当 `industry_metrics is None` **且 bars 为空**时调用它（仿 `add_industry_evidence` 的挂载位置）。
 
 **备选（更简）**：让 `_refresh_evidence` 在无 bars 但有 financial 时也走一条**财务专用**的登记分支。二选一，倾向独立函数（与行业先例对称，`run_analysis` 保持「必须 bars」的纯个股语义）。
 
@@ -222,31 +223,27 @@ Chapter("price", "股价表现", ("fact", "calc"), ("market",)),
 - 不改风险引擎的**规则内容**（只改可选性）——不新增财务风险规则。
 - 不删 `complete-stock`、不迁移历史 run。
 - 不动 `research_runs` schema。
-- 不为 `stock` profile 新增数据源（含 P7 的形态分析，见 §6 阻塞）。
+- 不为 `stock` profile 新增数据源（形态分析用现成的 P7 `patterns`，已随 PR #20 并回 dev）。
 - 不做宏观研报（#13）。
 
 ---
 
 ## 6. 阻塞与待确认
 
-### 6.1 ⚠️ dev↔master 分叉（硬阻塞）
+### 6.1 ✅ dev↔master 分叉（曾为硬阻塞，2026-09-17 已消解）
 
-**生产跑 master 线，本次要在 dev 上开发，两条线的 profile 集不一致**：
+**原阻塞**：生产跑 master 线、开发在 dev 线，两条线 profile 集不一致 —— dev 缺 `prebuy`（P7）与 `patterns` 节注册，导致按设计含 `patterns` 的 `stock` 在 dev 上加载即校验失败。
 
-| | dev 线（开发基线） | master 线（生产） |
+**已消解**（2026-09-17）：`sync/master-into-dev`（PR #20，master→dev 方向）已把 P7/P8 并回 dev，**无冲突自动合并**。现 `dev` 为 `master` 内容超集：`research/profiles/prebuy.yaml`、`research/src/analysis/patterns.py`、`profile.py` 的 `patterns` 节注册均已在 dev。
+
+| | dev（现开发基线） | master（生产） |
 |---|---|---|
 | `complete-stock` / `short-term` | ✅ | ✅ |
 | `industry`（P9-3） | ✅ | ✅ |
-| **`prebuy`（P7）** | ❌ **缺** | ✅ |
-| **`patterns` 节注册** | ❌ **缺** | ✅（`profile.py:58`） |
+| `prebuy`（P7） | ✅ **已并回** | ✅ |
+| `patterns` 节注册 | ✅ **已并回** | ✅ |
 
-**后果**：issue #11 的 `stock`（个股分析）若按设计含 `patterns`（量价形态，P7 产物），**在 dev 上无法实现** —— dev 的 `SECTION_REQUIREMENTS` 没有 `patterns`，加载即校验失败。
-
-**三个处理方向**（需用户定夺）：
-
-1. **先并轨再开发**：把 master 的 P7/P8 合回 dev（消分叉），再在干净基线上做 #11。最彻底，但并轨本身有冲突要解（P9 已做过一次反向并轨）。
-2. **`stock` 暂时不含 `patterns`**：dev 上先把功能骨架拆出来（量价三节），形态分析作为「P7 并轨后补齐」的后续项。**本次交付缩水但可落地**。
-3. **从 master 拉分支做**：沿生产线开发 #11。与项目「dev 为主开发线」的纪律相悖，不推荐。
+根因（无「谁是源」的发布纪律）由 PR #21 固化修复（全局 `~/.claude/CLAUDE.md`「发布纪律」+ 项目 `CLAUDE.md`「分支与发布纪律」）。**本次 P9-4 可直接在 dev 开工，`stock` 含 `patterns` 不再受阻。**
 
 ### 6.2 其他待确认
 
@@ -282,7 +279,7 @@ Chapter("price", "股价表现", ("fact", "calc"), ("market",)),
 | **P9-4d** 前端 | 选择器 + `/stock/:code` 分区 | P9-4c | 功能在界面上分离 |
 
 > P9-4a 与 P9-4b 相互独立，可并行；P9-4c 依赖两者；P9-4d 依赖 P9-4c。
-> **§6.1 的分叉阻塞须先定夺**，否则 P9-4c 的 `stock` 内容范围无法确定。
+> §6.1 分叉阻塞已消解（PR #20），P9-4c 的 `stock` 内容范围即为设计全文（含量价形态）。
 
 ---
 
@@ -294,5 +291,5 @@ Chapter("price", "股价表现", ("fact", "calc"), ("market",)),
 | P9-2 研报版面 | ✅ 已合并（PR #16）—— 本拆分**复用**版面，不重做 |
 | #12 行业研报 | ✅ 已上生产 —— `company` 与 `industry` 在 `/reports` 并列 |
 | #13 宏观研报 | 后续；同样复用版面，主体 = `macro:<key>` |
-| dev↔master 分叉 | ⚠️ 见 §6.1，本次开发的硬阻塞 |
+| dev↔master 分叉 | ✅ 已消解（PR #20 并轨 + PR #21 发布纪律），见 §6.1 |
 | `report-layout.md` §7 | 「#11 的 profile 关系需在 #11 内单独定夺」—— 本文档即该定夺 |

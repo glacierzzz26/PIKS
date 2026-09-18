@@ -66,6 +66,10 @@ SECTION_REQUIREMENTS = {
     # 与上面的 industry_index/industry_valuation 同一手法。
     "macro_level": {"providers": ["macro"], "analysis": ["macro"]},
     "macro_position": {"providers": ["macro"], "analysis": []},
+    # 资金面/龙虎榜(issue #26):主体是个股,数据来自东财龙虎榜。
+    # 采集为非 optional? —— 否:未上榜是**合法结论**(报告如实写「最近 N 天未上榜」),
+    # 采集失败与「无记录」是两回事,故 provider 侧失败降级为空、不阻断整篇。
+    "capital": {"providers": ["capital"], "analysis": ["capital"]},
     "risk": {"providers": [], "analysis": ["risk"]},
     "patterns": {"providers": ["market"], "analysis": ["patterns"]},
     "conclusion": {"providers": [], "analysis": ["scorecard"]},

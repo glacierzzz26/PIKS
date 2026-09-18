@@ -11,6 +11,7 @@ period:
     turnover: 20d
     news: 7d
     announcement: 7d
+    lhb: 30d          # 龙虎榜回看窗口(issue #26);报告「最近 N 天」按此如实陈述
   compute:
     price: 60d
     turnover: 260d
@@ -22,6 +23,10 @@ sections:
   - turnover
   - events
   - announcements
+  # 资金面/龙虎榜(issue #26):短线视角本就看异动,龙虎榜是异动的直接证据。
+  # 此前该链路从采集到渲染无入口(section 非法/plan 无分支/context 无写入点),
+  # 致短线 profile 对「资金」维度全盲。
+  - capital
   - conclusion
 
 # 评分卡维度：express 档案无财务/估值/风险章节，只保留可确定性计算的量价与事件维度。

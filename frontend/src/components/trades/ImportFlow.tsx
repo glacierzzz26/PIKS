@@ -6,7 +6,7 @@ import ImportControls from "@/components/trades/ImportControls";
 import TradePreviewTable from "@/components/trades/TradePreviewTable";
 import PositionPreviewTable from "@/components/trades/PositionPreviewTable";
 import WatchPreviewTable from "@/components/trades/WatchPreviewTable";
-import type { ImportPreview, PreviewPosition, PreviewTrade, PreviewWatch } from "@/lib/types";
+import type { ImportPreview, PreviewAccount, PreviewPosition, PreviewTrade, PreviewWatch } from "@/lib/types";
 
 /** 截图导入：选类型 → 上传识别 → 预览可编辑(勾选) → 确认入库（含自选镜像） */
 export default function ImportFlow({ onDone }: { onDone: () => void }) {
@@ -51,7 +51,12 @@ export default function ImportFlow({ onDone }: { onDone: () => void }) {
 
       {preview && (
         <>
-          <PreviewSection preview={preview} onPatch={imp.patch} onToggleRemoveAll={imp.toggleRemoveAll} />
+          <PreviewSection
+            preview={preview}
+            onPatch={imp.patch}
+            onPatchAccount={imp.patchAccount}
+            onToggleRemoveAll={imp.toggleRemoveAll}
+          />
 
           <div className="flex items-center gap-2">
             <button
@@ -82,10 +87,12 @@ export default function ImportFlow({ onDone }: { onDone: () => void }) {
 function PreviewSection({
   preview,
   onPatch,
+  onPatchAccount,
   onToggleRemoveAll,
 }: {
   preview: ImportPreview;
   onPatch: <S extends "trades" | "positions" | "watch", T>(s: S, i: number, p: Partial<T>) => void;
+  onPatchAccount: (p: Partial<PreviewAccount>) => void;
   onToggleRemoveAll: (include: boolean) => void;
 }) {
   if (preview.kind === "watchlist") {
@@ -101,7 +108,9 @@ function PreviewSection({
     return (
       <PositionPreviewTable
         rows={preview.positions}
+        account={preview.account}
         onPatch={(i, p) => onPatch<"positions", PreviewPosition>("positions", i, p)}
+        onPatchAccount={onPatchAccount}
       />
     );
   }

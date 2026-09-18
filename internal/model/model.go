@@ -226,3 +226,18 @@ type Position struct {
 	AttachmentID *string   `db:"attachment_id"`
 	CreatedAt    time.Time `db:"created_at"`
 }
+
+// AccountSnapshot 账户级资金快照(迁移 0013,issue #19):同花顺「持仓」页顶部汇总。
+// 四项全是指针 —— NULL = 「截图没有这个数」,与 0(确实为零)严格区分,禁止推断。
+type AccountSnapshot struct {
+	ID           string    `db:"id"`
+	SnapshotDate time.Time `db:"snapshot_date"`
+	TotalAsset   *float64  `db:"total_asset"` // 总资产(含现金)
+	TotalMV      *float64  `db:"total_mv"`    // 总市值(不含现金)
+	FloatPL      *float64  `db:"float_pl"`    // 浮动盈亏(累计)
+	DailyPL      *float64  `db:"daily_pl"`    // 当日参考盈亏
+	Source       string    `db:"source"`
+	AttachmentID *string   `db:"attachment_id"`
+	CreatedAt    time.Time `db:"created_at"`
+	UpdatedAt    time.Time `db:"updated_at"`
+}

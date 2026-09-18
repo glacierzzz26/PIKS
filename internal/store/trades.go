@@ -134,6 +134,44 @@ func (s *Store) LatestPositions(ctx context.Context) ([]model.Position, error) {
 	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Position])
 }
 
+const accountSnapshotCols = `id,snapshot_date,total_asset,total_mv,float_pl,daily_pl,source,attachment_id,created_at,updated_at`
+
+// UpsertAccountSnapshot 账户级快照落库(issue #19):同日重传覆盖。
+// 四项指针原样写入(NULL = 截图没这个数,不可与 0 混)。snapshot_date UNIQUE,
+// 故 ON CONFLICT 覆盖 —— 与 position_reviews 的一天一份语义一致。
+func (s *Store) UpsertAccountSnapshot(ctx context.Context, a model.AccountSnapshot) error {
+	_, err := s.Pool.Exec(ctx, `
+		INSERT INTO account_snapshots (snapshot_date, total_asset, total_mv, float_pl, daily_pl, source, attachment_id)
+		VALUES ($1,$2,$3,$4,$5,$6,$7)
+		ON CONFLICT (snapshot_date) DO UPDATE SET
+		  total_asset = EXCLUDED.total_asset, total_mv = EXCLUDED.total_mv,
+		  float_pl = EXCLUDED.float_pl, daily_pl = EXCLUDED.daily_pl,
+		  source = EXCLUDED.source, attachment_id = EXCLUDED.attachment_id,
+		  updated_at = now()`,
+		a.SnapshotDate, a.TotalAsset, a.TotalMV, a.FloatPL, a.DailyPL, a.Source, a.AttachmentID)
+	return err
+}
+
+// LatestAccountSnapshot 最近一个快照日的账户汇总;无则 (nil, nil)。
+// 与 LatestPositions 同口径取 max(snapshot_date) —— 两者同日,页面并列展示。
+func (s *Store) LatestAccountSnapshot(ctx context.Context) (*model.AccountSnapshot, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT `+accountSnapshotCols+` FROM account_snapshots
+		WHERE snapshot_date = (SELECT max(snapshot_date) FROM account_snapshots)`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	a, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[model.AccountSnapshot])
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
 // LatestPositionsBefore 周末前最近快照日的持仓(防未来函数:仅用快照时点之前数据)。
 // before 为周结束时刻;取 snapshot_date < before 的最大日;无则空。
 func (s *Store) LatestPositionsBefore(ctx context.Context, before time.Time) ([]model.Position, error) {

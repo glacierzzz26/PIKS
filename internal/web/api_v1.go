@@ -908,6 +908,17 @@ func (s *Server) handleAPIReviews(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, out)
 }
 
+// GET /api/v1/account —— 最近账户资金汇总(issue #19)。无快照 → {"account":null}。
+// 独立端点(而非塞进 /reviews 数组)避免破坏既有响应形状;/trades 与 /reviews 共用。
+func (s *Server) handleAPIAccount(w http.ResponseWriter, r *http.Request) {
+	acc, err := s.store.LatestAccountSnapshot(r.Context())
+	if err != nil {
+		s.apiErr(w, "account", err)
+		return
+	}
+	s.writeJSON(w, map[string]any{"account": toAPIAccount(acc)})
+}
+
 // GET /api/v1/trades —— 成交记录 + 持仓快照。
 type apiReviewPoint struct {
 	Title   string `json:"title"`
@@ -951,6 +962,28 @@ type apiPosition struct {
 type apiTrades struct {
 	Trades    []apiTrade    `json:"trades"`
 	Positions []apiPosition `json:"positions"`
+	Account   *apiAccount   `json:"account"` // 账户汇总(issue #19);无快照 → null
+}
+
+// apiAccount 账户级汇总 DTO(issue #19)。字段用 *float64:**null = 截图没这个数**,
+// 前端据此不显示该项(区别于 0「确实为零」)。绝不在这里把 null 折成 0。
+type apiAccount struct {
+	Date       string   `json:"date"`
+	TotalAsset *float64 `json:"total_asset"`
+	TotalMV    *float64 `json:"total_mv"`
+	FloatPL    *float64 `json:"float_pl"`
+	DailyPL    *float64 `json:"daily_pl"`
+}
+
+func toAPIAccount(a *model.AccountSnapshot) *apiAccount {
+	if a == nil {
+		return nil
+	}
+	return &apiAccount{
+		Date:       a.SnapshotDate.In(cst).Format("2006-01-02"),
+		TotalAsset: a.TotalAsset, TotalMV: a.TotalMV,
+		FloatPL: a.FloatPL, DailyPL: a.DailyPL,
+	}
 }
 
 // toAPITrade 单条成交 → 前端 DTO(含 AI 复盘/复盘点解析)。交易页与个股中心共用。
@@ -1100,7 +1133,12 @@ func (s *Server) handleAPITrades(w http.ResponseWriter, r *http.Request) {
 		s.apiErr(w, "trades", err)
 		return
 	}
-	out := apiTrades{Trades: []apiTrade{}, Positions: []apiPosition{}}
+	acc, err := s.store.LatestAccountSnapshot(ctx)
+	if err != nil {
+		s.apiErr(w, "trades", err)
+		return
+	}
+	out := apiTrades{Trades: []apiTrade{}, Positions: []apiPosition{}, Account: toAPIAccount(acc)}
 	ids := make([]string, 0, len(ts))
 	for _, t := range ts {
 		ids = append(ids, t.ID)

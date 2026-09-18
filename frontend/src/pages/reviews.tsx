@@ -6,6 +6,7 @@ import { ENDPOINTS } from "@/lib/api";
 import type { ReviewRow } from "@/lib/types";
 import { LoadingBlock, EmptyState, ErrorState } from "@/components/ui/States";
 import ReviewPointList from "@/components/reviews/ReviewPointList";
+import AccountCard from "@/components/trades/AccountCard";
 import { ShieldAlert, Repeat } from "lucide-react";
 
 const STATE: Record<string, { cls: string; label: string }> = {
@@ -36,6 +37,9 @@ export default function Page() {
       </div>
 
       {msg && <p className="mb-3 text-xs text-faint">{msg}</p>}
+
+      {/* 账户资金卡（issue #19）：复盘时第一眼「账户整体今天如何」 */}
+      <AccountCard className="mb-3.5" />
 
       <div className="panel">
         {reviews.loading ? (

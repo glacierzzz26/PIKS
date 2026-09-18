@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { apiPost, apiUpload, ENDPOINTS } from "@/lib/api";
-import type { ImportPreview } from "@/lib/types";
+import type { ImportPreview, PreviewAccount } from "@/lib/types";
 
 /** 截图导入类型：今日交易 / 持仓 / 自选股。 */
 export type ImportKind = "" | "trade" | "position" | "watchlist";
@@ -54,6 +54,10 @@ export function useTradeImport(onDone?: () => void) {
       arr[i] = { ...arr[i], ...p };
       return { ...prev, [section]: arr };
     });
+
+  // 账户汇总行（issue #19）：非数组，单独 patch。空串 = 截图没有该项（确认时落 NULL）。
+  const patchAccount = (p: Partial<PreviewAccount>) =>
+    setPreview((prev) => (prev ? { ...prev, account: { ...prev.account, ...p } } : prev));
 
   // 整组取消/恢复移出勾选（仅影响 change==='remove' 行）
   const toggleRemoveAll = (include: boolean) =>
@@ -107,6 +111,7 @@ export function useTradeImport(onDone?: () => void) {
     confirm,
     reset,
     patch,
+    patchAccount,
     toggleRemoveAll,
   };
 }

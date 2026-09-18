@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"unicode"
 
 	"github.com/jackc/pgx/v5"
 
@@ -14,6 +15,33 @@ import (
 )
 
 const entityCols = `id,type,name,aliases,description,detail,status,created_at,updated_at`
+
+// NormalizeStockName 归一股票名(issue #6):去掉「字间空格」。
+//
+// 背景:东财涨停池接口对**历史改名票**返回的名字带空格(「金 螳 螂」「南 京 港」),
+// entity-build 原样落库 → 实体名与正式名对不上,且与交易截图导入的无空格名
+// 分叉成同码重复实体。实体主键是 (type,name),名称一脏就再难匹配。
+//
+// 规则:**仅当**去掉空格后全是 CJK 才归一 —— 股票名里出现空格只在东财加标记这一
+// 种情形;英文多词名(Hugging Face / SB Energy)的空格是有意义的,不能碰,
+// 故它们不满足「全 CJK」而原样返回。全角空格一并视作空白。
+func NormalizeStockName(name string) string {
+	compact := strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, name)
+	if compact == "" {
+		return strings.TrimSpace(name)
+	}
+	for _, r := range compact {
+		if !unicode.Is(unicode.Han, r) {
+			return strings.TrimSpace(name) // 含非汉字 → 多词英文名等,空格有意义,不动
+		}
+	}
+	return compact
+}
 
 // GetCompanyEntityByCode 按 6 位代码取公司实体(设计 frontend-ia §2.4)。
 // 代码经 NormalizeCode 归一(与 research_runs/交易补全对齐)。同 code 多实体时取最早创建的一行。
@@ -39,14 +67,26 @@ func (s *Store) GetCompanyEntityByCode(ctx context.Context, code string) (*model
 
 // EnsureCompanyEntity 交易股票实体补全(design trades.md §2.3):按 name 或 detail->>code
 // 查 type='company';缺则建(detail={code,source:'trade-import'} 标注来源,不编造描述)。返回实体 id。
+//
+// 名称先过 NormalizeStockName(issue #6):截图导入用无空格正式名,entity-build 曾落
+// 带空格名 → 两版分叉成同码重复。归一后即可命中既有实体。name 查询再按「去空白相等」
+// 兜底,兼容库里已存的空格脏行(清理脚本落地前也先合并而非新建)。
 func (s *Store) EnsureCompanyEntity(ctx context.Context, code, name string) (string, error) {
+	name = NormalizeStockName(name)
 	var id string
 	// 先按 name(规范名),再按 detail 里的代码(同名不同代码防撞)。
-	for _, q := range []string{
-		`SELECT id FROM entities WHERE type='company' AND name=$1`,
-		`SELECT id FROM entities WHERE type='company' AND detail->>'code'=$1`,
+	// ⚠️ 每条查询各自绑定参数:代码那版必须绑 code(曾误绑 name,查的是 detail->>'code'=名称)。
+	for _, q := range []struct {
+		sql string
+		arg string
+	}{
+		{`SELECT id FROM entities WHERE type='company'
+		    AND regexp_replace(name, '\s', '', 'g') = $1
+		    ORDER BY created_at LIMIT 1`, name},
+		{`SELECT id FROM entities WHERE type='company' AND detail->>'code'=$1
+		    ORDER BY created_at LIMIT 1`, code},
 	} {
-		err := s.Pool.QueryRow(ctx, q, name).Scan(&id)
+		err := s.Pool.QueryRow(ctx, q.sql, q.arg).Scan(&id)
 		if err == nil {
 			return id, nil
 		}

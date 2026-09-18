@@ -55,7 +55,12 @@ class Chapter:
 # 章节顺序 = 正文渲染顺序 = TOC 顺序。与改造前 markdown.py 的 if 链逐一对应
 # (标题字符串逐字节保留,故个股报告既有的章节文案零变化)。
 CHAPTERS: Tuple[Chapter, ...] = (
-    Chapter("price", "股价表现", ("fact", "calc"), ("market", "company")),
+    # 触发只看 `market`(P9-4,issue #11):原先还含 `company`,但 `company` 节
+    # 本身不渲染任何章节(它只是机检的 meta 键)—— 这个耦合会让**任何含 company
+    # 的 profile 凭空多出一个量价章**。公司研报(只财务、不采行情)正踩此坑。
+    # 零回归:现有所有含 company 的 profile(complete-stock/short-term/prebuy)
+    # 同时含 market,故 market 触发照常命中。
+    Chapter("price", "股价表现", ("fact", "calc"), ("market",)),
     Chapter("volume", "成交量与换手率", ("fact", "calc"), ("volume", "turnover")),
     # 量价形态(P7,规则判定)。master 线在 volume 之后、financial 之前渲染;
     # 域为 数据+计算 —— 标签与共振结论皆由确定性规则算出,无 AI 叙述。
@@ -67,6 +72,11 @@ CHAPTERS: Tuple[Chapter, ...] = (
     Chapter("industry_index", "行业行情", ("fact", "calc"), ("industry_index",)),
     Chapter("industry_valuation", "估值定位", ("fact",), ("industry_valuation",)),
     Chapter("industry_structure", "成分结构", ("fact", "calc"), ("industry_structure",)),
+    # 宏观维度主体(P9-5 / #13):两节同源于 macro 指标卡。域为 数据+计算 ——
+    # 读数/分位/窗口统计/连续同向期数**全部**由确定性规则算出,无 AI 叙述
+    # (AI 定性统一收在首章「执行摘要」)。
+    Chapter("macro_level", "宏观指标读数", ("fact", "calc"), ("macro_level",)),
+    Chapter("macro_position", "历史定位与趋势", ("fact", "calc"), ("macro_position",)),
     Chapter("capital", "资金面分析（龙虎榜）", ("fact",), ("capital",)),
     # 风险章是**确定性规则**算出来的(等级 + 逐条依据),不是 AI 叙述 ——
     # 故域为 数据+计算。design §4.4 的示意表把它标成「研判」,那是 AI 三段并入

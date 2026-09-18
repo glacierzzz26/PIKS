@@ -161,7 +161,8 @@ func (s *Server) researchRunTrigger(w http.ResponseWriter, r *http.Request) {
 	subjectType, code := store.NormalizeSubject(req.Code)
 	if subjectType == "" {
 		apiErrJSON(w, http.StatusBadRequest, fmt.Sprintf(
-			"无法识别的主体(收到 %q;公司应为 6 位数字,行业应为 sw+6 位申万代码)", strings.TrimSpace(req.Code)))
+			"无法识别的主体(收到 %q;公司应为 6 位数字,行业应为 sw+6 位申万代码,"+
+				"宏观应为 macro:<维度> 如 macro:cn_cpi)", strings.TrimSpace(req.Code)))
 		return
 	}
 	profile := req.Profile
@@ -315,15 +316,34 @@ func toSummary(r *store.ResearchRun, name string) apiResearchRunSummary {
 //   - 公司:entities.detail.code → name 富化(name 参数),缺则空(不臆测 —— 前端退回代码)
 //   - 行业:研报正文的 `industry_index.ref.name`(如「农林牧渔」)。**不查申万表** ——
 //     那是 research 侧的知识,Go 侧复制一份就违反了 D-11 独立性;指标卡里已有此字段,直读即可。
+//   - 宏观(issue #13):研报正文的 `macro.ref.name`(如「居民消费价格指数（CPI）」)。
+//     同理**不建维度表** —— `macro:<key>` 的键→名映射属于 research 侧知识(D-M2)。
 //
 // 读 metrics 失败(旧产物/无 metrics)一律退回空串,不阻断报告渲染 —— 展示名是锦上添花。
 func subjectPresentation(r *store.ResearchRun, name string) (subjectType, displayName string) {
 	subjectType = research.SubjectTypeOf(r.Code)
-	if subjectType != store.SubjectIndustry {
-		return subjectType, name // 公司:沿用实体富化名;宏观:#13 预留
+	switch subjectType {
+	case store.SubjectIndustry, store.SubjectMacro:
+		// 两者的展示名都在各自指标卡的 ref.name 里;主体类型不同 → 键不同。
+		// len==0 的判定与 industry 一致:空 metrics 无从取名,退回空串。
+	default:
+		return subjectType, name // 公司:沿用实体富化名
 	}
 	if len(r.Metrics) == 0 {
 		return subjectType, ""
+	}
+	if subjectType == store.SubjectMacro {
+		var m struct {
+			Macro struct {
+				Ref struct {
+					Name string `json:"name"`
+				} `json:"ref"`
+			} `json:"macro"`
+		}
+		if err := json.Unmarshal(r.Metrics, &m); err != nil {
+			return subjectType, ""
+		}
+		return subjectType, m.Macro.Ref.Name
 	}
 	var m struct {
 		IndustryIndex struct {

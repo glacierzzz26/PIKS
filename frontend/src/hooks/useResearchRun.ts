@@ -38,7 +38,9 @@ type State = {
 
 type Options = {
   code: string | null;
-  profile?: string;
+  /** 研究类型（profile）。**必填** —— P9-4/issue #11 起默认档案已被拆分取代，
+   *  留一个隐式默认会静默造出 `complete-stock` 历史档案的 run。 */
+  profile: string;
   /** 已有报告：直接跟踪它（用于「查看报告」/持仓行回填），不触发新跑 */
   runId?: string | null;
   /** 轮询间隔（ms）。默认 2s。 */
@@ -53,7 +55,7 @@ type Options = {
  * 组件卸载 / 换股票即 abort，不留悬挂 interval。
  */
 export function useResearchRun(opts: Options) {
-  const { code, profile = "complete-stock", runId: givenRunId, intervalMs = 2000 } = opts;
+  const { code, profile, runId: givenRunId, intervalMs = 2000 } = opts;
   const [state, setState] = useState<State>({
     runId: givenRunId ?? null,
     status: givenRunId ? "pending" : null,

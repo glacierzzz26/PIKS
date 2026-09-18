@@ -7,6 +7,12 @@ class Market(Enum):
     SZ = "sz"           # 深圳证券交易所（主板/创业板）
     BJ = "bj"           # 北京证券交易所
     SI = "sw"           # 申万行业指数（研报主体，非股票）
+    # 宏观维度（P9-5 / issue #13）。值**刻意带尾冒号**：`full_code` 是
+    # `f"{market.value}{code}"`，故 Macro 的 code 存 key（如 "cn_cpi"），
+    # full_code 即 "macro:cn_cpi" —— 与 Go 侧 `store.NormalizeSubject` 的
+    # 规范主体码**逐字节相同**。这不是巧合，是刻意的：主体码在两侧必须是
+    # 同一个字符串，否则 run_id / 产物名 / 前端展示会各拿各的码。
+    MACRO = "macro:"
     UNKNOWN = "unknown"
 
     @property
@@ -16,6 +22,7 @@ class Market(Enum):
             Market.SZ: "深圳证券交易所",
             Market.BJ: "北京证券交易所",
             Market.SI: "申万行业指数",
+            Market.MACRO: "宏观指标",
             Market.UNKNOWN: "未知",
         }[self]
 
@@ -38,7 +45,8 @@ class Symbol:
     def limit_up_pct(self) -> float:
         """涨停幅度（%）"""
         # 申万行业指数无涨跌停制度（P9）：返回 0 而非按「8 开头」误判为北交所 30%。
-        if self.market == Market.SI:
+        # 宏观指标同样无涨跌停概念。
+        if self.market in (Market.SI, Market.MACRO):
             return 0.0
         if self.market == Market.BJ:
             return 30.0
@@ -52,7 +60,7 @@ class Symbol:
     @property
     def limit_down_pct(self) -> float:
         """跌停幅度（%）"""
-        if self.market == Market.SI:
+        if self.market in (Market.SI, Market.MACRO):
             return 0.0
         if self.market == Market.BJ:
             return -30.0
@@ -69,9 +77,19 @@ class Symbol:
 def resolve_symbol(raw: str) -> Symbol:
     """
     解析用户输入的代码。
-    支持格式：600519, sh600519（股票）, sw801010（申万行业指数，研报主体）。
+    支持格式：600519, sh600519（股票）, sw801010（申万行业指数，研报主体）,
+    macro:cn_cpi（宏观维度，研报主体）。
     """
     raw = raw.strip().lower()
+
+    # 宏观维度（P9-5 / issue #13）：macro:<key>，如 macro:cn_cpi。
+    # 只做**形态**判别（前缀 + key 非空）—— key 是否合法由 provider 的维度表
+    # 判定（D-M2：知识表归 Python 独占，此处不复制）。未知 key 会在 collect
+    # 阶段抛错、run 如实 failed，不会静默产出一份空壳报告。
+    #
+    # `full_code` 结果 = "macro:" + key = Go 侧规范主体码，逐字节相同（见 Market.MACRO）。
+    if raw.startswith("macro:") and len(raw) > len("macro:"):
+        return Symbol(code=raw[len("macro:"):], market=Market.MACRO)
 
     # 申万行业指数（P9 主体轴泛化）：sw + 6 位申万代码，如 sw801010 农林牧渔。
     # 必须在股票分支**之前**判断：否则 801010 会落到下方「8 开头 → BJ」，

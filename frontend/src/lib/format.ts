@@ -40,6 +40,18 @@ export function isStockCode(code: string | undefined | null): boolean {
   return !!code && /^\d{6}$/.test(code);
 }
 
+/**
+ * 是否为合法**宏观主体码** `macro:<key>`（与后端 store.NormalizeSubject 的
+ * 宏观分支同一形态规则：前缀 + 非空 key）。
+ *
+ * ⚠️ 与 `isStockCode` 刻意**互斥**：宏观档案绝不接受 6 位数字，个股档案也绝不
+ * 接受 `macro:` 形态（见 AnalystTrigger 的档案分派校验）。放开非 6 位输入**不等于**
+ * 让任意字符串进后端 —— 那会把 issue #2 的脏 code 从入口放回来。
+ */
+export function isMacroCode(code: string | undefined | null): boolean {
+  return !!code && /^macro:[a-z0-9_]+$/i.test(code);
+}
+
 export const ENTITY_TYPE_LABEL: Record<string, string> = {
   company: "公司",
   industry: "行业",

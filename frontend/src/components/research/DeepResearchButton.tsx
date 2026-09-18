@@ -15,29 +15,39 @@ import { useState } from "react";
  *   有报告 → 「查看报告」直达 /research/:runId。
  * 完成后自动跳报告页。
  * code 非 6 位数字 → 不渲染深研入口（名称当代码会造出失败 run，issue #2）。
+ *
+ * 默认 profile = `company`（P9-4 / issue #11）：从实体卡/持仓行点「深研」，用户
+ * 想知道的通常是「这家公司什么质地」，故默认走公司研报。要日频量价速览去
+ * `/research` 选「个股分析」；要买入前速评去 `/stock/:code` 的速评卡。
  */
 export default function DeepResearchButton({
   code,
-  profile = "complete-stock",
+  profile = "company",
+  label = "深研",
 }: {
   code: string;
   profile?: string;
+  label?: string;
 }) {
   const navigate = useNavigate();
   // 先于任何请求判定:非法代码直接不出入口,避免拿名称触发深研/查列表。
   if (!isStockCode(code)) {
     return <span className="text-faint" title={`无法深研：代码「${code}」不是 6 位数字`}>—</span>;
   }
-  return <DeepResearchButtonInner code={code} profile={profile} navigate={navigate} />;
+  return (
+    <DeepResearchButtonInner code={code} profile={profile} label={label} navigate={navigate} />
+  );
 }
 
 function DeepResearchButtonInner({
   code,
   profile,
+  label,
   navigate,
 }: {
   code: string;
   profile: string;
+  label: string;
   navigate: ReturnType<typeof useNavigate>;
 }) {
   const { runId, status, active, error, trigger } = useResearchRun({ code, profile });
@@ -80,7 +90,7 @@ function DeepResearchButtonInner({
         className="inline-flex h-7 items-center gap-1 rounded-sm border border-line bg-card px-2 text-[11px] text-muted hover:border-accent hover:text-accent"
       >
         <Microscope size={11} />
-        深研
+        {label}
       </button>
       {latest && (
         <button

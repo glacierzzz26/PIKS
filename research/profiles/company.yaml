@@ -1,0 +1,56 @@
+name: company
+version: "1.0.0"
+description: 公司研报(季频文档;财务/估值/行业地位/风险,不采行情;#11)
+
+# ⚠️ 与 complete-stock 的关键差异 —— 这是「功能拆分」不是「裁剪」:
+# 本 profile 回答「这家公司是什么质地」(季频、成篇),而 `stock` 回答「这票现在
+# 能不能动」(日频、速览)。故此处**不含 market/volume/turnover/patterns** ——
+# 公司质地与今天的股价无关,采行情只会给文档灌量价噪音。
+#
+# 由此触发的两个配套改动(见设计 company-analysis-split.md):
+# 1. 风险引擎量价规则可选化(§4.2)—— price/volume 为 None 时规则 1-3 跳过,
+#    规则 4-7(负债率/净利同比/重大公告/估值缺失)照常跑,风险章不为空。
+# 2. 基本面 Evidence 登记(§4.2.1)—— `_refresh_evidence` 被 bars 挡住,故走
+#    并列的 add_fundamental_evidence,否则机检 evidence_completeness 必失败。
+#
+# events/announcements 是**共享节**(设计 §1.2):两者都关心近期事件。此处尤其
+# 不可省 —— 风险规则 6「近 30 天重大公告」正是 §2.1 「无量价也有 4 条基本面规则」
+# 里的主力之一,不采公告则该规则恒不触发、风险章被削弱。
+mode: full
+
+period:
+  display:
+    news: 30d
+    announcement: 30d
+    financial: 4q
+    valuation: 3y
+  unit:
+    news: calendar
+    announcement: calendar
+
+sections:
+  - company           # 机检 meta 键;本身不渲染章节(见 sections.py 说明)
+  - financial         # 一、基本面分析(最近季度 + 趋势 + PE/PB)
+  - valuation         # 并入基本面章(同 JSON key),此处声明以纳入机检
+  - events            # 二、近期事件与新闻(共享节)
+  - announcements     # 并入事件章(同 JSON key)
+  - industry          # 三、行业对比(个股所属行业的同业)
+  - risk              # 四、风险分析(纯基本面规则)
+  - conclusion        # 五、综合评分卡
+
+# 评分卡:不含 market_trend —— 本档案无价格数据,纳入该维度只会恒为 N/A。
+# risk 保留且在无量价时**仍可用**(量价规则跳过,基本面规则照跑)→ 不误报「结论受限」。
+scorecard:
+  dimensions:
+    - business_quality
+    - fundamental_trend
+    - valuation
+    - recent_events
+    - risk
+  overall_rule: simple_sum
+  scale: [-2, -1, 0, +1, +2]
+
+thresholds:
+  abnormal_volume_multiplier: 2.0
+  abnormal_volume_lookback: 20
+  turnover_percentile_window: 520

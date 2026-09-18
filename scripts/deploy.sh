@@ -8,17 +8,25 @@ set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 LAB="${PIKS_LAB:-rguo@192.168.0.202}"
 GS="$(git -C "$REPO" rev-parse --short HEAD)"
+# 版本号(发布纪律,见 CLAUDE.md):**默认恒为 v0.0.0** —— 只有 HEAD 上打了语义化
+# tag(正式发版)才取该 tag。不做「改动挺大就造个号」这类推测。
+VER="$(git -C "$REPO" describe --tags --exact-match 2>/dev/null || echo v0.0.0)"
+IMAGE_TAG="${VER}-${GS}"
 # 国内 pypi.org 时常长读超时(实测本机 15s 无响应),默认走 aliyun 镜像;可 PIKS_PYPI_INDEX 覆盖。
 PYPI_INDEX="${PIKS_PYPI_INDEX:-https://mirrors.aliyun.com/pypi/simple}"
 
-echo "== build image ($GS, pypi=$PYPI_INDEX)"
+echo "== build image (version=$VER hash=$GS -> tag=$IMAGE_TAG, pypi=$PYPI_INDEX)"
 docker build \
   --build-arg GIT_SHORT="$GS" \
+  --build-arg PIKS_VERSION="$VER" \
   --build-arg PYPI_INDEX="$PYPI_INDEX" \
-  -t piks-tools:latest "$REPO"
+  -t piks-tools:latest \
+  -t "piks-tools:${IMAGE_TAG}" \
+  "$REPO"
 
 echo "== transfer to lab (docker save | ssh docker load)"
-docker save piks-tools:latest | ssh "$LAB" docker load
+# 两个 tag 都要传:latest 供 compose 起服务,版本 tag 供事后核对「生产跑的是哪个版本」。
+docker save piks-tools:latest "piks-tools:${IMAGE_TAG}" | ssh "$LAB" docker load
 
 # web 容器 command(nginx 网关 + Go 127.0.0.1)由 compose 定义,先同步再起服务
 echo "== sync prod compose to lab"
@@ -30,4 +38,4 @@ scp "$REPO/configs/docker-compose.prod.yml" "$LAB:/home/rguo/piks/docker-compose
 echo "== postgres up → migrate → web up"
 ssh "$LAB" 'docker compose -f /home/rguo/piks/docker-compose.yml up -d postgres && docker compose -f /home/rguo/piks/docker-compose.yml run --rm tools ./bin/migrate && docker compose -f /home/rguo/piks/docker-compose.yml up -d web'
 
-echo "deploy done: image $GS loaded on lab, migrate ok"
+echo "deploy done: image $IMAGE_TAG loaded on lab, migrate ok"

@@ -55,6 +55,23 @@ def _get_display_quarters(profile: ResearchProfile, key: str, default: int) -> i
     return int(raw.rstrip("q"))
 
 
+def _get_display_periods(profile: ResearchProfile, key: str, default: int) -> int:
+    """从 Profile 解析 display 窗口**期数**(P9-5,宏观月频)。
+
+    `m` 后缀 = 月频/通用「期」单位。与 `_get_display_days`("d" 交易日) 和
+    `_get_display_quarters`("q" 季度) 并列:宏观是**日历频率**的期,不是交易日,
+    也不是天然按季度计数(GDP 是季度,M2/CPI/PPI 是月份)。
+    缺省或后缀不符时返回 default(不猜测)。
+    """
+    raw = profile.period.display.get(key, "")
+    if isinstance(raw, str) and raw.endswith("m"):
+        try:
+            return int(raw.rstrip("m"))
+        except ValueError:
+            pass
+    return default
+
+
 class PlanGenerator:
     """计划生成器"""
 
@@ -129,6 +146,16 @@ class PlanGenerator:
                 params={},
             ))
 
+        # 宏观维度(P9-5 / #13):主体 = 宏观指标序列。两节同源一次采集。
+        # **非 optional**:序列就是报告本体,采不到即如实 failed(不降级出空壳)。
+        if "macro" in needed_providers:
+            tasks.append(Task(
+                name="collect_macro",
+                task_type=TaskType.COLLECT,
+                provider="macro",
+                params={"periods": _get_display_periods(profile, "macro", 36)},
+            ))
+
         # 3. 分析阶段
         needed_analysis: Set[str] = set()
         for sec in profile.sections:
@@ -189,6 +216,17 @@ class PlanGenerator:
                 depends_on=["collect_industry_index"],
             ))
 
+        # 宏观分析(P9-5):算读数/分位/窗口统计。与行业同理必须在 risk **之前**建
+        # 任务 —— `_can_run` 只把 depends_on 当错误门(不保证已执行),实际执行顺序
+        # = 任务列表顺序。宏观风险引擎读 macro_metrics,排后面会读到 None。
+        if "macro" in needed_analysis:
+            tasks.append(Task(
+                name="analyze_macro",
+                task_type=TaskType.ANALYZE,
+                analysis="macro",
+                depends_on=["collect_macro"],
+            ))
+
         if "risk" in needed_analysis:
             # risk 依赖前面所有分析结果
             deps = []
@@ -200,6 +238,8 @@ class PlanGenerator:
                 deps.append("analyze_financial")
             if "analyze_industry_index" in [t.name for t in tasks]:
                 deps.append("analyze_industry_index")
+            if "analyze_macro" in [t.name for t in tasks]:
+                deps.append("analyze_macro")
             deps.append("collect_announcement")
             tasks.append(Task(
                 name="analyze_risk",

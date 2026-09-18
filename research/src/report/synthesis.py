@@ -49,12 +49,25 @@ def build_synthesis_prompt(
                 if isinstance(v, (int, float, str)) and not isinstance(v, bool)
             }
 
-    # 主体感知(P9 #12):行业报告的主体是申万行业指数,不是个股。
+    # 主体感知(P9 #12 行业 / P9-5 宏观):主体不是个股。
     # ⚠️ 个股分支的文案 "A 股研究分析师" 是 internal/ai/mock.go 的关键词,
     # 改动它会让 mock provider 在 dev 下不回话 —— 故个股分支**逐字节不变**。
     is_industry = "industry_index" in json_report
+    is_macro = "macro" in json_report
 
-    if is_industry:
+    if is_macro:
+        ref = (json_report.get("macro") or {}).get("ref") or {}
+        period = (json_report.get("macro") or {}).get("period") or {}
+        name = ref.get("name") or symbol
+        # 主体句带上统计期:宏观报告必须让 LLM 知道「这是哪一期的读数」,
+        # 否则它会写出无时间锚点的定性段落。
+        label = period.get("label")
+        subj = f"{name}（{label}）" if label else name
+        lines = [
+            f"你是一名宏观研究分析师，正在撰写 {subj} 的宏观研究报告。",
+            "以下是该宏观维度近期的数据指标卡（全部由确定性计算引擎生成）：",
+        ]
+    elif is_industry:
         ref = (json_report.get("industry_index") or {}).get("ref") or {}
         # ⚠️ 不要 .strip("（）"):它会把刚拼上的右括号也剥掉("农林牧渔（申万一级")。
         name, label = ref.get("name"), ref.get("level_label")
@@ -79,7 +92,13 @@ def build_synthesis_prompt(
         "",
     ]
 
-    if is_industry:
+    if is_macro:
+        lines += [
+            "1. **summary**（执行摘要，2-4 句）：概括该宏观指标最新读数、同比/环比方向与整体所处位置。",
+            "2. **trend**（趋势解读，3-5 句）：解读近期序列走势与历史分位变化，说明主要驱动与隐忧。",
+            "3. **conclusion**（综合结论，3-5 句）：基于读数、历史定位与规则判定的风险等级给出综合判断，明确是正面/中性/负面倾向。",
+        ]
+    elif is_industry:
         lines += [
             "1. **summary**（执行摘要，2-4 句）：概括行业指数近期表现、估值位置与成分结构特征。",
             "2. **trend**（趋势解读，3-5 句）：解读行业行情趋势与成分盈利分化，解释主要驱动与隐忧。",
@@ -100,7 +119,21 @@ def build_synthesis_prompt(
         "- 不得声称「数据缺失但给出估计」，缺失字段直接不讨论。",
         "- 不得进行财务预测、目标价预估、收益承诺。",
     ]
-    if is_industry:
+    if is_macro:
+        # 水平列的量纲**逐维度不同**(CPI/PPI 是「上年同月=100」的指数、M2/GDP 是亿元),
+        # 提示词不得写死某一种 —— 从卡里的 `ref.level_label` 取(知识表单一真源在
+        # provider,此处只读)。取不到才退回泛述。
+        level_label = ref.get("level_label") or "指数或亿元"
+        lines += [
+            "- 不得对宏观指标作任何预测（不得写未来值、目标位、「预计下月」、「政策将…」）。",
+            "- 不得表述「数据将于 X 月公布」—— 数据源不提供发布日历。",
+            "- 不得跨维度作因果或领先滞后推断（不得写「M2 领先 CPI」这类关系）。",
+            "- 不得与政策目标对比（如「CPI 低于 3% 目标」）—— 目标值不在数据源内。",
+            "- 不得给出资产配置建议。",
+            f"- ⚠️ 最新读数/序列读数那几列的**水平量纲是「{level_label}」，不是百分比**；"
+            "只有同比/环比是百分比，不得混读。",
+        ]
+    elif is_industry:
         # D-R7(design report-layout.md):申万行业估值只有当期快照,无历史序列。
         lines.append("- 不得表述行业估值的历史分位；估值只可作横截面比较（同层级行业间的位次）。")
 

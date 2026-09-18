@@ -23,7 +23,9 @@
 ```bash
 # 1. 采集 + 确定性分析 → 骨架报告 + 指标卡 + 合成提示
 #    --run-id 可选:上层编排(Go cmd/research-run)传入稳定幂等键;独立 CLI 不需要。
-python3 -m src.cli research <代码> [--days N] [--profile complete-stock|short-term] [--out-dir DIR] [--run-id ID]
+#    ⚠️ 主体码含冒号(宏观 macro:cn_cpi)时**务必加引号** —— 现代壳里 `macro:` 一般
+#    不会触发词分割,但引号能防 zsh 通配与未来扩展;Go 侧走 argv 数组,无此问题。
+python3 -m src.cli research <主体码> [--days N] [--profile complete-stock|short-term|prebuy|index|macro] [--out-dir DIR] [--run-id ID]
 
 # 2. 把 LLM 的三段定性渲染进报告 + Number Lint(数字一致性机检)
 #    --prior-metrics 可选:既往研报的 metrics JSON(数组,Go 侧落成 {code}_prior_metrics.json),
@@ -54,6 +56,19 @@ python3 -m src.cli gate <产物目录> <代码> [--json]
 
 > **契约变更规则**:新增字段/新 section **不升** `contract`(Go 忽略未知键);
 > **改名/删除/改语义必须升** `contract`,否则 Go 侧会误读。
+
+> **`{code}` 可以是主体码**(P9 起):公司=`600519`,行业=`sw801010`,
+> 宏观=`macro:cn_cpi`(P9-5 / #13)。故文件名可能含**冒号**;Linux 下
+> 读写/建目录均正常(已实测 Go `os.WriteFile`/`MkdirAll` 与 Python
+> `open`/`listdir`)。Go 侧用 `exec.Command` 传 argv 数组(**不经 shell**),
+> 无引号注入之虞 —— 改 runner 时**不得**改成 `sh -c`。
+
+> **`as_of` 语义逐主体不同**(D-M3):它是**报告生成日**,与数据边界刻意分开。
+>   个股/行业:数据边界在 `meta`/行情指标卡(`price.period_days`)。
+>   宏观:数据边界在 `macro.period` —— `period_end`(统计期末)+ `source_lag_days`
+>     (生成日 − 期末,如实暴露滞后)。⚠️ **不写 `released_at`**:宏观数据源只有
+>     统计期、**没有发布日期**,写发布日期即编造。前端封面据此区分
+>     「数据截止」与「报告生成时间」两行。
 
 ## 独立迭代
 

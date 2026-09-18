@@ -67,6 +67,29 @@ PIKS 是 A 股投资知识系统：快讯/涨停池 → 结构化事件与实体
 - 分流规则见 `configs/nginx.conf`（生产）与 `frontend/vite.config.ts`（dev proxy 复刻）
 - ⚠️ **`UpsertEntity` 状态语义**：空 `Status` = 保持既有（entity-build 每日 upsert 不带 status，若把空当 `active` 会清空自选）
 
+## 分支与发布纪律
+
+> 通用规则见全局 `~/.claude/CLAUDE.md`（dev 为唯一源 / master 只接受 dev 同步 / 发布带版本+hash）。以下为 PIKS 的实现。
+
+### 分支
+
+- **`dev` = 唯一主开发线**。一切功能/修复从 `dev` 拉分支，PR 合回 `dev`。
+- **`master` = 发布镜像线**。唯一合法变更 = `dev` → `master` 同步（merge 或快进）。**禁止**从 feature/bugfix/release 分支直接合入 master，禁止在 master 上直接提交（发布标记除外）。
+- **反向分叉是异常**：2026-09-16 曾出现 dev 缺 P7/P8、master 缺 P9 的「各缺一半」（见 `docs/进度总表.md` / PR #20）。若再现，先查根因、补完并记录，此后不允许反向分叉。
+
+### 版本号
+
+- **默认版本恒为 `v0.0.0`** —— 未发版的一切构建/部署都用它。**不要**因「改动挺大」就造号。
+- **正式发版**才打语义化 tag `v<主>.<次>.<修>`（在 master 上，tag 名即版本号，附发布记录）。
+- 生产镜像标识 **`<版本>-<短hash>`**，两者缺一不可：光有 hash 不表意、无法沟通版本先后。
+- 镜像内烘焙：`PIKS_VERSION` + `PIKS_GIT_SHORT`（`scripts/deploy.sh` 的 `--build-arg`）。
+
+### 部署
+
+- 编排在 dev 侧：`./scripts/deploy.sh`（build → save/load → compose 同步 → migrate → web up）。
+- **发布前必打 tag**；未发版也须在验证记录里写明 `v0.0.0-<hash>`。
+- 每次部署**保留回滚镜像** `<name>:rollback-pre-<阶段>`，并在文档登记旧 hash。
+
 ## 禁用清单
 - 禁止直接改 PostgreSQL schema（前端重构不涉及）
 - 禁止引入与现有栈冲突的 UI 库

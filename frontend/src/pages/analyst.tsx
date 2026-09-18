@@ -13,10 +13,13 @@ import type { ResearchRunList } from "@/lib/types";
 const DEFAULT_PROFILE = RESEARCH_PROFILES[0].key;
 
 /**
- * 个股分析师（独立界面）。用户日常不查实体库 —— 这里直接输入代码触发深研，
+ * 研究触发页（独立界面）。用户日常不查实体库 —— 这里直接输入代码触发，
  * 并列出全部历史报告，不依赖实体/持仓入口。
  * 触发成功后跳 /research/:runId（报告页自带轮询与三态）。
  * 选择状态入 URL（规则 7）：?profile=。
+ *
+ * P9-4 / issue #11：「个股分析」与「公司研报」在此按 profile 分选 —— 前者日频
+ * 速览量价，后者季频成篇文档。默认落在「个股分析」（与页名一致）。
  */
 export default function Page() {
   return (
@@ -42,7 +45,8 @@ function AnalystInner() {
         <div>
           <h1>个股分析</h1>
           <div className="psub">
-            输入 6 位代码，选报告类型 —— 让 AI 做一次深度分析
+            输入 6 位代码，选类型：<b>个股分析</b>（日频量价速览）或 <b>公司研报</b>（季频基本面文档）；
+            选 <b>宏观研报</b> 则按维度（CPI/PPI/M2/GDP）出报告
           </div>
         </div>
         <div className="meta">

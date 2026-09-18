@@ -37,6 +37,21 @@ def _display_days(profile: ResearchProfile, key: str, default: int) -> int:
     return default
 
 
+def _display_periods(profile: ResearchProfile, key: str, default: int) -> int:
+    """Profile 的展示窗口**期数**(如 "36m" → 36,P9-5 宏观)。
+
+    宏观是**日历频率**(月/季)的期,不是交易日(`d`),也不是天然按季度计数。
+    缺省或后缀不符时返回 default(不猜测)。
+    """
+    raw = profile.period.display.get(key, "")
+    if isinstance(raw, str) and raw.endswith("m"):
+        try:
+            return int(raw.rstrip("m"))
+        except ValueError:
+            pass
+    return default
+
+
 @dataclass
 class WorkflowResult:
     """工作流执行结果"""
@@ -196,6 +211,40 @@ class WorkflowEngine:
             # 故采集窗口取 profile.compute.price(6000d ≈ 全量 6456 交易日),展示窗口另裁。
             self._collect_industry_index()
 
+        elif provider_name == "macro":
+            # 宏观**维度**(P9-5 / #13):主体是宏观指标序列。与行业同上 ——
+            # 分位需全历史,故一次取全量,展示窗口由 analysis 层裁剪。
+            self._collect_macro()
+
+    def _collect_macro(self) -> None:
+        """宏观维度采集(P9-5 / #13)。失败即抛(非 optional)——
+        序列就是宏观报告的本体,采不到就该如实失败,不降级出一份没有数字的空壳。
+
+        未知 key(`resolve` 返回 None)同样抛:维度表归 provider 独占,此处不猜。
+        """
+        from ..providers.macro.macro_provider import MacroProvider
+
+        provider = MacroProvider()
+        # symbol.code 是 key(如 "cn_cpi"):Macro 的 market.value 带尾冒号,
+        # full_code 才是规范主体码 "macro:cn_cpi"(见 models/symbol.py)。
+        ref = provider.resolve(self.symbol.code)
+        if ref is None:
+            known = "、".join(provider.known_keys())
+            raise ValueError(
+                f"未知宏观维度 {self.symbol.code!r}（当前支持:{known}）"
+                "—— 维度↔接口的对应必须查表,不按 key 推断"
+            )
+        series = provider.get_series(ref)
+        if not series.points:
+            raise ValueError(f"宏观维度 {ref.key}（{ref.name}）无序列数据")
+
+        self.context["macro_ref"] = ref
+        self.context["macro_series"] = series
+        # 宏观路径自建空 store(同行业):个股的 _refresh_evidence 要求 bars,
+        # 对宏观序列不适用,故 Evidence 由 add_macro_evidence 填。
+        if self.context.get("evidence_store") is None:
+            self.context["evidence_store"] = EvidenceStore()
+
     def _collect_industry_index(self) -> None:
         """行业本体采集(P9 #12)。失败即抛(非 optional)—— 行业报告的行情是主章节,
         采不到就该如实失败,不像「个股的同业对比」那样可降级。"""
@@ -259,6 +308,19 @@ class WorkflowEngine:
             )
             return
 
+        if analysis_name == "macro":
+            from ..analysis.macro import analyze_macro
+            ref = self.context.get("macro_ref")
+            series = self.context.get("macro_series")
+            if ref is None or series is None:
+                raise ValueError("无宏观主体,无法计算宏观指标")
+            # 展示窗口期数由 profile 驱动("36m" → 36);分位数不受窗口影响。
+            window = _display_periods(self.profile, "macro", 36)
+            self.context["macro_metrics"] = analyze_macro(
+                ref, series, self.as_of, window_periods=window,
+            )
+            return
+
         if analysis_name == "price":
             if not bars:
                 raise ValueError("无行情数据，无法计算价格指标")
@@ -291,6 +353,8 @@ class WorkflowEngine:
             # 行业主体(P9 #12)走独立风险引擎:个股风险依据「换手率+成交额」,
             # 而申万指数这两个字段量纲不可靠 —— 套用会产出基于假数字的结论。
             im = self.context.get("industry_metrics")
+            # 宏观主体(P9-5)同理走独立引擎:宏观序列无 OHLC/量/换手。
+            mm = self.context.get("macro_metrics")
             if im is not None:
                 from ..analysis.industry import analyze_industry_risk
                 self.context["industry_risk_metrics"] = analyze_industry_risk(im, self.as_of)
@@ -301,12 +365,42 @@ class WorkflowEngine:
                     add_industry_evidence(
                         store, im, self.context["industry_risk_metrics"]
                     )
-            elif price and volume:
+            elif mm is not None:
+                # 宏观主体(P9-5 / #13)走独立风险引擎:宏观序列无 OHLC、无量、
+                # 无换手,套用个股规则(波动率/回撤/流动性)会产出无口径依据的结论。
+                from ..analysis.macro import analyze_macro_risk
+                self.context["macro_risk_metrics"] = analyze_macro_risk(mm, self.as_of)
+                from ..analysis.engine import add_macro_evidence
+                store = self.context.get("evidence_store")
+                if store is not None:
+                    add_macro_evidence(
+                        store, mm, self.context["macro_risk_metrics"]
+                    )
+            elif price or volume or financial or announcements:
+                # 量价可选(P9-4,issue #11):公司研报不采行情,靠基本面规则出风险章。
                 self.context["risk_metrics"] = analyze_risk(
-                    price, volume, financial, announcements
+                    self.symbol.code, self.as_of,
+                    price, volume, financial, announcements,
                 )
             else:
                 self.context["risk_metrics"] = None
+
+            # 无行情主体(公司研报/宏观研报)的 Evidence:_refresh_evidence 被
+            # `if not bars` 挡住,不在此补登记则机检 evidence_completeness 必失败。
+            # 与行业路径(上面的 add_industry_evidence)对称 —— 只在 bars 为空且
+            # 非行业、非宏观主体时走这条(行业/宏观各自已在上方登记)。
+            if im is None and mm is None and not bars:
+                from ..analysis.engine import add_fundamental_evidence
+                store = self.context.get("evidence_store")
+                if store is None:
+                    store = EvidenceStore()
+                    self.context["evidence_store"] = store
+                add_fundamental_evidence(
+                    store,
+                    self.context.get("financial_metrics"),
+                    self.context.get("risk_metrics"),
+                    self.context.get("event_metrics"),
+                )
 
         elif analysis_name == "patterns":
             # 量价形态（规则判定）；无 bars 时留空，不阻断
@@ -372,10 +466,15 @@ class WorkflowEngine:
         capital = self.context.get("capital_metrics")
         industry_metrics = self.context.get("industry_metrics")
         industry_risk = self.context.get("industry_risk_metrics")
+        macro_metrics = self.context.get("macro_metrics")
+        macro_risk = self.context.get("macro_risk_metrics")
 
         # 行业主体:风险章节用行业风险引擎的产物(个股 risk_metrics 为 None)。
         if industry_metrics is not None and industry_risk is not None:
             risk = industry_risk
+        # 宏观主体(P9-5)同理:用宏观风险引擎的产物。
+        elif macro_metrics is not None and macro_risk is not None:
+            risk = macro_risk
 
         scorecard = self.context.get("scorecard")
 
@@ -393,6 +492,7 @@ class WorkflowEngine:
             industry=self.context.get("industry"),
             patterns=self.context.get("pattern_metrics"),
             industry_metrics=industry_metrics,
+            macro_metrics=macro_metrics,
             sections=self.plan.sections,
         )
 
@@ -410,6 +510,7 @@ class WorkflowEngine:
             industry=self.context.get("industry"),
             patterns=self.context.get("pattern_metrics"),
             industry_metrics=industry_metrics,
+            macro_metrics=macro_metrics,
             # 章节清单与 markdown 同源(D-R8):前端 TOC/三域标记据此渲染。
             sections=self.plan.sections,
         )

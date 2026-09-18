@@ -35,7 +35,7 @@
 - `analysis/volume.py` 只吐 8 个聚合标量(近 5/20/60 日均换手、最高/最低换手、放量异常日、量价相关 `price_volume_corr`),**无逐日序列、无形态标注**。
 - 用户截图要的是「换手率峰值日 = 股价高点」这类**逐日形态 + 背离**判定 → 需新模块。
 
-**数据源边界(诚实):** 换手率唯一来源 = akshare/腾讯 `stock_zh_a_hist_tx`(`providers/market/akshare_provider.py:68-71`,turnover×100),**流通股本口径**。同花顺的**自由流通口径**(截图橙柱)拿不到 → 只做单口径,UI 明确标注,不得暗示双口径。
+**数据源边界(诚实):** 换手率唯一来源 = akshare/腾讯 `stock_zh_a_hist_tx`(`providers/market/akshare_provider.py:68-71`,turnover×100),**A股流通股本口径**。⚠️ **2026-09-18 实测更正**:该口径与**同花顺逐日一致**(22 只 × 各 140 交易日,最大偏差 0.018%)——同花顺自家 feed 用的也是 A股流通股本,故 P7 当年「拿不到同花顺口径」的表述**不准确**;真正无免费源的是**自由流通**口径(同花顺 App「实际换手率」一列)。详见 `turnover-caliber-findings.md`。
 
 ### 1.3 与既定方向的关系
 
@@ -157,7 +157,7 @@ scorecard:
 
 #### 3.2.5 诚实与新手友好
 
-无记录 → 空态 + CTA;运行中 → 文字状态徽标(**核心数字区禁 skeleton**);AI 未配置 → 如实「未生成」,确定性结论照常;财务缺失 → 维度 `unavailable` → 如实「结论受限」;图注「换手率(流通口径 · 来源腾讯)」;形态区标「量价形态(规则判定)」与 Fact 分离;术语经 `lib/glossary.ts` + `<Term>`。
+无记录 → 空态 + CTA;运行中 → 文字状态徽标(**核心数字区禁 skeleton**);AI 未配置 → 如实「未生成」,确定性结论照常;财务缺失 → 维度 `unavailable` → 如实「结论受限」;图注「换手率(A股流通股本口径 · 与同花顺一致)」;形态区标「量价形态(规则判定)」与 Fact 分离;术语经 `lib/glossary.ts` + `<Term>`。
 
 ---
 
@@ -188,14 +188,14 @@ scorecard:
 | 财务 provider 失败 → 评分卡「结论受限」 | 如实显示 + 前端提示,不编造 |
 | 合成可选影响既有深研 | `RequireSynthesis` 默认 true;仅 `quick:true` 生效;深研路径逐字不变 |
 | 形态规则误判 | 每条带 evidence 可核对;分区标「规则判定」;不入 Fact 区 |
-| 双轴图单口径 | 图注明确「流通口径」,不暗示同花顺自由流通口径 |
+| 双轴图单口径 | 图注明确「A股流通股本口径 · 与同花顺一致」;自由流通口径无免费源,不暗示可得 |
 | 上生产回归 | 预存 `piks-tools:rollback-pre-p7`;回滚 `docker tag piks-tools:rollback-pre-p7 piks-tools:latest && docker compose up -d --force-recreate web` |
 
 ---
 
 ## 6. 明确不在本次范围(如实列出)
 
-- 同花顺**自由流通口径**换手(源拿不到);
+- 同花顺**自由流通口径**换手(2026-09-18 实测:无免费源;但 PIKS 现口径已与同花顺 feed 一致 —— 见 `turnover-caliber-findings.md`);
 - **行业对比**实时(需重跑 `industry`,走「完整深研」);
 - **龙虎榜资金面**(provider `capital/akshare_lhb.py` 存在但未接线 `plan.py`,`capital_metrics` 恒 None,死代码);
 - **相对指数超额收益**(`vs_index_return_pct` 现为占位 None);

@@ -135,6 +135,14 @@ export type PreviewPosition = {
   pl: string;
 };
 
+/** 账户汇总预览（issue #19）：空串 = 截图没这个数，确认时落 NULL。 */
+export type PreviewAccount = {
+  total_asset: string;
+  total_mv: string;
+  float_pl: string;
+  daily_pl: string;
+};
+
 /** 自选镜像预览行：change=add 将加入 / remove 将移出 / keep 已在（不变）。 */
 export type PreviewWatch = {
   include: boolean;
@@ -149,6 +157,7 @@ export type ImportPreview = {
   trades: PreviewTrade[];
   positions: PreviewPosition[];
   watch: PreviewWatch[];
+  account: PreviewAccount;
 };
 
 export type TradeRow = {
@@ -190,6 +199,15 @@ export type PositionRow = {
   cost: number;
   last: number;
   pnl_pct: number;
+};
+
+/** 账户级资金汇总（issue #19）。四项可为 null = 截图没这个数，展示留空不显示 0。 */
+export type AccountRow = {
+  date: string;
+  total_asset: number | null;
+  total_mv: number | null;
+  float_pl: number | null;
+  daily_pl: number | null;
 };
 
 export type ReviewRow = {

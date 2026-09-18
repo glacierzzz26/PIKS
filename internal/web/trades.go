@@ -27,6 +27,16 @@ type ImportPreview struct {
 	Trades       []PreviewTrade
 	Positions    []PreviewPosition
 	Watch        []PreviewWatch
+	Account      PreviewAccount // 仅 position:账户汇总(issue #19)
+}
+
+// PreviewAccount 账户级汇总预览(issue #19)。值用 string 与其它预览字段一致
+// (前端输入框直接编辑);空串 = 截图没这个数,确认时落 NULL 而非 0。
+type PreviewAccount struct {
+	TotalAsset string
+	TotalMV    string
+	FloatPL    string
+	DailyPL    string
 }
 
 type PreviewTrade struct {
@@ -104,14 +114,16 @@ func importPrompt(kind string) (system, user, schema string) {
 		return
 	}
 	if kind == "position" {
-		system = `你是 PIKS 的交易截图识别助手。识别同花顺 App「持仓」截图,抽取结构化持仓数据。
+		system = `你是 PIKS 的交易截图识别助手。识别同花顺 App「持仓」截图,抽取结构化持仓数据 + 页面顶部账户汇总。
 规则:
 - 只抽取截图中明确出现的条目;字段缺失标 null,禁止推断或补全;
+- account = 页面**顶部**的账户汇总(若有):total_asset 总资产 / total_mv 总市值 / float_pl 浮动盈亏 / daily_pl 当日参考盈亏;
+  ⚠️ 只读截图**原文数字**,算不出或截图没有就标 null,**不要**用持仓行加总倒推,也不要凭空补;
 - code 只填截图标注的 6 位数字代码;截图无代码则留空(名称只进 name,禁止用名称充当 code);
-- 若图片不是持仓截图,返回空数组 {"positions":[]},不要编造;
+- 若图片不是持仓截图,返回空数组 {"positions":[],"account":{}},不要编造;
 - 仅输出 JSON。`
-		user = "识别这张持仓截图,输出持仓列表。"
-		schema = `{"type":"object","properties":{"positions":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"name":{"type":"string"},"qty":{"type":"number"},"cost_price":{"type":"number"},"price":{"type":"number"},"market_value":{"type":"number"},"pl":{"type":"number"}}}}}}`
+		user = "识别这张持仓截图,输出账户汇总(account)与持仓列表(positions)。"
+		schema = `{"type":"object","properties":{"account":{"type":"object","properties":{"total_asset":{"type":"number"},"total_mv":{"type":"number"},"float_pl":{"type":"number"},"daily_pl":{"type":"number"}}},"positions":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"name":{"type":"string"},"qty":{"type":"number"},"cost_price":{"type":"number"},"price":{"type":"number"},"market_value":{"type":"number"},"pl":{"type":"number"}}}}}}`
 		return
 	}
 	system = `你是 PIKS 的交易截图识别助手。识别同花顺 App「今日交易」截图,抽取结构化交易记录。
@@ -137,6 +149,12 @@ func buildImportPreview(ctx context.Context, st *store.Store, kind, attID string
 	// CostPrice/MarketValue 字段(会静默丢弃),交易路径同样用内联 struct。
 	if kind == "position" {
 		var out struct {
+			Account struct {
+				TotalAsset *float64 `json:"total_asset"`
+				TotalMV    *float64 `json:"total_mv"`
+				FloatPL    *float64 `json:"float_pl"`
+				DailyPL    *float64 `json:"daily_pl"`
+			} `json:"account"`
 			Positions []struct {
 				Code        string   `json:"code"`
 				Name        string   `json:"name"`
@@ -149,6 +167,13 @@ func buildImportPreview(ctx context.Context, st *store.Store, kind, attID string
 		}
 		if err := json.Unmarshal(data, &out); err != nil {
 			return nil, err
+		}
+		// 账户汇总:缺 → 空串(确认时落 NULL);视觉模型给 0 也照收(0 与 null 语义不同)。
+		prev.Account = PreviewAccount{
+			TotalAsset: ftoa(out.Account.TotalAsset),
+			TotalMV:    ftoa(out.Account.TotalMV),
+			FloatPL:    ftoa(out.Account.FloatPL),
+			DailyPL:    ftoa(out.Account.DailyPL),
 		}
 		for _, p := range out.Positions {
 			if strings.TrimSpace(p.Name) == "" {

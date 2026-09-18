@@ -20,7 +20,7 @@ export default function PatternTags({
       <div className="mb-2 flex items-center gap-2">
         <h3 className="m-0 text-[14px] font-bold">量价形态</h3>
         <span className="st st-dim">规则判定 · 非事实</span>
-        <span className="text-[11px] text-faint">换手率：流通口径（腾讯）</span>
+        <span className="text-[11px] text-faint">换手率：A股流通股本口径（与同花顺一致）</span>
       </div>
 
       {note ? (

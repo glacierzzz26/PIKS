@@ -454,7 +454,7 @@ export type PatternDivergence = {
   after_peak_return_pct?: number;
 };
 
-/** 量价形态指标卡（metrics.patterns）—— 换手率仅流通口径，形态是规则判定 */
+/** 量价形态指标卡（metrics.patterns）—— 换手率为 A股流通股本口径（与同花顺一致），形态是规则判定 */
 export type ResearchPatterns = {
   symbol?: string;
   as_of?: string;

@@ -732,7 +732,11 @@ def _build_pattern_section(patterns: Optional[PatternMetrics]) -> str:
     if patterns is None:
         return "_量价形态暂不可得。_\n"
 
-    lines = ["**换手率口径**：流通股本口径（数据源 腾讯财经/akshare），非自由流通口径。", ""]
+    lines = [
+        "**换手率口径**：A股流通股本口径（数据源 腾讯财经/akshare），"
+        "与同花顺同一口径；自由流通口径无免费源，本报告不采用。",
+        "",
+    ]
 
     if patterns.note:
         lines.append(f"_{patterns.note}_")

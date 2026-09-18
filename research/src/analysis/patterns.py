@@ -8,7 +8,9 @@
 - divergence：换手率峰值与股价高点的对齐关系（背离辅助事实）。
 
 ⚠️ 诚实边界（前端据此分区渲染）：
-- 换手率仅**流通口径**（akshare/腾讯 stock_zh_a_hist_tx），拿不到同花顺自由流通口径；
+- 换手率 = **A股流通股本口径**（akshare/腾讯 stock_zh_a_hist_tx），与同花顺逐日一致
+  （2026-09-18 实测 22 只 × 各 140 交易日，最大偏差 0.018%；见
+  `docs/phase7/design/turnover-caliber-findings.md`）；自由流通口径无免费源；
 - 形态是**规则判定（Inference）**，不是事实（Fact）——每条带 evidence，与数字区分区；
 - 阈值随窗口**分位自适应**，不硬编码绝对值；窗口不足 MIN_BARS 不出标签。
 """

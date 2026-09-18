@@ -52,7 +52,7 @@ def _period_quarter(year: int, q_to: int, q_from: int = 1) -> PeriodParts:
 def _ref(key="cn_cpi", **kw) -> MacroRef:
     base = dict(
         key=key, name="居民消费价格指数（CPI）", unit="%", cadence="month",
-        level_label="指数（上年同月=100）", source="腾讯财经/akshare",
+        level_label="指数（上年同月=100）", source="国家统计局（经东方财富数据中心）",
         caliber="全国口径。", level_percentile_meaningful=True,
     )
     base.update(kw)
@@ -296,6 +296,17 @@ class TestReportAssembly(unittest.TestCase):
         _, md, _ = self._build()
         self.assertNotIn("前复权", md)
         self.assertIn("数据截止", md)
+
+    def test_cover_data_source_is_macro_not_tencent(self):
+        """封面「数据来源」必须是本维度的真源,不得套用个股行情默认值。
+
+        生产实测发现:封面印「数据来源：腾讯财经/akshare」(个股行情的默认值,
+        宏观不碰行情),而正文口径说明写「国家统计局(经东方财富数据中心)」——
+        同一份报告自相矛盾。修法:宏观主体用 `ref.source` 覆盖默认值。
+        """
+        m, md, _ = self._build()
+        self.assertIn(m.ref.source, md)
+        self.assertNotIn("腾讯财经", md)
 
     def test_lint_clean_on_all_dimensions(self):
         """三个位面各自 lint 全通过 —— 期号 + 序列入卡缺一不可。"""

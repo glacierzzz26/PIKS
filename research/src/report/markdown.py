@@ -163,6 +163,14 @@ def generate_markdown(
         disclaimer_extra = "- 行业指数点位由源站直接提供，未做复权处理。"
     else:
         disclaimer_extra = "- 价格指标基于前复权计算。"
+    # 数据来源:宏观主体感知。默认值 `腾讯财经/akshare` 是**个股行情**的来源 ——
+    # 宏观根本不碰行情,套用默认值会让封面印「数据来源:腾讯财经/akshare」,而正文
+    # 口径说明写「国家统计局(经东方财富数据中心)」,同一份报告自相矛盾。
+    # 与 caliber 同理:单一真源是本卡的 `ref.source`(provider 维度表)。
+    # (个股路径逐字节不变 —— 无 macro_metrics 时仍走默认。)
+    if macro_metrics is not None:
+        data_source = macro_metrics.ref.source
+
     add_section(DISCLAIMER_TITLE, f"""- 本报告数据来源于 {data_source}，仅供参考，不构成投资建议。
 {disclaimer_extra}
 - 报告生成时间：{as_of.isoformat()}。""")

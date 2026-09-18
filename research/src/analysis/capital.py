@@ -1,5 +1,5 @@
 """资金面分析引擎"""
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 from typing import List, Dict
 
@@ -16,14 +16,13 @@ class DealerSummary:
     appearances: int
     dealer_type: str   # 机构/北向/游资/散户/未知
 
-
 @dataclass
 class DailyCapital:
     """单日龙虎榜分析结果"""
     trade_date: date
-    reason: str           # 上榜原因
+    reason: str           # 上榜原因(多个以「；」连接)
     close_price: float
-    pct_change: float
+    pct_change: float     # 当日**真实涨跌幅**(%)
     top_buyers: List[DealerSummary]   # 当日净买入前五
     top_sellers: List[DealerSummary]  # 当日净卖出前五
     day_net_buy: float    # 当日全部席位净买入合计
@@ -41,8 +40,11 @@ class CapitalMetrics:
     symbol: str
     as_of: date
 
+    # 采集窗口(天),供报告如实陈述「最近 N 天」
+    window_days: int
+
     # 龙虎榜统计
-    lhb_count_30d: int
+    lhb_count: int
     lhb_records: List[LHBRecord]
 
     # 按日明细（核心）
@@ -135,15 +137,20 @@ def analyze_capital(
     records: List[LHBRecord],
     details_map: Dict[date, List[LHBDetail]],
     as_of: date,
+    window_days: int = 30,
 ) -> CapitalMetrics:
     """
     分析龙虎榜数据，按日展开机构/游资/北向/散户行为。
+
+    window_days: 采集窗口(天),仅用于报告如实陈述「最近 N 天」——
+    原先渲染层硬编码「最近 5 天」而 provider 实采 30 天,三方不一致(issue #26)。
     """
     if not records:
         return CapitalMetrics(
             symbol="",
             as_of=as_of,
-            lhb_count_30d=0,
+            window_days=window_days,
+            lhb_count=0,
             lhb_records=[],
             daily=[],
             total_net_buy=0.0,
@@ -182,7 +189,8 @@ def analyze_capital(
     return CapitalMetrics(
         symbol=symbol,
         as_of=as_of,
-        lhb_count_30d=len(records),
+        window_days=window_days,
+        lhb_count=len(records),
         lhb_records=records,
         daily=daily_list,
         total_net_buy=total_net,

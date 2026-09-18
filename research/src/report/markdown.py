@@ -630,12 +630,15 @@ def _build_capital_section(capital_metrics: Optional[CapitalMetrics]) -> str:
 
     lines = []
 
-    if capital_metrics.lhb_count_30d == 0:
-        lines.append("最近 5 天未登上龙虎榜（未触发异动条件：涨幅偏离±7%、换手率20%、连续三日累计±20%）。")
+    if capital_metrics.lhb_count == 0:
+        lines.append(
+            f"最近 {capital_metrics.window_days} 天未登上龙虎榜"
+            "（未触发异动条件：涨幅偏离±7%、换手率20%、连续三日累计±20%）。"
+        )
         lines.append("")
         return "\n".join(lines)
 
-    lines.append(f"最近 5 天登上龙虎榜 **{capital_metrics.lhb_count_30d}** 次。")
+    lines.append(f"最近 {capital_metrics.window_days} 天登上龙虎榜 **{capital_metrics.lhb_count}** 次。")
     lines.append("")
 
     # 按天展开

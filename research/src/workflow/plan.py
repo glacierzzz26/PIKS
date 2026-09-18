@@ -156,6 +156,17 @@ class PlanGenerator:
                 params={"periods": _get_display_periods(profile, "macro", 36)},
             ))
 
+        # 资金面/龙虎榜(issue #26):主体 = 个股。**optional** —— 未上榜是合法结论
+        # (报告如实写「最近 N 天未上榜」),采不到不应阻断整篇报告。
+        if "capital" in needed_providers:
+            tasks.append(Task(
+                name="collect_capital",
+                task_type=TaskType.COLLECT,
+                provider="capital",
+                params={"days": _get_display_days(profile, "lhb", 30)},
+                optional=True,
+            ))
+
         # 3. 分析阶段
         needed_analysis: Set[str] = set()
         for sec in profile.sections:
@@ -225,6 +236,16 @@ class PlanGenerator:
                 task_type=TaskType.ANALYZE,
                 analysis="macro",
                 depends_on=["collect_macro"],
+            ))
+
+        # 资金面分析(issue #26):把龙虎榜记录 + 席位明细按日展开成机构/游资/北向/散户。
+        if "capital" in needed_analysis:
+            tasks.append(Task(
+                name="analyze_capital",
+                task_type=TaskType.ANALYZE,
+                analysis="capital",
+                depends_on=["collect_capital"],
+                optional=True,
             ))
 
         if "risk" in needed_analysis:

@@ -46,6 +46,23 @@ for f in run_meta.json metrics.json skeleton.md final.md lint.json synthesis.jso
   fi
 done
 
+# 4) **执行 Python 的地方必须收敛**(2026-09-20 容器拆分,issue #47)。
+#    拆镜像后 web 容器不含 python3,「在 web 里 os/exec python3」= 2026-09-12 的
+#    生产事故(`exec: python3: not found`,UI 深研必 failed)。深研执行已改为
+#    research 容器内的 queue worker 认领(见 migrations/0015、cmd/research-worker)。
+#    故 exec 只允许出现在白名单文件里 —— 任何**新增**执行点都是回退信号。
+ALLOWED="internal/research/runner.go cmd/daily-review/main.go internal/publish/publish.go"
+bad=0
+for f in $(grep -rl 'exec\.Command' --include='*.go' cmd/ internal/ 2>/dev/null | grep -v '_test.go'); do
+  hit=0
+  for a in $ALLOWED; do [ "$f" = "$a" ] && hit=1; done
+  if [ "$hit" -eq 0 ]; then
+    echo "✗ $f 出现 exec.Command,但不在白名单 —— 新增进程执行点须评估(web 已无 python3)" >&2
+    bad=1
+  fi
+done
+[ "$bad" -eq 1 ] && fail=1
+
 if [ "$fail" -eq 0 ]; then
   echo "✓ research 独立性检查通过:Go/前端仅经 CLI + 产物契约交互"
 fi

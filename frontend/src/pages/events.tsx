@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Search, X } from "lucide-react";
 import { useData } from "@/hooks/useData";
 import { usePagedQuery } from "@/hooks/usePagedQuery";
-import { EVENT_TYPES, EVENT_STATUS } from "@/lib/constants";
+import { EVENT_TYPES, EVENT_STATUS, EVENT_SORTS } from "@/lib/constants";
 import { ENDPOINTS } from "@/lib/api";
 import EventDetail from "@/components/events/EventDetail";
 import EventTable from "@/components/events/EventTable";
@@ -21,7 +21,7 @@ export default function EventsTab() {
 
   const events = useData<EventItem[]>({
     path: ENDPOINTS.events,
-    params: { type: query.type, status: query.status, q: query.q },
+    params: { type: query.type, status: query.status, q: query.q, sort: query.sort },
   });
   const data = events.data ?? [];
   const paged = paginate(data);
@@ -47,6 +47,18 @@ export default function EventsTab() {
           {EVENT_TYPES.map((t) => (
             <option key={t.key} value={t.key}>
               {t.label}
+            </option>
+          ))}
+        </select>
+        <select
+          className="f-sel"
+          value={query.sort ?? ""}
+          onChange={(e) => setFilter("sort", e.target.value)}
+          title="列表排序"
+        >
+          {EVENT_SORTS.map((s) => (
+            <option key={s.key} value={s.key}>
+              {s.label}
             </option>
           ))}
         </select>

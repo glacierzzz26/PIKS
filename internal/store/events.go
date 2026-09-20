@@ -97,8 +97,28 @@ type EventForAPI struct {
 	SourceURL  *string         `db:"source_url"`
 }
 
+// EventSort 事件流排序维度。默认(空/EventSortTime)= 发生时间倒序(最新在前)。
+//
+// 时间口径统一为 COALESCE(occurred_at, created_at):occurred_at 可空(历史数据),
+// 直接 ORDER BY occurred_at DESC 会把 NULL 甩到最前/最后,与「按时间排」直觉相悖;
+// 空值事件按其 created_at 参与排序,即发布时刻。
+const (
+	EventSortTime       = "time"
+	EventSortConfidence = "confidence"
+)
+
+// eventOrderBy 把排序维度映射为 SQL ORDER BY 子句(白名单,不接受任意输入)。
+func eventOrderBy(sort string) string {
+	if sort == EventSortConfidence {
+		// 置信度倒序;同分再按时间倒序,保证分页顺序稳定。
+		return `ORDER BY e.confidence DESC, COALESCE(e.occurred_at, e.created_at) DESC`
+	}
+	return `ORDER BY COALESCE(e.occurred_at, e.created_at) DESC`
+}
+
 // ListEventsForAPI 全部有效事件(extracted/verified/published)+ 来源名 + raw url。
-func (s *Store) ListEventsForAPI(ctx context.Context) ([]EventForAPI, error) {
+// sort 见 EventSort*(空 = 时间倒序)。
+func (s *Store) ListEventsForAPI(ctx context.Context, sort string) ([]EventForAPI, error) {
 	rows, err := s.Pool.Query(ctx,
 		`SELECT e.id,e.title,e.event_type,e.summary,e.facts,e.affected,e.occurred_at,e.created_at,
 		        e.confidence,e.status, s.name AS source_name, rd.url AS source_url
@@ -106,7 +126,7 @@ func (s *Store) ListEventsForAPI(ctx context.Context) ([]EventForAPI, error) {
 		 JOIN sources s ON s.id=e.source_id
 		 LEFT JOIN raw_documents rd ON rd.id=e.raw_document_id
 		 WHERE e.status IN ('extracted','verified','published')
-		 ORDER BY e.occurred_at NULLS LAST, e.created_at`)
+		 `+eventOrderBy(sort))
 	if err != nil {
 		return nil, err
 	}

@@ -3,6 +3,7 @@
 > 阶段 P11。对应 issue **#48**(epic issue #43 任务卡 **T2**)。状态:**已实现**(2026-09-20,dev-only,未部署)。
 > 前置:**T1 已交付**(6 个独立机构源,PR #46 / `50ddaf3`,`raw_documents.extra` 由迁移 `0014` 引入)。
 > 关联红线:「**扩候选池不降门槛**」(`docs/phase2/design/cluster-quality.md`)。
+> **后续 T3(漏报 / 冲突检测,issue #49)见 §8~§10**(本篇同一文档续写)。
 
 ## 1. 问题:多源采集了,但同一件事没被认成一件事
 
@@ -136,4 +137,168 @@ dev 库 163 条 6 源真实标题):
 - **单源事件行为不变** —— 无 `cluster_id` 或簇内只 1 家机构时,前端与 API 均与改动前一致。
 - **不改阈值**(0.7 保持),符合红线。
 - 相关后续:**issue #45**(事件状态机制「多源印证分级」直接依赖本任务下发的 `cluster_sources`);
-  **issue #49**(T3 漏报/冲突检测)可复用同一来源读路径。
+  **issue #49**(T3 漏报/冲突检测)可复用同一来源读路径 —— 本任务已兑现,见 §8~§10。
+
+---
+
+# T3:漏报 / 冲突检测(issue #49)
+
+> 状态:**已实现**(2026-09-20,dev-only,未部署)。**零 schema**。前置 = 本篇 T2(同一来源读路径)。
+
+## 8. 问题:多源之后还剩两个盲区
+
+T2 解决了「同事件认出来」,但两端仍看不见:
+
+1. **单源不可见** —— 只有 1 家机构报的事件,端上完全看不出。它可能是**独家的正常报道**
+   (财经快讯里独家极常见),也可能是别家漏了。要把它**标出来让人自己判断**,
+   **不是替人下结论**。
+2. **冲突不可见** —— 多家报同一事件时,数字若有出入,现在被**静默合并**:canonical 只留一条,
+   另一条进 `status='merged'` 就看不见。**这违反 Fact ≠ Inference —— 模型不能悄悄替人挑一个版本。**
+
+### 8.1 红线(issue #49 原文,实现必须逐条兑现)
+
+| 红线 | 兑现方式 |
+|---|---|
+| 单源判定基准 = **机构**级,不是 row 数 | `ListClusterSources` 已按 `sources.name`(机构名)去重;`source_count` 即去重后机构数 |
+| 同机构不同端点**不算**独立源 | 同上去重口径 |
+| **「单源」≠「漏报」** | 标签措辞取中性「**单一来源**」;文案明写「独家报道很常见,不代表消息不实」;**绝不丢弃任何事件** |
+| 冲突必须**留双方原文**、显性展示,**禁止静默择一** | `Conflict.SentenceA/B` 带两侧原句;前端 `EventConflicts` 两条都渲染,不给「结论版」 |
+| 绝不改写 `events` 既有字段 | 标题/facts/status/canonical 一律不动;冲突是**读路径新增字段** |
+
+## 9. `source_count`:`cluster_sources` 反推不出单源
+
+**关键陷阱**:`cluster_sources` 是 `omitempty`,**单源簇与未聚类事件都不下发**。
+客户端光看「有没有 `cluster_sources`」**分不清「就 1 家」和「还没聚类」** —— 会把
+「还没聚类」误读成「单一来源」。故必须加**显式计数**:
+
+```go
+SourceCount int `json:"source_count"` // 簇内**机构**数(去重);未聚类 = 1
+```
+
+- `source_count == 1` → 前端标「单一来源」;
+- `>= 2` → 保留 T2 的「N 家印证」(`cluster_sources` 同时下发);
+- **未聚类按 1 算** —— 确实只有自己那一家。
+
+⚠️ 这是**客观计数**,不是可信度判断。`source_count` 与 `cluster_sources` 的
+「有/无」不是同一件事,前端**必须读 `source_count`** 判单源。
+
+## 10. 冲突判定:确定性数值比对(不用 LLM)
+
+**为什么不用 LLM**:判定必须**可复现、可离线复算**。且实现期 AI 网关不可用
+(dev OpenCode Zen `CreditsError`,见 §6 未验证项),把判定压在 LLM 上没有必要。
+
+**落点**:`internal/cluster/conflicts.go`(新文件)—— 该包已拥有「给一组事件、导出结构」的
+纯函数(`Bigrams`/`Jaccard`/`NormalizeTitle`),`internal/web` 新增 import `internal/cluster`
+**无环**(cluster 只 import ai/model/store)。
+
+**规则(逐条)**
+
+1. **数值提取**:`(\d+(?:\.\d+)?)\s*(个百分点|百分点|万亿元|亿元|万元|万股|万手|倍|家|只|元|%|％)`,
+   `%`/`％` 归一为 `%`。**单位必须白名单锚定** —— 裸数字会把日期/年份卷进来。
+2. **骨架归一**:把「数值+单位」整体删掉(正则 `ReplaceAllString` 成空)。
+   ⚠️ **只删数字不删汉字** —— 连汉字一起删会让「回购」vs「增持」骨架全同,
+   实测骨架 Jaccard 从 0.40 冲上 1.00 变**误报**。
+3. **配对**:A 的每句取 B 中骨架 Jaccard 最高的一句。
+4. **门控**:`Jaccard >= 0.6` 才继续(见下方标定);低于此不算「同一句」。
+5. **冲突判定**:两侧该单位各**恰好 1 个不同**的值 → 报冲突。任一侧多值(口径不同)
+   → **不报警**(宁可漏报不可误报)。
+6. 输出带双方**原文**句子(`SentenceA`/`SentenceB`),按归一化单位**去重**(`%`/`％` 只报一次)。
+
+### 10.1 门控 0.6 的标定(生产真实语料,实测算出)
+
+生产库 `piks-postgres`(669 events / **1410 条事实句** / 6580 快讯,镜像 `v0.0.0-616f31b`)。
+
+**随机句对误报率**(1410 句池,20 万次抽样):
+
+| 门控 | 随机句对误报率 |
+|---|---|
+| 0.0(无门控) | 5.6535% |
+| 0.5 | 0.1305% |
+| **0.6(采用)** | **0.0750%** |
+| 0.7 | 0.0555% |
+| 0.8 | 0.0320% |
+
+**同事件不误报**:生产自带 8 组同标题重复事件(极可能同一真实事件的多条报道)共
+**39 个句对 → 检出 0 条差异**。
+
+**真阳性(构造用例)**:
+
+| 门控 | 真阳性 | 对抗集真阴性 |
+|---|---|---|
+| 0.5 | 5/5 | 2/4 |
+| **0.6** | **3/5** | **0/4** |
+| 0.7 | 3/5 | 0/4 |
+| 0.8 | 3/5 | 0/4 |
+
+取 **0.6**:对抗集误报首次归零(0/4),同时保住常见真阳性(跨源转载多为近同一句,
+骨架 J≈1.0);再往上(0.7/0.8)真阳性不增、只让改写余量更紧,故取 0.6。
+
+### 10.2 ⚠️ 已知召回边界(如实登记,勿「修」)
+
+「远改写」真阳性中 2 例(骨架 J≈0.471 / 0.500)落在**误报带内**(对抗集 J=0.400~0.500),
+**规则不可分**。这是纯 Jaccard 门控的固有边界,靠调门控解决不了 —— 需要 LLM 语义判定,
+**留给 issue #45**。`TestDetectFactConflictsKnownRecallBoundary` **钉住**该已知漏报,
+防止有人为凑召回擅自下调门控(那会立刻引入对抗集误报)。
+
+### 10.3 「双源 Evidence」= **读路径派生,不落库**
+
+`evidences` 表可写(`internal/store/evidences.go:CreateEvidence`),但它是**抽取时**产物。
+冲突是**聚类后跨事件派生**结论 —— 写进去需可重复执行的清理,且把「派生结论」混进
+extraction 审计轨迹。故与 T2 的 `cluster_sources` 同范式:**读路径每次派生**。
+「留双方原文」由 `Conflict.SentenceA/B` + 各机构 `url` 兑现。
+
+### 10.4 改动清单(全部零 schema)
+
+| 文件 | 改动 |
+|---|---|
+| `internal/cluster/conflicts.go` **新增** | `Conflict` / `DetectFactConflicts` / 单位白名单 / 骨架归一 / `conflictGate=0.6` |
+| `internal/store/events.go` | 新增 `ListClusterMembersWithFacts(ctx, clusterIDs)` —— `ListClusterSources` 不返回 facts,**故意不按机构去重**(冲突要逐成员 facts) |
+| `internal/web/api_v1.go` | `apiEventItem` 加 `source_count`(非 omitempty)+ `event_conflicts,omitempty`;`toEventItem` 变 4 参;`handleAPIEvents` 批量取成员算冲突,**默认附带** |
+| `frontend/src/lib/types.ts` | `EventItem` 加 `source_count?` / `event_conflicts?` |
+| `frontend/src/components/events/EventDetail.tsx` | chip 行加「单一来源」(`.st-dim`,**不复用 `.st-amber`** —— 那是待复核的色);来源区单源分支加白话说明 |
+| `frontend/src/components/events/EventSources.tsx` **新增** | 来源区(单源一行 / ≥2 家列各源),为守 150 行硬规则拆出 |
+| `frontend/src/components/events/EventConflicts.tsx` **新增** | 冲突分区:逐条列「对不上的数字」+ 双方原文 |
+| `frontend/src/components/events/EventTable.tsx` | 标题行在 `· N 家印证` 旁对称加 `· 单一来源` / `· 说法不一致` |
+| `frontend/src/lib/constants.ts` | `SINGLE_SOURCE_LABEL`(不动 `EVENT_STATUS`) |
+| `frontend/src/lib/glossary.ts` | 「单一来源」「来源说法不一致」词条 |
+| `scripts/deploy.sh` | **同步 lab 侧 `scripts/`**(修编排漂移根因,见 §11) |
+
+**不做**:不改 `events.status`(8 处正向白名单会静默吞事件:`events.go:41,77,131,151,179,203,240`、`search.go:41`、`event_clusters.go:48`);
+不加迁移;不改 canonical 选取;**不改写 facts/标题**;不实现 issue #45 的三级分级。
+`cmd/cluster` 默认 `-limit 100` 会静默漏聚类(进而把「没跑到」显成「单一来源」)—— **另开 issue #53**,不塞进本 PR。
+
+## 11. `scripts/` 编排漂移(实现期发现的根因,随本 PR 修)
+
+**现象**:仓库 `scripts/pipeline.sh` 早已是 `collector -driver all`(6 机构源)+ `worker -limit 300`
+(T1 的 `dd05f96`),但 **lab 上的 `/home/rguo/piks/scripts/pipeline.sh` 从未同步**,
+仍是 `-driver dongcai` + `worker`(默认 limit 50) → **6 源一条没采**。
+
+**根因**:`scripts/deploy.sh` 只 `scp` `configs/docker-compose.prod.yml`,**从不同步 `scripts/`**。
+故编排脚本与代码版本脱钩。
+
+**修法**:deploy.sh 加一段 `scp`,把 **lab 上运行的**脚本(`pipeline.sh`/`backup.sh`/
+`health.sh`/`setup.sh`)同步到 `$C/scripts/` 并 `chmod +x`(dev 侧工具 `check-*`/`fix-*` 不上 lab)。
+**这是根因修复,不是一次性补同步** —— 此后脚本随部署同步,杜绝再次漂移。
+
+> ⚠️ **本次不执行 lab 侧动作**(用户 2026-09-20 指示「先不升级生产环境,等 issue 处理完」)。
+> 本 PR 只落 deploy.sh 的同步逻辑;lab 的多源采集待 issue 合入后再跑。
+
+## 12. T3 验证
+
+| 项 | 方式 | 结果 |
+|---|---|---|
+| 冲突真阳性 | `internal/cluster` 8 项单测(真阳性/对抗集/改写/单侧多值/边界/空输入/单位最长匹配) | ✅ 8/8 |
+| 已知召回边界 | `TestDetectFactConflictsKnownRecallBoundary` **钉住**故意漏报 | ✅ |
+| `source_count` 投影 | `TestToEventItemSourceCount`(未聚类=1 / 单源=1 / 跨源=3 / 竞态回退=1) | ✅ |
+| 冲突投影 | `TestToEventItemEventConflicts`(有冲突带双方原句;同数改写不报;单源不报) | ✅ |
+| 成员 facts(真库) | `TestListClusterMembersWithFacts`(`T3TEST%` 隔离;canonical 与 `merged` 各自独立;空输入→nil) | ✅ 测后零残留 |
+| 静态检查 | `go build ./...`、`go vet ./...`、`go test ./... -count=1`、前端 `tsc --noEmit` | ✅ |
+
+### ⚠️ 未验证项(如实登记)
+
+- **生产无跨机构簇** —— 6 源未在 lab 生效(见 §11),故**拿不到「多源冲突」的生产统计**。
+  §10.1 的误报率来自生产**真实事实句池**(衡量句子层误报,有效),同事件验证来自生产同标题重复组;
+  **「真实 6 机构跨源冲突」的标定需待 lab 多源采集落地后回填。**
+- **产品后果**:按 T3 规则,生产 **663/669 = 99.1%** 的事件会被标「单一来源」(生产只 1 个源)。
+  标签按设计**正确**,但 99% 命中率等于**噪音而非信号** —— **T3 的 UI 价值取决于 lab 多源采集落地**。
+- 本任务 **dev-only**,未部署 lab。

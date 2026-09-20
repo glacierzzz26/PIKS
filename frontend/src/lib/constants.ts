@@ -18,6 +18,18 @@ export const EVENT_STATUS = [
   { key: "pending", label: "待复核" },
 ];
 
+/**
+ * 来源维度标注（issue #49 T3）——与 EVENT_STATUS（抽取态）是**两条正交的轴**，
+ * 不要混用：抽取态说的是「AI 抽得准不准」，来源数说的是「有几家机构在报」。
+ *
+ * ⚠️ 措辞取「单一来源」而非「待核」：仓库里 pending 已渲染为「待复核」，
+ * 再上一个「待核」两个近义中文标签同屏会混。且「单一来源」是**客观计数**的陈述，
+ * 不暗示消息可疑 —— 独家报道是正常且常见的（issue #49 红线）。
+ */
+export const SINGLE_SOURCE_LABEL = "单一来源";
+export const SINGLE_SOURCE_HINT =
+  "目前只有这一家机构在报。独家报道很常见，不代表消息不实，只是还没有旁证。";
+
 export const ENTITY_TYPES = [
   { key: "", label: "全部" },
   { key: "company", label: "公司" },

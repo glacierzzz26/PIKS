@@ -54,6 +54,16 @@ export default function EventTable({
                       · {e.cluster_sources.length} 家印证
                     </span>
                   ) : null}
+                  {/* 来源维度（issue #49 T3）：与「N 家印证」对称，单源时给客观标注。
+                      不用警示色 —— 单一来源是客观陈述，不是异常（独家报道很常见）。 */}
+                  {e.source_count === 1 ? (
+                    <span className="ml-1.5 text-faint">· 单一来源</span>
+                  ) : null}
+                  {e.event_conflicts && e.event_conflicts.length > 0 ? (
+                    <span className="ml-1.5 text-[var(--warn)]">
+                      · 说法不一致
+                    </span>
+                  ) : null}
                   {e.summary ? ` · ${e.summary.slice(0, 24)}` : ""}
                 </span>
               </div>

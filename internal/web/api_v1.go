@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"piks/internal/cluster"
 	"piks/internal/model"
 	"piks/internal/store"
 )
@@ -42,6 +43,25 @@ type apiEventItem struct {
 	// 仅当事件属于一个**跨源**簇(≥2 个不同机构)时才下发 ——单源簇/未聚类事件省略该字段,
 	// 前端据此判断是否展示「N 源印证」;不给单源事件挂一个只有自己的「多源」假象。
 	ClusterSources []apiClusterSource `json:"cluster_sources,omitempty"`
+	// SourceCount 报道过该事件的**机构**数(issue #49 T3),去重后计数;未聚类事件 = 1。
+	// 为何要单列:ClusterSources 是 omitempty,单源簇与未聚类**都不下发** —— 客户端
+	// 无法据此区分「只有 1 家在报」和「还没聚类」。显式计数才能让「单一来源」可判定。
+	// ⚠️ 这是**客观计数**,不是可信度判断:单源 ≠ 假消息(issue #49 红线)。
+	SourceCount int `json:"source_count"`
+	// EventConflicts 簇内跨源**数值冲突**(issue #49 T3):同一量被报成不同的数。
+	// 仅在真检出冲突时下发;每条带**双方原文**,前端必须两条都显示(禁止静默择一)。
+	EventConflicts []apiEventConflict `json:"event_conflicts,omitempty"`
+}
+
+// apiEventConflict 一条跨源数值冲突:什么量、两侧的值、双方原话。
+//
+// SentenceA/SentenceB 是**原句**,不是模型改写 —— 三层模型 Fact ≠ Inference:
+// 机器只负责把分歧**指出来**,谁对由人判断。
+type apiEventConflict struct {
+	Unit      string    `json:"unit"`
+	Values    []float64 `json:"values"`
+	SentenceA string    `json:"sentence_a"`
+	SentenceB string    `json:"sentence_b"`
 }
 
 // apiClusterSource 簇内一个来源:机构名 + 该机构原文链接 + 上游一级源(若有)。
@@ -198,10 +218,16 @@ func (s *Server) handleAPIEvents(w http.ResponseWriter, r *http.Request) {
 		s.apiErr(w, "cluster sources", err)
 		return
 	}
+	// 簇内成员 facts(issue #49 T3):冲突检测要逐成员的事实句,同样批量取一次。
+	members, err := s.store.ListClusterMembersWithFacts(ctx, clusterIDs)
+	if err != nil {
+		s.apiErr(w, "cluster members", err)
+		return
+	}
 
 	out := make([]apiEventItem, 0, len(filtered))
 	for _, ev := range filtered {
-		out = append(out, toEventItem(ev, idx, clusters))
+		out = append(out, toEventItem(ev, idx, clusters, members))
 	}
 	s.writeJSON(w, out)
 }
@@ -431,7 +457,8 @@ func buildNameIndex(ents []model.Entity) map[string]nameRef {
 	return idx
 }
 
-func toEventItem(ev store.EventForAPI, idx map[string]nameRef, clusters map[string][]store.ClusterSource) apiEventItem {
+func toEventItem(ev store.EventForAPI, idx map[string]nameRef, clusters map[string][]store.ClusterSource,
+	members map[string][]store.ClusterMember) apiEventItem {
 	at := ev.CreatedAt
 	if ev.OccurredAt != nil {
 		at = *ev.OccurredAt
@@ -462,14 +489,61 @@ func toEventItem(ev store.EventForAPI, idx map[string]nameRef, clusters map[stri
 		Status:     eventStatusFront(ev.Status),
 		Source:     ev.SourceName,
 		SourceURL:  ev.SourceURL,
+		// 未聚类事件确实只有自己那一家 → 1(issue #49)。
+		SourceCount: 1,
+	}
+	if ev.ClusterID == nil {
+		return out
+	}
+	srcs := clusters[*ev.ClusterID]
+	// 机构数是**客观计数**:簇内去重后的机构个数(含 merged 成员贡献的来源)。
+	if len(srcs) > 0 {
+		out.SourceCount = len(srcs)
 	}
 	// 仅在簇内确有 ≥2 家机构时才挂 cluster_sources —— 单源簇不谎报「多源印证」(issue #48)。
-	if ev.ClusterID != nil {
-		if srcs := clusters[*ev.ClusterID]; len(srcs) >= 2 {
-			out.ClusterSources = make([]apiClusterSource, 0, len(srcs))
-			for _, cs := range srcs {
-				out.ClusterSources = append(out.ClusterSources, apiClusterSource{
-					Source: cs.Source, URL: orStr(cs.URL, ""), Origin: orStr(cs.Origin, ""),
+	if len(srcs) >= 2 {
+		out.ClusterSources = make([]apiClusterSource, 0, len(srcs))
+		for _, cs := range srcs {
+			out.ClusterSources = append(out.ClusterSources, apiClusterSource{
+				Source: cs.Source, URL: orStr(cs.URL, ""), Origin: orStr(cs.Origin, ""),
+			})
+		}
+	}
+	// 跨源数值冲突(issue #49 T3):簇内成员两两比对。仅有 ≥2 家机构时才有意义
+	// (同机构多次报道不算跨源印证,比对它只会制造噪音)。
+	if out.SourceCount >= 2 {
+		out.EventConflicts = conflictsOf(members[*ev.ClusterID])
+	}
+	return out
+}
+
+// conflictsOf 对簇内成员两两跑数值冲突检测,汇总去重。
+//
+// 用**两两**而非只跟 canonical 比:分歧可能出现在任意两家之间,只比 canonical 会漏掉
+// 「A 与 B 不一致、而 canonical 恰好与 A 相同」的情形 —— 那正是最该暴露的静默择一。
+// 每句对内部已产出「双方原文」,故冲突天然可回溯到具体两家。
+func conflictsOf(mem []store.ClusterMember) []apiEventConflict {
+	if len(mem) < 2 {
+		return nil
+	}
+	factsOf := func(m store.ClusterMember) []string {
+		var fs []string
+		_ = json.Unmarshal(m.Facts, &fs)
+		return fs
+	}
+	seen := make(map[string]bool)
+	var out []apiEventConflict
+	for i := 0; i < len(mem); i++ {
+		for j := i + 1; j < len(mem); j++ {
+			for _, c := range cluster.DetectFactConflicts(factsOf(mem[i]), factsOf(mem[j])) {
+				k := c.SentenceA + "\x00" + c.SentenceB + "\x00" + c.Unit
+				if seen[k] {
+					continue
+				}
+				seen[k] = true
+				out = append(out, apiEventConflict{
+					Unit: c.Unit, Values: c.Values,
+					SentenceA: c.SentenceA, SentenceB: c.SentenceB,
 				})
 			}
 		}

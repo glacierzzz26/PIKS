@@ -314,6 +314,51 @@ func (s *Store) ListClusterSources(ctx context.Context, clusterIDs []string) (ma
 	return out, nil
 }
 
+// ClusterMember 簇内一个成员的来源归属 + 事实句(issue #49 T3 冲突检测用)。
+type ClusterMember struct {
+	EventID string          `db:"event_id"`
+	Source  string          `db:"source"`
+	Facts   json.RawMessage `db:"facts"`
+}
+
+// ListClusterMembersWithFacts 取若干簇的全部成员的**机构名 + facts**(含 merged 成员)。
+//
+// 与 ListClusterSources 的分工:后者给前端「哪些机构报道了」(去重、带 url/origin);
+// 本方法给冲突检测**逐成员的事实句** —— 冲突是「两家对同一个量给出不同的数」,
+// 必须保留**每个成员各自**的 facts,不能按机构去重(同机构多次报道也可能自相矛盾)。
+//
+// 含 merged:被并入的成员正是另一家机构的版本;只取 canonical 等于放弃了比对对象 ——
+// 而「不静默择一」正是本任务的红线(issue #49)。
+func (s *Store) ListClusterMembersWithFacts(ctx context.Context, clusterIDs []string) (map[string][]ClusterMember, error) {
+	if len(clusterIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := s.Pool.Query(ctx, `
+		SELECT e.id AS event_id, e.cluster_id, s.name AS source, e.facts
+		FROM events e
+		JOIN sources s ON s.id = e.source_id
+		WHERE e.cluster_id = ANY($1)
+		ORDER BY e.cluster_id, e.created_at`, clusterIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type row struct {
+		ClusterMember
+		ClusterID string `db:"cluster_id"`
+	}
+	rs, err := pgx.CollectRows(rows, pgx.RowToStructByName[row])
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string][]ClusterMember, len(clusterIDs))
+	for _, r := range rs {
+		out[r.ClusterID] = append(out[r.ClusterID], r.ClusterMember)
+	}
+	return out, nil
+}
+
 func (s *Store) SetEventCluster(ctx context.Context, eventID, clusterID, status string) error {
 	_, err := s.Pool.Exec(ctx,
 		`UPDATE events SET cluster_id=$2, status=$3, updated_at=now() WHERE id=$1`,

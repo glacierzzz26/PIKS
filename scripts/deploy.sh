@@ -153,6 +153,18 @@ echo "== sync prod compose to lab"
 scp "$REPO/configs/docker-compose.prod.yml" "$LAB:$C/docker-compose.yml"
 DC="docker compose -f $C/docker-compose.yml"
 
+# ── 同步 lab 侧运维脚本 ───────────────────────────────────────────────────
+# ⚠️ 这是编排漂移的根因修复:此前只同步 compose,scripts/ 从不同步 →
+#   lab 上的 pipeline.sh 长期停在旧版(实测仍跑 `collector -driver dongcai` +
+#   `worker` 默认 limit 50,而仓库早已是 `-driver all` + `-limit 300` 六机构源),
+#   于是「仓库改了采集编排」在生产上从未生效。脚本随部署同步,杜绝再次漂移。
+# 只同步**在 lab 上运行**的脚本(管线/备份/自检/安装);check-* 与 fix-* 是 dev 侧工具,不上 lab。
+ssh "$LAB" "mkdir -p $C/scripts"
+scp "$REPO/scripts/pipeline.sh" "$REPO/scripts/backup.sh" \
+    "$REPO/scripts/health.sh" "$REPO/scripts/setup.sh" \
+    "$LAB:$C/scripts/"
+ssh "$LAB" "chmod +x $C/scripts/*.sh"
+
 # ── 上线:postgres → migrate → web/research → gateway ─────────────────────
 # ⚠️ 顺序是硬约束:
 #   1. migrate 必须先于 web —— cmd/web/main.go 启动即读 app_config,缺表会 fatal 崩溃循环。

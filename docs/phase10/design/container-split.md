@@ -170,6 +170,12 @@ nginx 对 `proxy_pass` 里的**字面主机名**只在 worker 启动时解析一
    - **Go** → **`go list -deps` 取该命令的真实依赖闭包**,而非手列目录。手列在「新增一个 import」
      时静默漏掉(实施中实测:`research-worker` 依赖 `internal/model`,手列清单曾漏它;工具链
      不可用时回退整树 hash = 安全方向)。
+   - ⚠️ **四处输入集都含 `Dockerfile` 整文件**(issue #55 复盘补上):本节第 1 条(「输入集必须
+     覆盖该镜像构建真正读的每个文件」)当初**没被贯彻到 Dockerfile 自己身上** —— Dockerfile 不在
+     任何输入集里,于是改了 Dockerfile 也不改 tag → `build_image` 判「已存在、跳过构建」→
+     修好的镜像既不重建也不传输,**修复静默失效**。issue #55 修 gateway 冷启动挂死时正是撞上
+     这一点:只改 Dockerfile 一行,若不先补输入集,生产仍跑带 bug 的旧像。取整文件 hash
+     (改注释也触发重建)是**故意的**:方向安全(宁可多重建,不可漏),Dockerfile 极少改动。
 2. 改前端不动 web/tools/research 的 tag → 它们**既不重建也不传输**。
 3. `docker build --target <role>`(tag 已存在则跳过)→ `save|load`(仅传 lab 上缺的 tag)。
 4. **干净树门控**:镜像从**工作树**构建却以**版本 tag** 命名,工作树脏时 tag 与内容不符。
@@ -221,6 +227,15 @@ nginx 对 `proxy_pass` 里的**字面主机名**只在 worker 启动时解析一
   会重跑 `go build`,但**不重跑 node**、gateway/web 不动。D-11 隔离的一处已知收窄。
 - **共享 `internal/store`**:改它会重建 web + tools + research。`--target` 只共享 build 阶段,
   不复制编译。
+- **gateway 的 nginx 启动路径曾含外网依赖**(issue #55):`nginx:alpine` 自带 entrypoint 会跑
+  `10-listen-on-ipv6-by-default.sh`,其中 `apk manifest nginx` 在冷容器里访问 apk 仓库
+  (`dl-cdn.alpinelinux.org`) —— 该域名从 lab 解析不稳时脚本卡死,**nginx 永不启动而容器显示
+  `Started`**。该脚本对本项目无意义(它只校验**打包自带** `default.conf` 未被改动),故
+  Dockerfile 已 `rm -f` 删除。**教训**:基镜像的 entrypoint 钩子在冷启动时**可能走网络**,
+  凡「卡住但不报错」的症状都要查 entrypoint。
+- **`Dockerfile` 从不在 hash 输入集里**(issue #55):见 §5 第 1 条。任何「只改 Dockerfile」的
+  修复,若不先补输入集,都会静默不生效。
+
 - **新增常驻进程**(仓库首个 daemon):`restart: unless-stopped` + 租约回收兜底崩溃。
 - **未引入 buildx**:Go 阶段 builder cache 留待后续。
 

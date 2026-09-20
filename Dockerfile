@@ -66,6 +66,16 @@ ENV PIKS_GIT_SHORT=${GIT_SHORT} \
     PIKS_VERSION=${PIKS_VERSION} \
     PIKS_IMAGE_ROLE=gateway
 # nginx:alpine 自带 entrypoint + `CMD nginx -g daemon off;`,compose 无需覆盖 command。
+#
+# ⚠️ 删掉 10-listen-on-ipv6-by-default.sh(issue #55,2026-09-20 生产 P0):
+# 该脚本对 Alpine 执行 `apk manifest nginx`,而 apk 在**冷容器**里会去连 apk 仓库
+# (dl-cdn.alpinelinux.org,Fastly)。该域名从 lab 解析不稳定 → 脚本卡死 → entrypoint
+# 阻塞 → **nginx 永不启动**,而容器状态仍显示 Started(静默挂死)。
+# 它的唯一作用是:校验**打包自带**的 default.conf 未被改动后自动补 `listen [::]:80;`。
+# 我们的 default.conf 是下面这行自己 COPY 进去的(configs/nginx.conf,已显式 listen 80;),
+# 永远不等于打包版 → 该校验必然走「differs from packaged」分支,纯属白跑。
+# 删掉即移除启动路径上的外网依赖,零功能损失。
+RUN rm -f /docker-entrypoint.d/10-listen-on-ipv6-by-default.sh
 COPY configs/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=frontend /src/frontend/dist /usr/share/nginx/html
 

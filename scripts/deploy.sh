@@ -71,10 +71,15 @@ go_deps_hash() {
 
 short() { printf '%s' "$1" | git hash-object --stdin | cut -c1-7; }
 
-TAG_GATEWAY="${VER}-$(tree_hash frontend configs/nginx.conf)${DIRTY}"
-TAG_WEB="${VER}-$(short "$(tree_hash go.mod go.sum)$(go_deps_hash web)")${DIRTY}"
-TAG_TOOLS="${VER}-$(short "$(tree_hash go.mod go.sum migrations prompts)$(go_deps_hash migrate)")${DIRTY}"
-TAG_RESEARCH="${VER}-$(short "$(tree_hash go.mod research)$(go_deps_hash research-run)$(go_deps_hash research-worker)")${DIRTY}"
+# ⚠️ 四处都带 `Dockerfile`(整文件树 hash)与 run_deps_hash —— issue #55 的教训:
+#   此前 Dockerfile 不在任何输入集里 → 改了 Dockerfile 也不改 tag → build_image 判定
+#   「已存在、跳过构建」→ 修好的镜像既不重建也不传输,生产静默跑旧像(修复本身失效)。
+#   `HEAD:Dockerfile` 是整文件 hash(粗粒度,改注释也触发重建)—— 这是**故意的**:
+#   方向安全(宁可多重建,不可漏),且 Dockerfile 极少改动。
+TAG_GATEWAY="${VER}-$(short "$(tree_hash frontend configs/nginx.conf)$(tree_hash Dockerfile)")${DIRTY}"
+TAG_WEB="${VER}-$(short "$(tree_hash go.mod go.sum)$(go_deps_hash web)$(tree_hash Dockerfile)")${DIRTY}"
+TAG_TOOLS="${VER}-$(short "$(tree_hash go.mod go.sum migrations prompts)$(go_deps_hash migrate)$(tree_hash Dockerfile)")${DIRTY}"
+TAG_RESEARCH="${VER}-$(short "$(tree_hash go.mod research)$(go_deps_hash research-run)$(go_deps_hash research-worker)$(tree_hash Dockerfile)")${DIRTY}"
 STACK_TAG="${VER}-${GS}${DIRTY}"
 
 echo "== 栈 ${STACK_TAG}(commit ${GS})"

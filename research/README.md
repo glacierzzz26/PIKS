@@ -79,9 +79,14 @@ python3 -m src.cli gate <产物目录> <代码> [--json]
 
 ```bash
 pytest tests/                                              # 独立测试
-docker build --target research -t piks-research:latest ..  # 只跑 Python 阶段
-docker run --rm piks-research 000560 --profile short-term  # 冒烟
+docker build --target research -t piks-research:latest ..  # 只跑 Python 阶段(不重建 gateway/web)
+docker run --rm piks-research ./bin/research-run 000560 --profile short-term  # 冒烟(CLI 旁路入口)
 ```
+
+> ⚠️ 2026-09-20 起 `piks-research` 的 `CMD` 是常驻队列 worker(`/app/bin/research-worker`),
+> 不再是 CLI 编排入口 —— 故冒烟须显式给 `./bin/research-run`。
+> 另:`research` target 仍由共享的 Go 编译阶段派生(worker/research-run 是 Go 二进制),
+> 所以改本目录会重跑 `go build`,但**不重跑 node**(前端阶段被绕开),`gateway`/`web` 镜像不动。
 
 ## 边界(明确不做)
 

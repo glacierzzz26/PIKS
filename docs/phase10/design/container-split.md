@@ -45,6 +45,13 @@ FROM python:3.12-slim  AS research        # pip + research/ + research-run + res
 > Go 阶段自身源码变动时仍会重编(不可避免)。本期只消除「前端改动击穿 Go 层」;builder cache
 > 需先装 buildx,**不在本期范围**。**禁写 `# syntax=` 指令**(需 BuildKit,会硬失败)。
 
+> ⚠️ **元数据层必须排在网络层之后**(issue #57,2026-09-20 修):research 阶段的
+> `ARG GIT_SHORT`/`ENV PIKS_GIT_SHORT` 曾被排在 `pip install` **之前**,而 `GIT_SHORT`
+> 每次提交都变 → 每次部署都击穿 pip 层、重下全部依赖(几十 MB,实测把构建拖到数十分钟)。
+> 现移至 `pip install` 之后:只要 `requirements.txt` 不变,pip 层永久命中(实测 `GIT_SHORT`
+> 由 `test` 改 `zzz9` 重建,pip 层 `Using cache`、层 ID 不变)。**凡「每次构建都变」的
+> ARG/ENV,一律放到最后一个网络操作之后** —— 这是 §2.1「缓存击穿」在**层序**上的同一条原则。
+
 ### 2.2 tools 逐条 COPY
 
 `tools` target **逐条** `COPY --from=build /out/bin/<cmd>`,不用

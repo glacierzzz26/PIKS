@@ -3,6 +3,7 @@
 import { useNavigate } from "react-router-dom";
 import { EVENT_TYPE_LABEL } from "@/lib/format";
 import { ConfidenceBar } from "@/components/ui/Num";
+import { SourceLink } from "@/components/ui/SourceLink";
 import { StockSectionEmpty } from "@/components/stock/StockHeader";
 import type { StockEvent } from "@/lib/types";
 
@@ -53,7 +54,7 @@ export default function StockEvents({ events }: { events: StockEvent[] }) {
                 {e.title}
               </td>
               <td className="text-[12.5px] text-faint text-left">
-                {e.source}
+                <SourceLink source={e.source} url={e.source_url} />
               </td>
               <td>
                 <ConfidenceBar v={e.confidence} />

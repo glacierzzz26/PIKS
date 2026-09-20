@@ -112,6 +112,8 @@ type apiFlash struct {
 	Source    string `json:"source"`
 	Important bool   `json:"important"`
 	EventID   string `json:"event_id,omitempty"`
+	// URL 原文出处(raw_documents.url);为空时前端退化为纯文本,不渲染死链。
+	URL string `json:"url,omitempty"`
 }
 
 type apiDoc struct {
@@ -570,6 +572,7 @@ func toFlash(f store.RawDocWithSource) apiFlash {
 		Source:    f.Source,
 		Important: f.EventID != nil, // 已被抽取成事件 → 高亮(近似,源无独立标记)
 		EventID:   orStr(f.EventID, ""),
+		URL:       orStr(f.URL, ""),
 	}
 }
 

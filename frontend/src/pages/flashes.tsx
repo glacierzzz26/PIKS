@@ -79,7 +79,9 @@ export default function FlashesTab() {
                         </Link>
                       )}
                     </p>
-                    <Chip tone={f.important ? "up" : "dim"}>{f.source}</Chip>
+                    <Chip tone={f.important ? "up" : "dim"} href={f.url}>
+                      {f.source}
+                    </Chip>
                   </div>
                 ))}
               </div>

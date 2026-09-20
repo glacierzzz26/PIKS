@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -12,17 +13,22 @@ import (
 )
 
 const rawDocCols = `id,source_id,external_id,url,title,content,content_hash,` +
-	`published_at,retrieved_at,status,pipeline_version,error,created_at`
+	`published_at,retrieved_at,status,pipeline_version,error,extra,created_at`
 
 // InsertRawDocument 幂等插入;命中 (source_id, content_hash) 唯一约束时返回 (false, nil)。
 // 注意:ON CONFLICT DO NOTHING 冲突时无错误,须用 RowsAffected()==1 判断是否真插入。
+// extra 为该源上游原始字段原样留存(issue #43);传 nil 落 '{}'。
 func (s *Store) InsertRawDocument(ctx context.Context, doc *model.RawDocument) (bool, error) {
+	extra := doc.Extra
+	if len(extra) == 0 {
+		extra = json.RawMessage(`{}`)
+	}
 	ct, err := s.Pool.Exec(ctx,
-		`INSERT INTO raw_documents(source_id,external_id,url,title,content,content_hash,published_at,status)
-		 VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+		`INSERT INTO raw_documents(source_id,external_id,url,title,content,content_hash,published_at,status,extra)
+		 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
 		 ON CONFLICT (source_id, content_hash) DO NOTHING`,
 		doc.SourceID, doc.ExternalID, doc.URL, doc.Title, doc.Content,
-		doc.ContentHash, doc.PublishedAt, defaultStr(doc.Status, "raw"))
+		doc.ContentHash, doc.PublishedAt, defaultStr(doc.Status, "raw"), extra)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -79,11 +85,12 @@ const (
 )
 
 // flashOrderBy 把排序维度映射为 SQL ORDER BY 子句(白名单)。
-// 「重要优先」的 important 是**近似**:快讯源无独立重要标记,这里以
-// 「已被抽取成事件(event_id IS NOT NULL)」作代理(与 toFlash 高亮同口径)。
+// 「重要优先」用**源自带重要度**(source_important:important=1 或 confirmed=1,见 ListRawDocumentsWithSource)。
+// 此前以「已被抽取成事件(event_id IS NOT NULL)」作代理 —— 多源后源字段更准(issue #43),
+// 且不再把「是否被抽取」误当「是否重要」。
 func flashOrderBy(sort string) string {
 	if sort == FlashSortImportant {
-		return `ORDER BY (event_id IS NOT NULL) DESC, flash_at DESC`
+		return `ORDER BY source_important DESC, flash_at DESC`
 	}
 	return `ORDER BY flash_at DESC`
 }
@@ -96,21 +103,28 @@ type RawDocWithSource struct {
 	Source  string    `db:"source"`
 	EventID *string   `db:"event_id"`
 	URL     *string   `db:"url"`
+	// Important 源自带的重要度(issue #43):上游 important=1 或 confirmed=1 即为真。
+	// 快讯源此前无独立标记,只能拿「已被抽取成事件」近似 —— 多源后直接用源字段,更准。
+	Important bool `db:"source_important"`
 }
 
 // ListRawDocumentsWithSource 全部快讯;被抽取成事件的行链上 event_id。
 // sort 见 FlashSort*(空 = 时间倒序)。
 // 一文档多事件时取最早事件;published_at 缺失时回退 retrieved_at/created_at。
+// title 可空:多源后部分源(金十)无独立标题字段,标题由正文前段派生,派生失败即 NULL
+// → COALESCE 到正文,保证快讯行始终可读(issue #43)。
 func (s *Store) ListRawDocumentsWithSource(ctx context.Context, sort string) ([]RawDocWithSource, error) {
 	rows, err := s.Pool.Query(ctx, `
-		SELECT id, flash_at, title, source, event_id, url FROM (
+		SELECT id, flash_at, title, source, event_id, url, source_important FROM (
 			SELECT DISTINCT ON (rd.id)
 				rd.id,
 				COALESCE(rd.published_at, rd.retrieved_at, rd.created_at) AS flash_at,
-				rd.title,
+				COALESCE(rd.title, rd.content) AS title,
 				s.name AS source,
 				ev.id AS event_id,
-				rd.url
+				rd.url,
+				COALESCE((rd.extra->>'important')::int, 0) = 1
+					OR COALESCE((rd.extra->>'confirmed')::int, 0) = 1 AS source_important
 			FROM raw_documents rd
 			JOIN sources s ON s.id=rd.source_id
 			LEFT JOIN events ev ON ev.raw_document_id=rd.id

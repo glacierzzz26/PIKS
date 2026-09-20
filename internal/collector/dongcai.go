@@ -43,10 +43,10 @@ type dongcaiResp struct {
 	Data    *dongcaiData `json:"data"`
 }
 type dongcaiData struct {
-	SortEnd       string        `json:"sortEnd"`
-	Index         int           `json:"index"`
-	Total         int           `json:"total"`
-	Size          int           `json:"size"`
+	SortEnd      string        `json:"sortEnd"`
+	Index        int           `json:"index"`
+	Total        int           `json:"total"`
+	Size         int           `json:"size"`
 	FastNewsList []dongcaiItem `json:"fastNewsList"`
 }
 type dongcaiItem struct {
@@ -56,6 +56,8 @@ type dongcaiItem struct {
 	ShowTime   string   `json:"showTime"`
 	Title      string   `json:"title"`
 	StockList  []string `json:"stockList"`
+	PinglunNum int      `json:"pinglun_Num"` // 评论数(此前未落,issue #43 一并留档)
+	Share      int      `json:"share"`
 }
 
 // Fetch 走 sortEnd 游标翻页,归一化到 RawNews。部分失败不中断:本页出错则终止并返回已取数据。
@@ -107,6 +109,8 @@ func (d *dongcaiDriver) fetchPage(ctx context.Context, sortEnd string) ([]RawNew
 }
 
 // normalizeZhibo 真实 DTO → 归一化 RawNews(纯函数,可离线单测)。
+// 东财非独立机构源(与 akshare stock_info_global_em 同机构),保留为既有源以维持连续性;
+// 其互动字段(评论/分享)一并落 extra,与其他源对齐。
 func normalizeZhibo(items []dongcaiItem) []RawNews {
 	out := make([]RawNews, 0, len(items))
 	for _, it := range items {
@@ -116,6 +120,11 @@ func normalizeZhibo(items []dongcaiItem) []RawNews {
 			Title:       it.Title,
 			Content:     dongcaiContent(it.Title, it.Summary),
 			PublishedAt: parseCNTime(it.ShowTime),
+			Extra: toRaw(map[string]any{
+				"stock_list": it.StockList,
+				"comment":    it.PinglunNum,
+				"share":      it.Share,
+			}),
 		})
 	}
 	return out

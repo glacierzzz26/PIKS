@@ -1,8 +1,17 @@
 # PIKS 生产 compose(lab 实例化到 /home/rguo/piks/docker-compose.yml,setup.sh 复制)。
-# 与 dev 的 configs/docker-compose.yml 区别:tools 服务、私有网络 piks、5433 只绑回环、容器内用户对齐宿主 rguo(uid 1000)。
-# postgres:  `docker compose up -d`(仅此常驻)。
-# web:       迭代5 Web 平台常驻(:8090 对外只读,5-3 将加编辑/AI)。
-# tools:    `docker compose run --rm tools ./bin/<cmd>`(profile=run,不随 up 常驻)。
+#
+# ── 四镜像(2026-09-20 容器拆分,issue #47)────────────────────────────────
+# 取代 2026-09-12 的**单镜像**(piks-tools 曾同时背 nginx + Go web + Python 深研)。
+# 现在各管一摊,升级半径分开:改前端只重建 gateway,改 Python 只重建 research。
+#   gateway  纯 nginx,**唯一对外**(发布 8090),反代 /api/* → web
+#   web      纯 Go JSON API,私网内监听,不发布宿主端口
+#   research 常驻队列 worker + Python 深研运行时(认领 research_runs 的 pending 行)
+#   tools    profile=run,跑一次即退(管线命令 + migrate)
+#   postgres 唯一 Source of Truth
+#
+# ⚠️ 深研不再在 web 进程内跑:web 容器已无 python3,UI 触发 → 建 pending 行 →
+# research 的 worker 认领执行(见 migrations/0015、cmd/research-worker)。
+# ─────────────────────────────────────────────────────────────────────────
 services:
   postgres:
     image: postgres:16-alpine
@@ -23,23 +32,32 @@ services:
     restart: unless-stopped
     networks: [piks]
 
-  # Web 网关(nginx :80,发布 :8090):React SPA + 反代 /api/*;同容器内含 Go web 与 Python 深研运行时。
-  # 单镜像(2026-09-12):Go web 与 nginx、research(Python)同容器 ——
-  # Go 只监听 127.0.0.1:8090(不直接暴露局域网),深研编排在 web 进程内 os/exec python3。
-  web:
-    image: piks-tools:latest
-    container_name: piks-web
+  # 网关:唯一对外入口(:8090 → 容器 80)。只服务 SPA 静态文件 + 反代 /api/*。
+  # depends_on web 用 service_healthy:让 gateway 启动时 web 的 DNS 已可解析。
+  # ⚠️ 即便如此,nginx 仍必须用 resolver(见 nginx.conf 头注)—— 否则 web 每次重建
+  # (deploy.sh 会做)都会让 gateway 502 到它自己被重启。
+  gateway:
+    image: piks-gateway:latest
+    container_name: piks-gateway
     ports:
-      - "0.0.0.0:8090:80"              # 对外只留 nginx 网关;浏览器访问 http://192.168.0.202:8090
+      - "0.0.0.0:8090:80"              # 对外只此一处;浏览器访问 http://192.168.0.202:8090
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [piks]
+
+  # Go JSON API。**不发布宿主端口** —— 私网内可路由即可,故未对局域网暴露。
+  web:
+    image: piks-web:latest
+    container_name: piks-web
     env_file: [".env"]                 # 仅 DB 变量;AI 配置走 app_config 表(/settings 编辑)
     environment:
       - TZ=Asia/Shanghai
       - PIKS_DATABASE_URL=postgres://piks:${PIKS_DB_PASSWORD:-piks_dev_password}@postgres:5432/piks?sslmode=disable
-      - PIKS_UPLOAD_DIR=/data/uploads  # 迭代 5-3:/chat 截图落盘(piks_data 命名卷)
-      - PIKS_RESEARCH_OUT_DIR=/data/research  # 深研产物持久化:断点重跑可复用(容器内 /tmp 易失)
+      - PIKS_UPLOAD_DIR=/data/uploads  # /chat 截图落盘(piks_data 命名卷)
       # AI 网关自签 CA:Go(crypto/x509)读 SSL_CERT_DIR,语义为「并集」——
-      # /etc/ssl/certs(公共根,debian ca-certificates)+ 网关 CA 目录,既信任自签网关又保留公共根。
-      # (dev 侧 ~/.zshrc 因曾受 SSL_CERT_FILE 替换语义所苦而手动合并 bundle;此处无需合并。)
+      # /etc/ssl/certs(公共根,alpine ca-certificates)+ 网关 CA 目录,既信任自签网关又保留公共根。
       - SSL_CERT_DIR=/etc/ssl/certs:/certs
     volumes:
       - piks_data:/data
@@ -47,14 +65,43 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8090/api/v1/dashboard || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
     networks: [piks]
-    command: ["sh", "-c", "./bin/web -listen 127.0.0.1:8090 & sleep 1; exec nginx -g 'daemon off;'"]
 
-  # 深研 CLI 入口已并入 web 容器(Python 运行时在 piks-tools 内):
-  #   `docker compose exec web ./bin/research-run 000560 --profile short-term`
-  # (原 piks-research 独立镜像/服务已随单镜像化移除。)
+  # 深研常驻 worker + Python 运行时。认领 research_runs 的 pending 行并驱动编排。
+  # ⚠️ stop_grace_period 必须 > research.TimeoutTotal(6min):docker 默认只给 10s,
+  # 会在 run 跑到一半时 SIGKILL,把它留成孤儿(靠 reaper 兜,但是无谓的损失)。
+  research:
+    image: piks-research:latest
+    container_name: piks-research
+    env_file: [".env"]
+    environment:
+      - TZ=Asia/Shanghai
+      - PIKS_DATABASE_URL=postgres://piks:${PIKS_DB_PASSWORD:-piks_dev_password}@postgres:5432/piks?sslmode=disable
+      - PIKS_RESEARCH_DIR=/app/research
+      - PIKS_PYTHON_BIN=python3
+      - PIKS_RESEARCH_OUT_DIR=/data/research  # 产物持久化:断点重跑可复用(容器内 /tmp 易失)
+      # 深研合成走 LLM(HTTPS),同 web 需要自签网关 CA。
+      - SSL_CERT_DIR=/etc/ssl/certs:/certs
+    volumes:
+      # 与 web 共享 piks_data,但子目录不重叠(web=/data/uploads,research=/data/research),
+      # 故零数据搬迁;拆成两个卷会遗弃 lab 上已有的深研产物。
+      - piks_data:/data
+      - ./certs:/certs:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 7m             # > TimeoutTotal:drain 在跑的 run,不 SIGKILL
+    networks: [piks]
 
+  # 管线命令入口:`docker compose run --rm tools ./bin/<cmd>`(profile=run,不随 up 常驻)
   tools:
     image: piks-tools:latest
     profiles: ["run"]                  # 仅 compose run --rm 用,不随 up 常驻
@@ -75,4 +122,4 @@ networks:
 
 volumes:
   piks_pgdata:
-  piks_data:                              # /chat 截图上传(迭代 5-3)
+  piks_data:                              # /chat 截图上传 + 深研产物

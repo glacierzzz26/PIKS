@@ -144,6 +144,8 @@ def run_quality_gate(
         # 宏观维度主体(P9-5 / #13):两节同源于 macro 指标卡。
         "macro_level": "macro",
         "macro_position": "macro",
+        # 资金面/龙虎榜(issue #26):JSON 顶层 key 是 `capital`。
+        "capital": "capital",
         "risk": "risk",
         "conclusion": "scorecard",
     }

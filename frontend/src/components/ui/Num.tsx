@@ -37,15 +37,35 @@ export function Num({
   );
 }
 
-/** 语义状态胶囊（对齐 HTML .st）。tone 沿用旧 API：accent/up/down/amber/dim */
+/**
+ * 语义状态胶囊（对齐 HTML .st）。tone 沿用旧 API：accent/up/down/amber/dim。
+ * 传 href 时渲染为可点外链（新标签页，视觉不变）；不传仍是纯展示 span。
+ */
 export function Chip({
   children,
   tone = "dim",
+  href,
 }: {
   children: ReactNode;
   tone?: "dim" | "accent" | "up" | "down" | "amber";
+  href?: string;
 }) {
-  return <span className={`st st-${tone}`}>{children}</span>;
+  const cls = `st st-${tone}`;
+  if (href) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className={`${cls} no-underline hover:underline`}
+        title="在新标签页打开原文"
+      >
+        {children}
+      </a>
+    );
+  }
+  return <span className={cls}>{children}</span>;
 }
 
 /** 置信度条（对齐 HTML .pct-wrap/.pct-bar/.pct-num） */

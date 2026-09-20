@@ -72,31 +72,50 @@ func (s *Store) GetRawDocumentByID(ctx context.Context, id string) (model.RawDoc
 	return pgx.CollectOneRow(rows, pgx.RowToStructByName[model.RawDocument])
 }
 
-// RawDocWithSource 快讯流只读投影(api_v1):raw_documents + 来源名 + 关联事件 id。
+// FlashSort 快讯流排序维度。默认(空/FlashSortTime)= 时间倒序(最新在前)。
+const (
+	FlashSortTime      = "time"
+	FlashSortImportant = "important"
+)
+
+// flashOrderBy 把排序维度映射为 SQL ORDER BY 子句(白名单)。
+// 「重要优先」的 important 是**近似**:快讯源无独立重要标记,这里以
+// 「已被抽取成事件(event_id IS NOT NULL)」作代理(与 toFlash 高亮同口径)。
+func flashOrderBy(sort string) string {
+	if sort == FlashSortImportant {
+		return `ORDER BY (event_id IS NOT NULL) DESC, flash_at DESC`
+	}
+	return `ORDER BY flash_at DESC`
+}
+
+// RawDocWithSource 快讯流只读投影(api_v1):raw_documents + 来源名 + 关联事件 id + 原文 url。
 type RawDocWithSource struct {
 	ID      string    `db:"id"`
 	FlashAt time.Time `db:"flash_at"`
 	Title   string    `db:"title"`
 	Source  string    `db:"source"`
 	EventID *string   `db:"event_id"`
+	URL     *string   `db:"url"`
 }
 
-// ListRawDocumentsWithSource 全部快讯(按发生时间倒序);被抽取成事件的行链上 event_id。
+// ListRawDocumentsWithSource 全部快讯;被抽取成事件的行链上 event_id。
+// sort 见 FlashSort*(空 = 时间倒序)。
 // 一文档多事件时取最早事件;published_at 缺失时回退 retrieved_at/created_at。
-func (s *Store) ListRawDocumentsWithSource(ctx context.Context) ([]RawDocWithSource, error) {
+func (s *Store) ListRawDocumentsWithSource(ctx context.Context, sort string) ([]RawDocWithSource, error) {
 	rows, err := s.Pool.Query(ctx, `
-		SELECT id, flash_at, title, source, event_id FROM (
+		SELECT id, flash_at, title, source, event_id, url FROM (
 			SELECT DISTINCT ON (rd.id)
 				rd.id,
 				COALESCE(rd.published_at, rd.retrieved_at, rd.created_at) AS flash_at,
 				rd.title,
 				s.name AS source,
-				ev.id AS event_id
+				ev.id AS event_id,
+				rd.url
 			FROM raw_documents rd
 			JOIN sources s ON s.id=rd.source_id
 			LEFT JOIN events ev ON ev.raw_document_id=rd.id
 			ORDER BY rd.id, ev.created_at
-		) t ORDER BY flash_at DESC NULLS LAST`)
+		) t `+flashOrderBy(sort))
 	if err != nil {
 		return nil, err
 	}

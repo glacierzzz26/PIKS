@@ -163,6 +163,14 @@ def generate_markdown(
         disclaimer_extra = "- 行业指数点位由源站直接提供，未做复权处理。"
     else:
         disclaimer_extra = "- 价格指标基于前复权计算。"
+    # 数据来源:宏观主体感知。默认值 `腾讯财经/akshare` 是**个股行情**的来源 ——
+    # 宏观根本不碰行情,套用默认值会让封面印「数据来源:腾讯财经/akshare」,而正文
+    # 口径说明写「国家统计局(经东方财富数据中心)」,同一份报告自相矛盾。
+    # 与 caliber 同理:单一真源是本卡的 `ref.source`(provider 维度表)。
+    # (个股路径逐字节不变 —— 无 macro_metrics 时仍走默认。)
+    if macro_metrics is not None:
+        data_source = macro_metrics.ref.source
+
     add_section(DISCLAIMER_TITLE, f"""- 本报告数据来源于 {data_source}，仅供参考，不构成投资建议。
 {disclaimer_extra}
 - 报告生成时间：{as_of.isoformat()}。""")
@@ -622,12 +630,15 @@ def _build_capital_section(capital_metrics: Optional[CapitalMetrics]) -> str:
 
     lines = []
 
-    if capital_metrics.lhb_count_30d == 0:
-        lines.append("最近 5 天未登上龙虎榜（未触发异动条件：涨幅偏离±7%、换手率20%、连续三日累计±20%）。")
+    if capital_metrics.lhb_count == 0:
+        lines.append(
+            f"最近 {capital_metrics.window_days} 天未登上龙虎榜"
+            "（未触发异动条件：涨幅偏离±7%、换手率20%、连续三日累计±20%）。"
+        )
         lines.append("")
         return "\n".join(lines)
 
-    lines.append(f"最近 5 天登上龙虎榜 **{capital_metrics.lhb_count_30d}** 次。")
+    lines.append(f"最近 {capital_metrics.window_days} 天登上龙虎榜 **{capital_metrics.lhb_count}** 次。")
     lines.append("")
 
     # 按天展开
@@ -724,7 +735,11 @@ def _build_pattern_section(patterns: Optional[PatternMetrics]) -> str:
     if patterns is None:
         return "_量价形态暂不可得。_\n"
 
-    lines = ["**换手率口径**：流通股本口径（数据源 腾讯财经/akshare），非自由流通口径。", ""]
+    lines = [
+        "**换手率口径**：A股流通股本口径（数据源 腾讯财经/akshare），"
+        "与同花顺同一口径；自由流通口径无免费源，本报告不采用。",
+        "",
+    ]
 
     if patterns.note:
         lines.append(f"_{patterns.note}_")

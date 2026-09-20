@@ -10,7 +10,8 @@ const UP = "#e0392b"; // 占位：实际色值由 useChartTheme 覆盖（此处�
 
 /**
  * 量价形态双轴图：收盘价（左轴折线）+ 换手率（右轴柱）。
- * 换手率仅**流通口径**（腾讯/akshare），拿不到自由流通口径 —— 图注由调用方标注。
+ * 换手率 = **A股流通股本口径**（腾讯/akshare），与同花顺逐日一致（实测偏差 ≤0.02%）；
+ * 自由流通口径无免费源 —— 图注由调用方标注。
  * 柱体按当日涨跌着色（A 股习惯：涨红跌绿）；暗色模式经 useChartTheme 同步。
  */
 export default function VolumePriceChart({ series }: { series: PatternPoint[] }) {

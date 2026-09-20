@@ -2,6 +2,7 @@
 
 import { EVENT_TYPE_LABEL } from "@/lib/format";
 import { ConfidenceBar } from "@/components/ui/Num";
+import { SourceLink } from "@/components/ui/SourceLink";
 import type { EventItem } from "@/lib/types";
 
 export const TYPE_TAG: Record<string, string> = {
@@ -47,7 +48,7 @@ export default function EventTable({
               <div className="ev-title">
                 <b>{e.title}</b>
                 <span className="meta">
-                  来源：{e.source}
+                  来源：<SourceLink source={e.source} url={e.source_url} />
                   {e.summary ? ` · ${e.summary.slice(0, 24)}` : ""}
                 </span>
               </div>

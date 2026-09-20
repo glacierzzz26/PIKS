@@ -112,6 +112,8 @@ type apiFlash struct {
 	Source    string `json:"source"`
 	Important bool   `json:"important"`
 	EventID   string `json:"event_id,omitempty"`
+	// URL 原文出处(raw_documents.url);为空时前端退化为纯文本,不渲染死链。
+	URL string `json:"url,omitempty"`
 }
 
 type apiDoc struct {
@@ -139,10 +141,12 @@ type apiNoteDetail struct {
 
 // ---- handlers ----
 
-// GET /api/v1/events?type&status&q —— 结构化事件流。
+// GET /api/v1/events?type&status&q&sort —— 结构化事件流。
+// sort=time(默认,发生时间倒序)/confidence(置信度倒序)。
 func (s *Server) handleAPIEvents(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	evs, err := s.store.ListEventsForAPI(ctx)
+	sortBy := r.URL.Query().Get("sort")
+	evs, err := s.store.ListEventsForAPI(ctx, sortBy)
 	if err != nil {
 		s.apiErr(w, "events", err)
 		return
@@ -262,9 +266,10 @@ func (s *Server) handleAPIMarketSnapshot(w http.ResponseWriter, r *http.Request)
 	s.writeJSON(w, toSnapshot(snap))
 }
 
-// GET /api/v1/flashes?q&source —— 快讯流(raw_documents 投影)。
+// GET /api/v1/flashes?q&source&sort —— 快讯流(raw_documents 投影)。
+// sort=time(默认,时间倒序)/important(已被抽取成事件的优先)。
 func (s *Server) handleAPIFlashes(w http.ResponseWriter, r *http.Request) {
-	flashes, err := s.store.ListRawDocumentsWithSource(r.Context())
+	flashes, err := s.store.ListRawDocumentsWithSource(r.Context(), r.URL.Query().Get("sort"))
 	if err != nil {
 		s.apiErr(w, "flashes", err)
 		return
@@ -570,6 +575,7 @@ func toFlash(f store.RawDocWithSource) apiFlash {
 		Source:    f.Source,
 		Important: f.EventID != nil, // 已被抽取成事件 → 高亮(近似,源无独立标记)
 		EventID:   orStr(f.EventID, ""),
+		URL:       orStr(f.URL, ""),
 	}
 }
 
@@ -687,7 +693,10 @@ func (s *Server) handleAPIDashboard(w http.ResponseWriter, r *http.Request) {
 		s.apiErr(w, "dashboard", err)
 		return
 	}
-	evs, err := s.store.ListEventsForAPI(ctx)
+	// 事件排序显式指定:该 evs 供 reviewMarkdown 的「高置信事件」取前 3 与
+	// TopEvents 取前 6 两处,**两处都按置信度取**,故传 EventSortConfidence。
+	// (旧实现依赖 ListEventsForAPI 的升序默认值,「高置信事件」实际取到的是最老的 3 条。)
+	evs, err := s.store.ListEventsForAPI(ctx, store.EventSortConfidence)
 	if err != nil {
 		s.apiErr(w, "dashboard", err)
 		return
@@ -908,6 +917,17 @@ func (s *Server) handleAPIReviews(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, out)
 }
 
+// GET /api/v1/account —— 最近账户资金汇总(issue #19)。无快照 → {"account":null}。
+// 独立端点(而非塞进 /reviews 数组)避免破坏既有响应形状;/trades 与 /reviews 共用。
+func (s *Server) handleAPIAccount(w http.ResponseWriter, r *http.Request) {
+	acc, err := s.store.LatestAccountSnapshot(r.Context())
+	if err != nil {
+		s.apiErr(w, "account", err)
+		return
+	}
+	s.writeJSON(w, map[string]any{"account": toAPIAccount(acc)})
+}
+
 // GET /api/v1/trades —— 成交记录 + 持仓快照。
 type apiReviewPoint struct {
 	Title   string `json:"title"`
@@ -951,6 +971,28 @@ type apiPosition struct {
 type apiTrades struct {
 	Trades    []apiTrade    `json:"trades"`
 	Positions []apiPosition `json:"positions"`
+	Account   *apiAccount   `json:"account"` // 账户汇总(issue #19);无快照 → null
+}
+
+// apiAccount 账户级汇总 DTO(issue #19)。字段用 *float64:**null = 截图没这个数**,
+// 前端据此不显示该项(区别于 0「确实为零」)。绝不在这里把 null 折成 0。
+type apiAccount struct {
+	Date       string   `json:"date"`
+	TotalAsset *float64 `json:"total_asset"`
+	TotalMV    *float64 `json:"total_mv"`
+	FloatPL    *float64 `json:"float_pl"`
+	DailyPL    *float64 `json:"daily_pl"`
+}
+
+func toAPIAccount(a *model.AccountSnapshot) *apiAccount {
+	if a == nil {
+		return nil
+	}
+	return &apiAccount{
+		Date:       a.SnapshotDate.In(cst).Format("2006-01-02"),
+		TotalAsset: a.TotalAsset, TotalMV: a.TotalMV,
+		FloatPL: a.FloatPL, DailyPL: a.DailyPL,
+	}
 }
 
 // toAPITrade 单条成交 → 前端 DTO(含 AI 复盘/复盘点解析)。交易页与个股中心共用。
@@ -1100,7 +1142,12 @@ func (s *Server) handleAPITrades(w http.ResponseWriter, r *http.Request) {
 		s.apiErr(w, "trades", err)
 		return
 	}
-	out := apiTrades{Trades: []apiTrade{}, Positions: []apiPosition{}}
+	acc, err := s.store.LatestAccountSnapshot(ctx)
+	if err != nil {
+		s.apiErr(w, "trades", err)
+		return
+	}
+	out := apiTrades{Trades: []apiTrade{}, Positions: []apiPosition{}, Account: toAPIAccount(acc)}
 	ids := make([]string, 0, len(ts))
 	for _, t := range ts {
 		ids = append(ids, t.ID)

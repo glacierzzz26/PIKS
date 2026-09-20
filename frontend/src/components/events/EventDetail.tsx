@@ -1,10 +1,11 @@
 "use client";
 
 import { Link } from "react-router-dom";
-import { X, ExternalLink } from "lucide-react";
+import { X } from "lucide-react";
 import type { EventItem } from "@/lib/types";
 import { EVENT_TYPE_LABEL } from "@/lib/format";
 import { Chip, ConfidenceBar } from "@/components/ui/Num";
+import { SourceLink } from "@/components/ui/SourceLink";
 
 /** 事件详情抽屉：事实 / 影响 / 来源（机器事实与 AI 推断分开展示，只读） */
 export default function EventDetail({
@@ -85,9 +86,8 @@ function EventBody({ event }: { event: EventItem }) {
       </Section>
 
       <Section title="来源">
-        <span className="inline-flex items-center gap-1 text-[13px] text-faint">
-          {event.source}
-          {event.source_url && <ExternalLink size={12} className="text-accent" />}
+        <span className="text-[13px] text-faint">
+          <SourceLink source={event.source} url={event.source_url} showIcon />
         </span>
       </Section>
     </div>

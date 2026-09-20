@@ -37,6 +37,7 @@ type apiStockEvent struct {
 	OccurredAt string  `json:"occurred_at"`
 	Confidence float64 `json:"confidence"`
 	Source     string  `json:"source"`
+	SourceURL  *string `json:"source_url,omitempty"`
 }
 
 type apiStockNote struct {
@@ -137,6 +138,7 @@ func (s *Server) handleAPIStock(w http.ResponseWriter, r *http.Request) {
 				OccurredAt: fmtRFC3339(eventTime(ev)),
 				Confidence: ev.Confidence,
 				Source:     ev.SourceName,
+				SourceURL:  ev.SourceURL,
 			})
 		}
 

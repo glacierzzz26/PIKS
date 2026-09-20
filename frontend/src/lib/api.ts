@@ -26,6 +26,7 @@ export const ENDPOINTS = {
   watchlist: "/watchlist", // GET 自选聚合（设计 frontend-ia §2.3）
   recon: "/recon", // GET
   reviews: "/reviews", // GET
+  account: "/account", // GET 最近账户资金汇总（issue #19）
   trades: "/trades", // GET/POST
   chat: "/chat", // GET/POST
   settings: "/settings", // GET/POST

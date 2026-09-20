@@ -74,7 +74,8 @@ CREATE INDEX idx_positions_date ON positions(snapshot_date DESC);
 3. 预算护栏:今日已用 ≥ `ai_daily_token_budget` → 如实提示,不调用。
 4. **视觉结构化抽取**:`StructuredOutput`(temperature 0 + json_object)**扩展 Image 支持**(见 3.3 契约 + 探针)。prompt 护栏:严格只抽取截图中明确出现的条目;名称/代码缺失标 `null` 由用户补;价格/数量不做推断;若图片非交易/持仓页 → 返回空数组,如实提示「未识别到交易,请检查截图或手动录入」,不编造。
    - 交易 schema:`{"trades":[{"date":"2026-08-28","code":"600519","name":"贵州茅台","side":"buy","price":1450.5,"qty":100,"amount":145050}]}`
-   - 持仓 schema:`{"positions":[{"code":"600519","name":"贵州茅台","qty":100,"cost_price":1400,"price":1450.5,"market_value":145050,"pl":5050}]}`
+   - 持仓 schema:`{"positions":[{"code":"600519","name":"贵州茅台","qty":100,"cost_price":1400,"price":1450.5,"market_value":145050,"pl":5050}],"account":{"total_asset":520000,"total_mv":145050,"float_pl":5050,"daily_pl":1200}}`
+   - ⚠️ `account`(issue #19):页面**顶部**账户汇总。四项只读截图原文,截图没有或算不出 → `null`;**禁止**用持仓行加总倒推(见 §2.6 口径)。
 5. **预览确认,不自动入库**:抽取结果列表(每行 勾选/可编辑 名称/代码/买卖/价格/数量)+ 原图缩略 → 用户核对后「导入勾选项」。**防误识别污染数据**(同花顺截图可能缺代码列,识别有误是常态)。与既有交易(同 trade_date+code+side+qty)匹配的行默认取消勾选并标注「已存在」,防重复导入。
 6. 确认后批量入库 + 实体补全(见 2.3)。task_runs 记账 `command='trade-import'`(ai_tokens=抽取 token)。
 
@@ -120,6 +121,31 @@ CREATE INDEX idx_positions_date ON positions(snapshot_date DESC);
 | LLM 调用/解析失败 | 如实提示,不入库不写 review |
 | 知识库无关联 | 解读如实标注「无关联」,不编造 |
 | 导入同天重复 | 预览标「已存在」默认取消,不重复入库 |
+
+### 2.6 账户口径澄清(issue #19)
+
+同花顺「持仓」页顶部四项汇总,含义与来源**互不相同**,展示与解读时勿混:
+
+| 项 | 列 | 含义 | 含现金? | 时间维度 |
+|---|---|---|---|---|
+| 总资产 | `account_snapshots.total_asset` | 持仓市值 + 可用资金/余额 | ✅ 唯一含现金 | 时点 |
+| 总市值 | `account_snapshots.total_mv` | 持仓市值合计 | ❌ | 时点 |
+| 浮动盈亏 | `account_snapshots.float_pl` | 持仓**累计**浮盈 | ❌ | 累计(建仓至今) |
+| 当日参考盈亏 | `account_snapshots.daily_pl` | 按**当日**价格变动的浮盈 | ❌ | **当日** |
+
+**与既有 `PositionAgg` 的区别(易混点):**
+
+- `PositionAgg.TotalMV` / `TotalPL` 是 Go 从 **个股行累加**(`market_value` / `pl` 求和),
+  是**推算式事实**;`account_snapshots` 四项是**截图原文**,二者来源不同。
+- `PositionAgg.TotalPL`(个股 `pl` 求和)与 `account_snapshots.float_pl`(浮动盈亏)**口径接近但不保证相等**:
+  前者取决于每行 `pl` 是否被截到,后者是券商页面直接给出的账户级数字。**两处都展示时并列标注来源,不互相覆盖。**
+- `daily_pl`(当日)在 `PositionAgg` 里**没有对应量** —— 它需要「当日」维度,累加算不出。
+
+**采集边界(宁缺毋假):**
+
+- 四项**全部可空**;截图没有该项 → `NULL`。**NULL ≠ 0**:0 是「确实为零」,NULL 是「截图没有这个数」。
+  展示层 `null` 渲染为「—」,**绝不填 0**;落库前不做任何加总倒推。
+- **总资产隐含现金概念**:PIKS 只存截图上的这个数字,**不建**资金流水/可用余额模型(口径仅此一个,不派生)。
 
 ## 3. 契约
 

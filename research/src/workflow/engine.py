@@ -216,6 +216,38 @@ class WorkflowEngine:
             # 分位需全历史,故一次取全量,展示窗口由 analysis 层裁剪。
             self._collect_macro()
 
+        elif provider_name == "capital":
+            # 资金面/龙虎榜(issue #26)。`--no-lhb` 在此真正生效
+            # (原实现只赋值 self.skip_capital 便再无读取点,是 dead flag)。
+            self._collect_capital()
+
+    def _collect_capital(self) -> None:
+        """资金面/龙虎榜采集(issue #26)。
+
+        optional 任务:采不到不阻断(未上榜是合法结论)。失败时写 None,
+        渲染层出「数据暂不可得」而非编造。
+        """
+        provider = AkShareLHBProvider()
+        days = 30
+        task = next((t for t in self.plan.tasks if t.name == "collect_capital"), None)
+        if task:
+            days = task.params.get("days", 30)
+        self.context["capital_days"] = days
+
+        if self.skip_capital:
+            # ⚠️ 用 None 表示**未采集**,而非空列表(=采集了但未上榜)。
+            # 二者语义不同:前者渲染「数据暂不可得」,后者才是「最近 N 天未上榜」。
+            # 混同会在 `--no-lhb` 下产出假陈述(issue #26 顺带修正)。
+            self.context["capital_records"] = None
+            self.context["capital_details"] = {}
+            return
+
+        records = provider.search(self.symbol, days=days, end=self.as_of)
+        details_map = {r.trade_date: provider.get_detail(self.symbol, r.trade_date)
+                       for r in records}
+        self.context["capital_records"] = records
+        self.context["capital_details"] = details_map
+
     def _collect_macro(self) -> None:
         """宏观维度采集(P9-5 / #13)。失败即抛(非 optional)——
         序列就是宏观报告的本体,采不到就该如实失败,不降级出一份没有数字的空壳。
@@ -318,6 +350,22 @@ class WorkflowEngine:
             window = _display_periods(self.profile, "macro", 36)
             self.context["macro_metrics"] = analyze_macro(
                 ref, series, self.as_of, window_periods=window,
+            )
+            return
+
+        if analysis_name == "capital":
+            # 资金面/龙虎榜(issue #26):记录 + 席位明细 → 按日展开资金方。
+            # 无记录是合法结论(未上榜),指标卡照出、渲染层如实陈述。
+            records = self.context.get("capital_records")
+            if records is None:
+                # None = 未采集(`--no-lhb` 或采集失败)。与「采集了但未上榜」不同,
+                # 不可产出「最近 N 天未上榜」的假陈述 —— 留空,渲染层出「暂不可得」。
+                self.context["capital_metrics"] = None
+                return
+            details_map = self.context.get("capital_details", {})
+            days = self.context.get("capital_days", 30)
+            self.context["capital_metrics"] = analyze_capital(
+                records, details_map, self.as_of, window_days=days,
             )
             return
 

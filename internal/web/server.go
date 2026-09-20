@@ -42,6 +42,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/dashboard", s.handleAPIDashboard)
 	mux.HandleFunc("/api/v1/recon", s.handleAPIRecon)
 	mux.HandleFunc("/api/v1/reviews", s.handleAPIReviews)
+	mux.HandleFunc("/api/v1/account", s.handleAPIAccount)
 	mux.HandleFunc("/api/v1/trades", s.handleAPITrades)
 	mux.HandleFunc("/api/v1/trades/", s.handleAPITradesSub)
 	// 个股中心聚合(design frontend-ia §2.4):?code 一站返回持仓/深研/事件/笔记/涨停。

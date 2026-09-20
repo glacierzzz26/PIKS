@@ -23,6 +23,13 @@
 # 内常驻 worker 认领」(见 migrations/0015、cmd/research-worker)。
 # ─────────────────────────────────────────────────────────────────────────
 
+# 版本标识(四镜像共烘焙):容器内无 .git,血缘字段取构建时传入的烘焙值。
+# ⚠️ 必须声明在**首个 FROM 之前**(全局作用域)—— 在内层阶段声明的 ARG 只对该阶段可见,
+# 后续阶段 `ARG GIT_SHORT` 拿不到它的默认值(不传 --build-arg 时会是空串而非 unknown)。
+# 各目标阶段仍须各自 `ARG` 重申一次才能取用(见下)。
+ARG GIT_SHORT=unknown
+ARG PIKS_VERSION=v0.0.0
+
 # ---- build:Go 编译(四镜像共享)----
 FROM golang:1.26-alpine AS build
 WORKDIR /src
@@ -47,11 +54,6 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
 RUN npm run build
-
-# 版本标识(四镜像共烘焙):容器内无 .git,血缘字段取构建时传入的烘焙值。
-# 依赖 build 阶段只为拿 ARG 默认值 —— ARG 本身与阶段无关,但合并声明更清晰。
-ARG GIT_SHORT=unknown
-ARG PIKS_VERSION=v0.0.0
 
 # ============================================================================
 # gateway:纯 nginx 网关(唯一对外入口)。服务 React 静态文件 + 反代 /api/* → web。

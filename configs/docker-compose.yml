@@ -1,3 +1,9 @@
+# PIKS dev 编排:只起 Postgres;web/worker 等二进制直接在宿主跑(见 README「快速开始」)。
+#
+# 2026-09-20 起(容器拆分 issue #47)UI 深研触发走 DB 队列:POST /api/v1/research-runs 只落
+# 一条 pending 行并 NOTIFY,真正执行的是常驻 worker。dev 下要让 UI「深研」按钮生效,需另起:
+#   ./bin/research-worker -poll 5s        # 认领 pending 行;不起则 run 会停在 pending(诚实排队态)
+# CLI 旁路仍可直接跑(不排队):./bin/research-run 000560 --profile short-term
 services:
   # PIKS 独立 Postgres 实例(D7: 与 steady 隔离;宿主端口 5433 避免冲突)
   postgres:

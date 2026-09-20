@@ -9,12 +9,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	"piks/internal/ai"
 	"piks/internal/research"
 	"piks/internal/store"
 )
@@ -140,8 +138,8 @@ func (s *Server) researchRunsList(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, map[string]any{"runs": out})
 }
 
-// researchRunTrigger 触发一次深研:同步建 pending 行并返回 run_id,
-// 实际编排在后台 goroutine 跑(D-10:10~60s 不能阻塞请求);前端轮询 GET 取状态。
+// researchRunTrigger 触发一次深研:同步建 pending 行并入队,返回 run_id;
+// 实际编排由 research 容器的常驻 worker 认领执行(拆分后 web 已无 python3),前端轮询 GET 取状态。
 func (s *Server) researchRunTrigger(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Code    string `json:"code"`
@@ -175,86 +173,50 @@ func (s *Server) researchRunTrigger(w http.ResponseWriter, r *http.Request) {
 	// (实测 600519 prebuy 15:38:46 与 15:39:39 各落一行)。刷新页面/多标签也走这里。
 	// ⚠️ 只复用进行中的:done/failed 不算 —— 已完成后再点「重新分析」是刻意保留的
 	// 时间序列(决策记录 based_on 边指向 research_runs.id,不能被覆盖)。
+	//
+	// ⚠️ 拆分后「进行中」含 pending 排队态:worker 未跑时 run 会停在 pending,这正是
+	// 诚实语义(前端徽标即「排队中」),不应被当成死 run 而另起一行。故这里**不再做**
+	// 陈旧判定 —— 孤儿 run 的收口归 worker 的 reaper(它才确实知道谁在跑),见
+	// store.ReapStuckResearchRuns。原来的 researchRunStale 启发式已随之删除。
 	if active, err := s.store.FindActiveResearchRun(r.Context(), code, profile); err != nil {
 		s.apiErr(w, "research-trigger", err)
 		return
-	} else if active != nil && !s.researchRunStale(active) {
-		// 陈旧判定兜底:服务重启会让状态永远卡在 gathering/synthesizing(没人再推进它),
-		// 此时不该无限复用一个死 run,照常新建。
+	} else if active != nil {
 		s.writeJSON(w, map[string]any{
 			"run_id": active.RunID, "status": active.Status, "reused": true,
 		})
 		return
 	}
 
-	// per-run 可取消:请求断开不该杀后台任务,故用独立的 Background ctx + 编排总超时兜底。
-	ctx, cancel := context.WithTimeout(context.Background(), research.TimeoutTotal)
-
-	o := research.New(s.store, s.researchProvider(), s.cfg.AIDailyTokenBudget)
 	// 先占位建行(同步),前端马上拿到 run_id;失败即报,不留悬挂行。
 	// code 是**规范主体码**(公司=裸 6 位,行业=sw801010),它同时是产物文件名前缀与
 	// Python CLI 入参 —— 三处必须是同一串(行业裸码会被 Python 当北交所股票)。
 	runID := research.NewRunID(code, profile, time.Now())
-	created, err := s.store.CreateResearchRun(ctx, &store.ResearchRun{
+	created, err := s.store.CreateResearchRun(r.Context(), &store.ResearchRun{
 		RunID: runID, Code: code, Symbol: research.SubjectFullCode(code),
 		Profile: profile, AsOf: time.Now(), Status: research.StatusPending,
+		// Quick/Days 随行落库(迁移 0015):执行方是独立 worker,它只拿得到
+		// research_runs 这一行 —— 不落库则认领后无从还原运行参数。
+		Quick: req.Quick, Days: req.Days,
 	})
 	if err != nil {
-		cancel()
 		s.apiErr(w, "research-trigger", err)
 		return
 	}
 	if !created {
-		cancel()
 		// 同秒重触发 → 复用该 run(幂等),前端拿同一 run_id 轮询。
 		s.writeJSON(w, map[string]any{"run_id": runID, "status": research.StatusPending})
 		return
 	}
 
-	go func() {
-		defer cancel()
-		// RequireSynthesis=!Quick(P7):快速模式无 AI 也出确定性结论,不被网关阻塞。
-		// PriorRuns=2(P9/issue #8):新一期把最近两份 done 研报作合成输入,可对比。
-		if _, err := o.Run(ctx, research.Options{
-			RunID: runID, Code: code, Profile: profile, Days: req.Days,
-			RequireSynthesis: !req.Quick,
-			PriorRuns:        research.PriorRunLimit,
-		}); err != nil {
-			// 编排自身的失败已落 research_runs.error;此处只记服务端日志。
-			log.Printf("research-run %s 编排失败: %v", runID, err)
-		}
-	}()
+	// 入队通知:唤醒 worker 认领。失败不致命(worker 有轮询兜底,最多晚一个周期),
+	// 故只记日志、不让触发失败 —— 行已落库,pending 状态本身就是队列。
+	if err := s.store.NotifyResearchPending(r.Context()); err != nil {
+		log.Printf("research-trigger: NOTIFY 失败(worker 轮询兜底,run %s 仍会跑): %v", runID, err)
+	}
 
 	w.WriteHeader(http.StatusAccepted)
 	s.writeJSON(w, map[string]any{"run_id": runID, "status": research.StatusPending})
-}
-
-// researchRunStale 判断一条「进行中」的 run 是否已死(不该再被复用)。
-// 编排总上限 TimeoutTotal 之后必然有定论(done/failed)——若状态仍是进行中,
-// 说明推进它的进程没了(服务重启/容器重建),该 run 永远不会再变。
-// 留 5 分钟余量,避免把正在收尾的 run 误判为死。
-func (s *Server) researchRunStale(r *store.ResearchRun) bool {
-	return time.Since(r.CreatedAt) > research.TimeoutTotal+5*time.Minute
-}
-
-// researchProvider 构造 AI provider(与 settings/trades 同源:app_config)。
-// 未配置返回 nil → 编排器在合成步如实失败(不降级不编造)。
-// PIKS_AI_PROVIDER=mock 走 mock:与 cmd/research-run、entity-build 同一开关,便于 dev 验管道。
-func (s *Server) researchProvider() ai.Provider {
-	if os.Getenv("PIKS_AI_PROVIDER") == "mock" {
-		return ai.NewMock()
-	}
-	if s.cfg.AIServiceBaseURL == "" || s.cfg.AIAPIKey == "" {
-		return nil
-	}
-	model := s.cfg.AIModelExtract
-	if model == "" {
-		model = s.cfg.AIModelReasoning
-	}
-	if model == "" {
-		return nil
-	}
-	return ai.NewOpenAICompat(s.cfg.AIServiceBaseURL, s.cfg.AIAPIKey, model)
 }
 
 // ==================== 转换 ====================

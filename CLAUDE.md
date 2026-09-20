@@ -7,8 +7,8 @@ PIKS 是 A 股投资知识系统：快讯/涨停池 → 结构化事件与实体
 ## 技术栈
 - 构建：Vite 5 + React 18 + TypeScript（纯客户端 SPA，静态产物 `frontend/dist/`）
 - 路由：React Router v6（客户端路由；筛选状态写 URL query）
-- 服务：nginx（生产网关，单入口 :8090）—— 服务 SPA 静态文件 + 反代 `/api/*`
-- 后端：Go web 只监听 `127.0.0.1:8090`（与 nginx 同容器），不直接暴露局域网
+- 服务：nginx（`piks-gateway` 独立容器，生产网关，单入口 :8090）—— 服务 SPA 静态文件 + 反代 `/api/*` → `web:8090`
+- 后端：Go web（`piks-web` 独立容器）监听 `0.0.0.0:8090`，**不发布宿主端口**（仅 Docker 私网内可路由，对外只经 gateway），不直接暴露局域网
 - 样式：Tailwind CSS **只做布局**（flex/grid/gap/px）；视觉一律走 `globals.css` 语义类（单系统 token）
 - 图表：ECharts 5（`echarts/core` 按需注册，仅 bar + grid + tooltip，禁全量 import）
 - 图标：lucide-react（线性图标；禁 emoji）
@@ -58,7 +58,7 @@ PIKS 是 A 股投资知识系统：快讯/涨停池 → 结构化事件与实体
 - **隐藏管线内部（P6-2）**：`/entities` 实体库 · `/graph` 图谱 · `/recon` 对账 **移出侧栏**（路由保留），并入设置页「数据与运维」卡（`frontend/src/components/settings/OpsCard.tsx`）；⌘K 仍经 `/entities` 做实体名→个股跳转，故不可删路由。**快讯 `/flashes` 并入消息页第二个 tab**（`/events` 渲染 `pages/messages.tsx`，`?tab=important|flash` 写 URL query；`/flashes` 旧深链落快讯 tab）。
 - **新手支持（P6-2）**：`frontend/src/lib/glossary.ts`（术语表单一真源）+ `components/ui/Term.tsx`（行内 tooltip）+ `pages/help.tsx`（`/help` 使用指南 + 词汇表）。新增用户可见文案**禁止**出现 `quote-collector`/`daily-review`/`crontab`/`幂等`/`reconcile`/`research-run:*`/`Fact ≠ Inference` 等实现黑话 —— 用白话，或经 `glossary.ts` 解释。
 - **个股中心 `/stock/:code`**（不进侧栏，⌘K 可直达）：以 `code` 为主键、`entity` 为可选富化，聚合持仓/成交/深研/事件/笔记/行业/涨停；数据源 `GET /api/v1/stock/:code`。所有带 code 的入口（涨停股/交易表/持仓表/实体库/事件 affected/报告头/⌘K）导流至此。首屏含 **「买入前速评」**（P7，见下）与 **「当时在看什么」**（P6-4 决策记录）。
-- **买入前速评（P7，`components/stock/StockPrebuy.tsx`）**：个股页首屏置顶，一键现场重跑一份新鲜体检（`profile=prebuy` + `quick:true`），**原地出卡不跳页**。内含 结论横幅（评分卡 `overall_label` + 风险等级 + `veto_buy` 一票否决）· 风险红线（`metrics.risk.items[]`，P7 首次上屏）· 财务估值（`metrics.financial`，P7 首次上屏）· 量价形态（`metrics.patterns`：60 日双轴图 + 规则标签）· AI 综合研判（有则显）。**结论全取自规则确定性**（评分卡 + 风险规则），AI 可选 —— `POST /api/v1/research-runs` 收 `quick:true` → `Options.RequireSynthesis=false`，LLM 缺失/失败/超预算不 fail，出骨架报告 + 确定性结论。⚠️ **量价形态是规则判定（Inference）不是事实**，前端单独分区、「换手率仅流通口径（腾讯，拿不到同花顺自由流通口径）」如实标注。
+- **买入前速评（P7，`components/stock/StockPrebuy.tsx`）**：个股页首屏置顶，一键现场重跑一份新鲜体检（`profile=prebuy` + `quick:true`），**原地出卡不跳页**。内含 结论横幅（评分卡 `overall_label` + 风险等级 + `veto_buy` 一票否决）· 风险红线（`metrics.risk.items[]`，P7 首次上屏）· 财务估值（`metrics.financial`，P7 首次上屏）· 量价形态（`metrics.patterns`：60 日双轴图 + 规则标签）· AI 综合研判（有则显）。**结论全取自规则确定性**（评分卡 + 风险规则），AI 可选 —— `POST /api/v1/research-runs` 收 `quick:true` 随行落库（`research_runs.quick`，迁移 0015）→ 认领它的 `research-worker` 据此置 `Options.RequireSynthesis=false`，LLM 缺失/失败/超预算不 fail，出骨架报告 + 确定性结论。⚠️ **量价形态是规则判定（Inference）不是事实**，前端单独分区、「换手率仅流通口径（腾讯，拿不到同花顺自由流通口径）」如实标注。
 - **研究档案 profile（`research/profiles/*.yaml`）**：`complete-stock`（full，11 节含 `industry`，最重）· `short-term`（express，7 节，仅 2 维评分不含 risk）· **`prebuy`**（express，除 `industry` 外全要，保留完整 6 维评分卡含 risk —— 去掉最重的行业采集以提速，供买入前速评）。⚠️ 行为由 `sections` 驱动，`mode` 字段不参与分支。
 - **决策记录（P6-4，史诗闭环 #1「我为什么买它」）**：零 schema，复用多态 `relationships` —— 边形 `(from_type='trade', from_id=<trades.id UUID>, to_type='research_run'|'event'|'personal_note', to_id=<UUID>, rel_type='based_on')`。**`to_id` 必须是各表主键 UUID（研报用 `research_runs.id`，绝不用 `run_id` TEXT）**——无 FK，接错静默悬空。写入：`POST /api/v1/trades` 收 `based_on:{run_ids,event_ids,note_ids}`；读回：`apiTrade.based_on[]` + `/stock/:code` 顶层 `decisions`；前端 `TradeBasedOnPicker`（`TradeAddForm` 内）/ `TradeTable` 展开行 / `StockDecisions`。⚠️ **图谱隔离**：`ListAllRelationships` 用 `graphRelFilter`（`internal/store/relationships.go`）排除 `decided_by`/`based_on`，否则决策边漏进 `/graph` 成无名节点；新增决策边类型须同步列入该过滤。
 - **自选（`entities.status`）**：`watch` = 在自选 / `active` = 库中有不在自选 / `archived` = 曾自选已移出（保留历史/深研/笔记）。自选首页数据源 `GET /api/v1/watchlist`；引入/移出**只经同花顺自选截图镜像同步**（`/trades` 页截图导入 `kind='watchlist'`，服务端 diff add/keep/remove，无手动星标）。
@@ -86,9 +86,14 @@ PIKS 是 A 股投资知识系统：快讯/涨停池 → 结构化事件与实体
 
 ### 部署
 
-- 编排在 dev 侧：`./scripts/deploy.sh`（build → save/load → compose 同步 → migrate → web up）。
-- **发布前必打 tag**；未发版也须在验证记录里写明 `v0.0.0-<hash>`。
-- 每次部署**保留回滚镜像** `<name>:rollback-pre-<阶段>`，并在文档登记旧 hash。
+- 编排在 dev 侧：`./scripts/deploy.sh`（**四镜像**分别 build → 按 tag 跳过/传输 → compose 同步 → `up postgres` → `migrate` → `up web research` → `up gateway` → 落 stack 清单）。
+- **四镜像**（2026-09-20 容器拆分，issue #47）：`piks-gateway`（纯 nginx，唯一对外）/ `piks-web`（纯 Go API，无 python3）/ `piks-research`（Python 运行时 + 深研队列 worker，常驻）/ `piks-tools`（9 管线命令，profile=run）。单 Dockerfile 多 `--target`。
+- **各镜像版本 = 自己输入的 git tree hash**（非 HEAD hash）：改前端不动 web/tools/research 的 tag → 它们既不重建也不传输。tag 形如 `v0.0.0-<该镜像短hash>`。
+- **顺序是硬约束**：`migrate` 必须先于 `web`（`cmd/web/main.go` 读 `app_config`，缺表即 fatal 崩溃循环）；`gateway` 必须最后。
+- **干净树门控**：`deploy.sh` 默认拒绝脏树（镜像从工作树构建却以版本 tag 命名）；调试用 `PIKS_ALLOW_DIRTY=1`（tag 附 `-dirty`）。
+- **发布前必打 tag**；未发版也须在验证记录里写明 `v0.0.0-<hash>`（栈清单记四镜像 tag）。
+- 每次部署**保留回滚镜像** `<name>:rollback-pre-<阶段>`，并在文档登记旧 hash。⚠️ **回滚快照只打一次、存在即跳过**（回滚点是一次性的；无脑 `tag latest` 会在第二次部署时把回滚点静默改写成新镜像，名字不变、内容已换，真回滚时才发现回滚不了）。
+- ⚠️ **深研不在 web 进程内跑**：web 只建 `pending` 行 + `NOTIFY`，`piks-research` 的 `research-worker` 认领执行（`migrations/0015`、`internal/store/research_queue.go`）。web 容器无 python3，**任何新增的 web 内 `os/exec python3` 都会复现 2026-09-12 事故**（`check-research-isolation.sh` 白名单守卫）。
 
 ## 禁用清单
 - 禁止直接改 PostgreSQL schema（前端重构不涉及）

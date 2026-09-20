@@ -19,7 +19,7 @@ migrate → collector(东财 7x24 快讯) → worker(AI 抽取 events) → clust
 ```
 
 9 个管线命令(见 `cmd/`),各自幂等、可单独重跑;失败步骤记录不阻断(下次重试)。
-> 迭代 5-2 起:vault / GitHub 下线(SPA 直读 PG API,管线已无发布步骤);`publisher` 命令保留但**未调度**。
+> 迭代 5-2 起:vault / GitHub 下线(SPA 直读 PG API,管线已无发布步骤)。
 
 ## 功能模块
 
@@ -32,7 +32,7 @@ migrate → collector(东财 7x24 快讯) → worker(AI 抽取 events) → clust
 | 层 | 选型 |
 |---|---|
 | 语言 | Go 1.26(静态编译,依赖走 go.mod/go.sum + 模块代理,不入库) |
-| 数据源 | PostgreSQL 16(唯一 Source of Truth;**13 个前向迁移**,0001~0013) |
+| 数据源 | PostgreSQL 16(唯一 Source of Truth;**15 个前向迁移**,0001~0015) |
 | 界面 | **React SPA**(Vite 5 + React 18 + TS,React Router v6;Tailwind 只做布局,视觉走 `globals.css` 语义类;ECharts 按需 + 自绘 SVG 力导图谱;nginx 单入口 :8090 服务静态 + 反代 `/api/*`)。Obsidian/GitHub 已下线,`PIKS-Vault/` 仅存档 |
 | AI | OpenCode Zen,OpenAI 兼容;**base URL 必须带 `/go` 路由**(`https://opencode.ai/zen/go/v1`);配置存 `app_config` 表(/settings 可编辑),模型分层 extract/reasoning/vision |
 | 部署 | Docker Compose(dev 单机 + 生产 lab) |
@@ -41,17 +41,17 @@ migrate → collector(东财 7x24 快讯) → worker(AI 抽取 events) → clust
 
 ```
 cmd/           13 个可执行命令(9 个管线:migrate/collector/worker/cluster/quote-collector/
-              entity-build/market-state/daily-review/reconcile + web 常驻服务 + probe 探针
-              + research-run 深研编排 + publisher 遗留未调度)
-internal/      12 个业务包(store 最大 32 文件 / web 21 / research 9 / collector 6
-              / ai 4 / cluster 3 / publish 3 / entityextract 2 / marketstate 2
+              entity-build/market-state/daily-review/reconcile + web 常驻 API + research-run
+              深研 CLI + research-worker 深研队列 worker + probe 探针(不进任何镜像))
+internal/      12 个业务包(store 34 文件 / web 21 / collector 13 / research 10
+              / ai 4 / publish 3 / cluster 3 / marketstate 2 / entityextract 2
               / extract 1 / model 1 / config 1)
 frontend/      React SPA(Vite;src 135 文件 / 12.4k 行;27 条路由;产物 dist/)
 research/      深研 Python agent(独立运行时见下「深研并入」;不写库、不调 LLM,产物落 PG)
-migrations/    SQL 迁移(前向,无 down;0001~0013)
+migrations/    SQL 迁移(前向,无 down;0001~0015)
 prompts/       AI 抽取提示词(extract.md)
-configs/       docker-compose(dev/prod)+ .env 模板
-scripts/       dev 侧 setup.sh/deploy.sh/check-research-isolation.sh;lab 侧 pipeline.sh/backup.sh/health.sh
+configs/       docker-compose(dev/prod)+ .env 模板 + nginx.conf
+scripts/       dev 侧 setup.sh/deploy.sh/check-research-isolation.sh/check-image-topology.sh;lab 侧 pipeline.sh/backup.sh/health.sh
 (依赖不入库:go.sum 校验 + GOPROXY 模块代理,见 Dockerfile)
 docs/          架构总览(现状架构,以代码为准)、项目详解、进度总表、各阶段设计定稿 + 实现归档
 PIKS-Vault/    Obsidian vault 存档(界面层已下线,不再更新)
@@ -66,22 +66,25 @@ PIKS-Vault/    Obsidian vault 存档(界面层已下线,不再更新)
 **独立迭代(代码级)**:Go 与前端**不依赖 research 源码**,只经「CLI 参数 + 产物契约」
 (冻结,`research/README.md` 契约表)交互 —— 由 `scripts/check-research-isolation.sh` 校验。
 
-**部署形态(2026-09-12 起,单镜像)**:`piks-tools` 底座为 `python:3.12-slim`,同时含
-nginx 网关 + Go bins + React dist + research(Python 运行时)。Go 编排在 web 进程内
-`os/exec python3` 触发 —— 故 UI「深研」按钮与 CLI 深研共用同一镜像、同一容器。
+**部署形态(2026-09-20 起,四镜像)**:单 Dockerfile 多 target,拆成 `piks-gateway`(纯 nginx)
+/ `piks-web`(纯 Go API)/ `piks-tools`(9 个管线命令)/ `piks-research`(Python 运行时 + 队列
+worker)。深研**不再由 web 进程内 `os/exec python3` 触发** —— web 只写一条 `pending` 行并
+`NOTIFY`,research 容器的常驻 worker 认领执行(`migrations/0015`、`cmd/research-worker`)。
+这样「改前端只重建 gateway、改 Python 只重建 research」,升级半径与实际改动对齐。
 
 ```bash
 # 独立性 CI 检查(零共享状态 / 产物契约面)
 ./scripts/check-research-isolation.sh
+# 镜像拓扑检查(四 target 内容边界;防 web 混入 nginx/Python)
+./scripts/check-image-topology.sh
 
 # 两侧测试(可各自独立跑)
 go test ./internal/research/...                                 # fixture 状态机,不依赖 Python
 cd research && .venv/bin/python -m pytest tests                 # Python 单测,不依赖 PIKS
 #   依赖:requirements.txt(运行)+ requirements-dev.txt(测试;不进运行镜像)
 
-# 生产深研(单镜像,两种入口等价)
-#   UI:实体卡/持仓行「深研」按钮            CLI(容器内):
-docker compose exec web ./bin/research-run 000560 --profile short-term
+# 生产深研(research 容器内;worker 常驻,CLI 为旁路入口)
+docker compose exec research ./bin/research-run 000560 --profile short-term
 ```
 
 ## 快速开始(dev,本机)
@@ -117,11 +120,11 @@ go build -o bin/ ./cmd/...
 
 ## 生产部署(lab)
 
-- **模型**:dev 本地编译镜像 → `docker save | ssh lab docker load` 传输;lab 不保留代码仓库,镜像 = 唯一交付物。编排全在 dev 侧。
-- **服务**:`postgres`(常驻)+ `web`(常驻,:8090 对 lab 局域网暴露)+ `tools`(profile=run,跑管线命令)。
-- **文档**:设计 `docs/phase3/design/prod-deploy.md`(D-P1~P12);实现与验收 `docs/phase3/stages/prod.md`。
+- **模型**:dev 本地**分镜像**构建 → `docker save | ssh lab docker load` 传输;lab 不保留代码仓库,镜像 = 唯一交付物。编排全在 dev 侧。
+- **服务**:`postgres`(常驻)+ `gateway`(常驻,唯一对外 `:8090`)+ `web`(常驻,私网内 `:8090`,不发布宿主端口)+ `research`(常驻,深研队列 worker)+ `tools`(profile=run,跑管线命令)。
+- **文档**:设计 `docs/phase3/design/prod-deploy.md`(D-P1~P12);实现与验收 `docs/phase3/stages/prod.md`;四镜像拆分设计 `docs/phase10/design/container-split.md`。
 - **运维速查**:
-  - 更新:`./scripts/deploy.sh`(dev 侧 build → 传镜像 → migrate)
+  - 更新:`./scripts/deploy.sh`(dev 侧按镜像建/传 → migrate → 起 web/research/gateway)
   - 日管线:crontab 每 15min 自判(北京时间非交易日/已过 16:10/今日未跑),stamp 防重跑
   - 备份:每晚 `pg_dump` → `/home/rguo/piks/backups/`,14 天留存
   - 日志:`ssh lab 'tail -50 /home/rguo/piks/logs/pipeline-$(date +%F).log'`
@@ -137,6 +140,7 @@ go build -o bin/ ./cmd/...
 | `docs/phase2/` | 迭代 2~5(增值 + Web 平台)设计定稿 + 实现归档(冻结);G8/聚类质量/周报综述/交易/交易闭环 |
 | `docs/phase3/` | 生产化(设计定稿 + 实现验收归档) |
 | `docs/phase4/`~`phase9/` | 能力并入(research)/ 前端 IA / 决绝重构 / 买入前速评 / 手机投递 / 研报体裁 |
+| `docs/phase10/` | 容器拆分(单镜像 → 四镜像,issue #47)设计定稿 |
 | `PIKS架构设计文档.md` | v1.0 权威架构蓝图(冻结不改正文;顶部含现状偏差注记) |
 
 ## 安全红线
@@ -150,6 +154,7 @@ go build -o bin/ ./cmd/...
 - ✅ 迭代 0~3:最小闭环 → 可靠性 → 市场情报 → 实体补全(真实数据全链运行)
 - ✅ 迭代 4~5:个人学习闭环 + Web 平台(vault/GitHub 已停更,`PIKS-Vault/` 存档)
 - ✅ 生产化 P3:lab(192.168.0.202)部署落地,验收全过;Web :8090 常驻
-- ✅ P4 能力并入(research 深研,单镜像)/ P5 前端 IA 个股轴心 / P6 决绝重构 / P7 买入前速评 / P8 手机截图投递 / P9 研报体裁与版面——均已上生产
-- ✅ 2026-09-17~09-20 修复批次:换手率口径(#4)、资金面龙虎榜(#26)、实体名去空格(#6)、账户资金汇总(#19)、股票代码掩码(#30)、宏观封面数据源(#13)、消息排序(#37)、来源外链(#38)
-- 📌 最新生产镜像:`v0.0.0-b996864`(未发版,版本号恒 `v0.0.0`)
+- ✅ P4 能力并入(research 深研)/ P5 前端 IA 个股轴心 / P6 决绝重构 / P7 买入前速评 / P8 手机截图投递 / P9 研报体裁与版面——均已上生产
+- ✅ P10 容器拆分(单镜像 → 四镜像,issue #47):`piks-gateway`/`web`/`tools`/`research`;深研改 DB 队列 + 常驻 worker
+- ✅ 2026-09-17~09-20 修复批次:换手率口径(#4)、资金面龙虎榜(#26)、实体名去空格(#6)、账户资金汇总(#19)、股票代码掩码(#30)、宏观封面数据源(#13)、消息排序(#37)、来源外链(#38)、容器拆分(#47)
+- 📌 最新生产栈:`v0.0.0-616f31b`(gateway `c4377ad` / web `bb80388` / tools `602d148` / research `2426e05`,见 lab `stack-manifest.json`;未发版,版本号恒 `v0.0.0`)

@@ -230,7 +230,7 @@ func (s *Store) GetEntityByID(ctx context.Context, id string) (*model.Entity, er
 	return &e, nil
 }
 
-// ListEntitiesByIDs 按 id 批量取(供 publisher 按关系反查实体)。
+// ListEntitiesByIDs 按 id 批量取(供 publish.BuildEntityCardData 按关系反查 partner 实体)。
 func (s *Store) ListEntitiesByIDs(ctx context.Context, ids []string) ([]model.Entity, error) {
 	if len(ids) == 0 {
 		return nil, nil

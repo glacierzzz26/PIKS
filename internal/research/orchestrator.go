@@ -43,6 +43,11 @@ type Options struct {
 	// PriorRuns 引用几份既往 done 研报作合成输入(issue #8;0 = 关,新档默认关)。
 	// 关时产物与改动前逐字节一致 —— 首次研报与独立 CLI 路径零回归。
 	PriorRuns int
+	// Claimed 由**队列认领方**(cmd/research-worker)置 true:该 run 已由认领写入
+	// status=gathering(store.ClaimPendingResearchRun),故编排首个状态转移不再重复写。
+	// 只有第一个转移需抑制 —— 其余四步(orchestrator 各自唯一)照常推进。
+	// CLI 直跑与 web 进程内触发保持 false(无认领者,首个转移必须由编排自己写)。
+	Claimed bool
 }
 
 // Orchestrator 深研编排:exec Python → LLM 合成 → 机检 → 落 PG。
@@ -176,8 +181,11 @@ func (o *Orchestrator) execute(ctx context.Context, opt Options, code, symbol, r
 
 	// ---- 1. gathering:采集 + 确定性分析(断点重跑:产物已在则跳过) ----
 	if !arts.exists(arts.metricsPath()) {
-		if err := o.store.UpdateResearchRunStatus(ctx, runID, StatusGathering, ""); err != nil {
-			return err
+		// opt.Claimed:队列认领方已写过 gathering(claim 即首个转移),此处不再重复写。
+		if !opt.Claimed {
+			if err := o.store.UpdateResearchRunStatus(ctx, runID, StatusGathering, ""); err != nil {
+				return err
+			}
 		}
 		tr, err := o.startTask(ctx, "research-run:gather", map[string]any{"code": code, "profile": opt.Profile})
 		if err != nil {

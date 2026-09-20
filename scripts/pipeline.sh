@@ -32,7 +32,8 @@ run() {
 }
 
 # 全链:新闻→抽取→聚类→行情→实体→快照→复盘→对账。失败步骤记录不阻断(幂等,可重试)。
-# 迭代 5-2:publisher/vault/GitHub 下线(Web 直读 PG),daily-review/reconcile 在 vault 禁用时跳过写盘+git。
+# 迭代 5-2:vault/GitHub 下线(Web 直读 PG),daily-review/reconcile 在 vault 禁用时跳过写盘+git。
+# (原 publisher 命令已删除;渲染逻辑 trace 在 internal/publish,由 daily-review/reconcile/web 复用。)
 # 事件类多源(issue #43 T1):`collector -driver all` 依次跑 6 个独立机构源
 # (东财/金十/财联社/新浪/同花顺/富途),每源落各自机构名 sources 行;单源失败不阻断其余源。
 # file 驱动仅迭代0 保底,生产不用。

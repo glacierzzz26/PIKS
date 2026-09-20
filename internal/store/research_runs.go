@@ -15,7 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const researchRunCols = `id,run_id,code,symbol,profile,as_of,status,metrics,synthesis,markdown,lint,gate,evidence,error,model,tokens,created_at,updated_at`
+const researchRunCols = `id,run_id,code,symbol,profile,as_of,status,quick,days,metrics,synthesis,markdown,lint,gate,evidence,error,model,tokens,created_at,updated_at`
 
 // ResearchRun 一次深研快照(status 状态机见设计 §4.4)。
 type ResearchRun struct {
@@ -26,6 +26,8 @@ type ResearchRun struct {
 	Profile   string          `db:"profile"`
 	AsOf      time.Time       `db:"as_of"`
 	Status    string          `db:"status"`
+	Quick     bool            `db:"quick"` // 快速模式:合成可选(迁移 0015;队列认领后由此还原)
+	Days      int             `db:"days"`  // 展示窗口覆盖,0 = profile 默认(迁移 0015)
 	Metrics   json.RawMessage `db:"metrics"`
 	Synthesis json.RawMessage `db:"synthesis"`
 	Markdown  *string         `db:"markdown"`
@@ -160,18 +162,83 @@ func (s *Store) FindActiveResearchRun(ctx context.Context, code, profile string)
 
 // CreateResearchRun 建行(status=pending);run_id 冲突时走幂等(同 run_id 不新增)。
 // 返回是否新建(false = 已存在,调用方可跳过重跑)。
+// quick/days 随行落库:触发方(web)知道、执行方(worker)需要,而 pending 行本身不携带
+// 运行参数 —— 不落库则认领后无从还原(迁移 0015)。
 func (s *Store) CreateResearchRun(ctx context.Context, r *ResearchRun) (bool, error) {
 	var created bool
 	err := s.Pool.QueryRow(ctx, `
-		INSERT INTO research_runs(run_id, code, symbol, profile, as_of, status)
-		VALUES($1,$2,$3,$4,$5,$6)
+		INSERT INTO research_runs(run_id, code, symbol, profile, as_of, status, quick, days)
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8)
 		ON CONFLICT (run_id) DO NOTHING
 		RETURNING true`,
-		r.RunID, r.Code, r.Symbol, r.Profile, r.AsOf, defaultStr(r.Status, "pending")).Scan(&created)
+		r.RunID, r.Code, r.Symbol, r.Profile, r.AsOf,
+		defaultStr(r.Status, "pending"), r.Quick, r.Days).Scan(&created)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
 	return created, err
+}
+
+// ClaimPendingResearchRun 原子认领一条待跑 run(FIFO),并把状态推进到 gathering。
+// 无待跑返回 (nil, nil) —— 调用方据此等待/退避,而非报错。
+//
+// 「认领」的语义 = 本进程成为该 run 的**唯一推进者**,故编排端必须带 Options.Claimed,
+// 否则 orchestrator 会在首个状态转移处再写一次 gathering(双写)。
+//
+// 单语句即原子:子查询 FOR UPDATE SKIP LOCKED 取行并加锁,外层 UPDATE 复锁同一行
+// (同事务,无死锁)。外层再带 status='pending' 是防御:子查询与 UPDATE 之间若有他者
+// 改状态,本次认领退化为 0 行而非抢占。并发 worker 各取各的,靠 SKIP LOCKED 天然不相交。
+//
+// error 一并清空:认领 = 新一轮尝试,旧错误不该留在行上误导前端(重试成功不留旧错)。
+// 'pending' 直书字面量:它就是迁移 0015 局部索引 idx_research_runs_pending 的条件,
+// 两处必须同字面(此处不再声明常量,避免与 research.StatusPending 形成第二真源)。
+func (s *Store) ClaimPendingResearchRun(ctx context.Context) (*ResearchRun, error) {
+	rows, err := s.Pool.Query(ctx, `
+		UPDATE research_runs SET status='gathering', error=NULL, updated_at=now()
+		WHERE run_id = (
+			SELECT run_id FROM research_runs
+			WHERE status='pending'
+			ORDER BY created_at
+			LIMIT 1
+			FOR UPDATE SKIP LOCKED
+		) AND status='pending'
+		RETURNING `+researchRunCols)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	r, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[ResearchRun])
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+// ReapStuckResearchRuns 收口「孤儿 run」:进行中但久未心跳(updated_at 未推进)的行,
+// 归为 failed。返回被收口的 run_id 列表。
+//
+// 覆盖的场景:推进该 run 的进程没了(worker 崩溃/被杀,或 2026-09-12 单镜像时期 web
+// 重启留下的老问题)。有了它,web 侧原先的「陈旧启发式」(researchRunStale)才能彻底退休
+// —— 归口给唯一确实知道谁在跑的一方(worker)。
+//
+// grace 由调用方传入(research.TimeoutTotal + 2min),不在 SQL 写魔数:必须大于两次
+// 心跳写入的最大间隔,否则会误杀正在跑的 run。
+func (s *Store) ReapStuckResearchRuns(ctx context.Context, grace time.Duration) ([]string, error) {
+	rows, err := s.Pool.Query(ctx, `
+		UPDATE research_runs SET status='failed', updated_at=now(),
+		       error='worker 未完成(超时/重启),由 reaper 收口'
+		WHERE status = ANY($1)
+		  AND updated_at < now() - make_interval(secs => $2)
+		RETURNING run_id`,
+		ActiveResearchStatuses, grace.Seconds())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
 // UpdateResearchRunAsOf 回写数据截止日(采集后以指标卡 meta.as_of 为准,防未来函数基准)。

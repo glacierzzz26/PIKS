@@ -259,6 +259,12 @@ func harvestSeeds(ctx context.Context, s *store.Store, n int) seedResult {
 			if it.Code == "" || it.Name == "" {
 				continue
 			}
+			// 东财对历史改名票返回带空格名(「金 螳 螂」),归一后再用(issue #6):
+			// 实体主键是 (type,name),带空格会与交易导入的无空格名分叉成同码重复。
+			it.Name = store.NormalizeStockName(it.Name)
+			if it.Name == "" {
+				continue
+			}
 			// 同一 code 若先前缺 hybk,本次补上(近 30 日合并去重)
 			if prev, ok := byCode[it.Code]; !ok || (prev.Hybk == "" && it.Hybk != "") {
 				byCode[it.Code] = it

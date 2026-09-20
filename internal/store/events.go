@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"sort"
 	"strings"
 	"time"
 
@@ -95,6 +96,7 @@ type EventForAPI struct {
 	Status     string          `db:"status"`
 	SourceName string          `db:"source_name"`
 	SourceURL  *string         `db:"source_url"`
+	ClusterID  *string         `db:"cluster_id"`
 }
 
 // EventSort 事件流排序维度。默认(空/EventSortTime)= 发生时间倒序(最新在前)。
@@ -118,10 +120,11 @@ func eventOrderBy(sort string) string {
 
 // ListEventsForAPI 全部有效事件(extracted/verified/published)+ 来源名 + raw url。
 // sort 见 EventSort*(空 = 时间倒序)。
+// cluster_id 供前端批量取「簇内各源来源」用(issue #48 T2);非簇成员为 NULL。
 func (s *Store) ListEventsForAPI(ctx context.Context, sort string) ([]EventForAPI, error) {
 	rows, err := s.Pool.Query(ctx,
 		`SELECT e.id,e.title,e.event_type,e.summary,e.facts,e.affected,e.occurred_at,e.created_at,
-		        e.confidence,e.status, s.name AS source_name, rd.url AS source_url
+		        e.confidence,e.status, s.name AS source_name, rd.url AS source_url, e.cluster_id
 		 FROM events e
 		 JOIN sources s ON s.id=e.source_id
 		 LEFT JOIN raw_documents rd ON rd.id=e.raw_document_id
@@ -141,7 +144,7 @@ func (s *Store) ListEventsByIDs(ctx context.Context, ids []string) ([]EventForAP
 	}
 	rows, err := s.Pool.Query(ctx,
 		`SELECT e.id,e.title,e.event_type,e.summary,e.facts,e.affected,e.occurred_at,e.created_at,
-		        e.confidence,e.status, s.name AS source_name, rd.url AS source_url
+		        e.confidence,e.status, s.name AS source_name, rd.url AS source_url, e.cluster_id
 		 FROM events e
 		 JOIN sources s ON s.id=e.source_id
 		 LEFT JOIN raw_documents rd ON rd.id=e.raw_document_id
@@ -253,7 +256,64 @@ func (s *Store) ListActiveClusterRepresentatives(ctx context.Context) ([]Cluster
 	return out, nil
 }
 
-// SetEventCluster 把事件并入簇:设 cluster_id、可选改 status,并 bump updated_at(触发增量发布)。
+// ClusterSource 簇内一个来源:机构名 + 原文链接 + 上游一级源标注(issue #48 T2)。
+//
+// 一个簇 = 同一真实事件的多条报道,每条报道来自一个机构(events.source_id → sources.name,
+// T1 已改机构名);原文链接取该事件的 raw_document.url。
+// Origin 为**上游自带的一级源**(金十 extra.source,实测出现「新华社」「央视新闻」等)——
+// 它是「这条快讯转述的是谁」,与「我们从哪个机构采到」是两件事,如实在 UI 分区标注。
+type ClusterSource struct {
+	EventID string  `db:"event_id"`
+	Source  string  `db:"source"`
+	URL     *string `db:"url"`
+	Origin  *string `db:"origin"`
+}
+
+// ListClusterSources 取若干簇的**全部成员**来源(含 status='merged' 的被并入成员)。
+//
+// 为何含 merged:簇内「各源来源」正是这些被合并成员贡献的 —— 若只取 canonical,一个跨 5 家
+// 机构的簇只会显示 1 个来源,多源印证就白做了(issue #48 验收「簇内可见各源来源」)。
+// 这也是唯一需要读 merged 事件的读路径(其余列表查询一律排除 merged,避免重复卡)。
+//
+// 去重:同一机构可能在簇内有多条(该机构对同一事件发了多次),按 (cluster_id, source) 去重 ——
+// 展示的是「哪些机构报道了」,不是「有几条记录」;同机构仍优先保留带 url 的那条。
+func (s *Store) ListClusterSources(ctx context.Context, clusterIDs []string) (map[string][]ClusterSource, error) {
+	if len(clusterIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := s.Pool.Query(ctx, `
+		SELECT DISTINCT ON (e.cluster_id, s.name)
+		       e.id AS event_id, e.cluster_id, s.name AS source, rd.url,
+		       NULLIF(rd.extra->>'source', '') AS origin
+		FROM events e
+		JOIN sources s ON s.id = e.source_id
+		LEFT JOIN raw_documents rd ON rd.id = e.raw_document_id
+		WHERE e.cluster_id = ANY($1)
+		ORDER BY e.cluster_id, s.name, (rd.url IS NULL), e.created_at`, clusterIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type row struct {
+		ClusterSource
+		ClusterID string `db:"cluster_id"`
+	}
+	rs, err := pgx.CollectRows(rows, pgx.RowToStructByName[row])
+	if err != nil {
+		return nil, err
+	}
+	// 簇内按机构名排序,输出稳定(前端渲染顺序不抖动)。
+	out := make(map[string][]ClusterSource, len(clusterIDs))
+	for _, r := range rs {
+		out[r.ClusterID] = append(out[r.ClusterID], r.ClusterSource)
+	}
+	for k := range out {
+		sort.Slice(out[k], func(a, b int) bool { return out[k][a].Source < out[k][b].Source })
+	}
+	return out, nil
+}
+
 func (s *Store) SetEventCluster(ctx context.Context, eventID, clusterID, status string) error {
 	_, err := s.Pool.Exec(ctx,
 		`UPDATE events SET cluster_id=$2, status=$3, updated_at=now() WHERE id=$1`,

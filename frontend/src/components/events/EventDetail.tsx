@@ -86,10 +86,40 @@ function EventBody({ event }: { event: EventItem }) {
       </Section>
 
       <Section title="来源">
-        <span className="text-[13px] text-faint">
-          <SourceLink source={event.source} url={event.source_url} showIcon />
-        </span>
+        <Sources event={event} />
       </Section>
+    </div>
+  );
+}
+
+/**
+ * 来源区：单源时一行（原行为）；跨源簇（≥2 家机构）时列出**各源来源**——
+ * 哪家机构报道的 + 各家原文链接 + 上游一级源（如金十标注的「新华社」）。
+ * 白话文案，不出现 cluster/聚类 等实现黑话（P6-2 纪律）。
+ */
+function Sources({ event }: { event: EventItem }) {
+  const srcs = event.cluster_sources;
+  if (!srcs || srcs.length < 2) {
+    return (
+      <span className="text-[13px] text-faint">
+        <SourceLink source={event.source} url={event.source_url} showIcon />
+      </span>
+    );
+  }
+  return (
+    <div className="text-[13px]">
+      <div className="mb-2 text-faint">{srcs.length} 家媒体报道了同一件事</div>
+      <ul className="m-0 list-none p-0">
+        {srcs.map((s, i) => (
+          <li key={`${s.source}-${i}`} className="mb-1.5 flex flex-wrap items-baseline gap-2">
+            <SourceLink source={s.source} url={s.url} showIcon />
+            {s.origin && (
+              <span className="text-xs text-faint">转自 {s.origin}</span>
+            )}
+            {!s.url && <span className="text-xs text-faint">（无原文链接）</span>}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

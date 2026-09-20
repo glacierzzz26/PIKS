@@ -19,10 +19,10 @@ import (
 
 // ---------- 规则与相似度 ----------
 
-// NormalizeTitle 标题归一化:转小写、去空白与标点、保留汉字与字母数字。
+// NormalizeTitle 标题归一化:去掉内嵌标题前缀(【…】)、转小写、去空白与标点、保留汉字与字母数字。
 func NormalizeTitle(s string) string {
 	var b strings.Builder
-	for _, r := range strings.ToLower(strings.TrimSpace(s)) {
+	for _, r := range strings.ToLower(strings.TrimSpace(stripBracketWrap(s))) {
 		switch {
 		case unicode.IsSpace(r):
 			continue
@@ -35,6 +35,50 @@ func NormalizeTitle(s string) string {
 	}
 	return b.String()
 }
+
+// stripBracketWrap 抽取【…】内嵌标题前缀(跨源标题归一化的关键,issue #48 T2)。
+//
+// 各家对同一件事的标题写法不同:东财/新浪把**规范标题**放在【】里、后接公告/播报正文,
+// 而财联社/金十/同花顺/富途直接给裸标题。原句全文比对会让相似度坍塌 —— 实测(2026-09-20,
+// dev 库 163 条 6 源真实标题):东财「【天山生物：持股5%以上股东拟减持不超3%股份】天山生物
+// (300313.SZ)公告称,…」与财联社「天山生物：持股5%以上股东拟减持不超3%股份」**同一事件**,
+// 但全文 Jaccard 仅 **0.165**(东财正文段把【】里的标题稀释掉了),远低于 0.7 阈值 → 漏合并。
+//
+// 规则(【】内文字≥6 字才当标题,否则视为栏目标签、原样保留):
+//   - 【标题】正文  → 取【】内(东财/新浪:规范标题在前 + 公告正文)
+//   - 标题【正文】  → 取【】外(少数源:标题在前 + 括号内正文)
+//   - 无【】、【】未闭合、或【】内不足 6 字 → 原样返回(不猜测)
+//
+// 为何用「长度」判据:实测两处栏目标签行(【电报解读】4 字、【风口研报·公司】7 字)在**任一
+// 规则下**都不与其余 161 行产生 ≥0.5 的相似对(加固后实测最高仅 0.040 / 0.059),故抽取与否
+// 都不影响判定;取长度判据是因为它只依赖本行内容,不需要「括号内外是否同源」这类跨段推断。
+//
+// 实测效果:0.7 阈值下真实重复对 36 → 65(基线 = 未加固的归一化,同一批 163 条标题),
+// **新增对逐条人工核对均为同一真实事件**(天山生物/新华制药/立讯精密/良品铺子/盛和资源/
+// 四方光电/埃夫特/永信至诚/深水海纳/日本地震/西班牙火灾 等),见设计文档校准表。
+func stripBracketWrap(s string) string {
+	s = strings.TrimSpace(s)
+	start := strings.Index(s, "【")
+	if start < 0 {
+		return s
+	}
+	rest := s[start+len("【"):]
+	end := strings.Index(rest, "】")
+	if end < 0 {
+		return s
+	}
+	inner := rest[:end]
+	if len([]rune(inner)) < bracketTitleMinRunes {
+		return s
+	}
+	if start == 0 {
+		return inner // 【标题】正文 → 标题
+	}
+	return s[:start] // 标题【正文】 → 标题
+}
+
+// bracketTitleMinRunes 判定「【】内是标题而非栏目标签」所需的最小字数(按字符计)。
+const bracketTitleMinRunes = 6
 
 // Bigrams 字符二元组集合(中文相似度基础)。
 func Bigrams(norm string) map[string]struct{} {
@@ -108,18 +152,18 @@ type Candidate struct {
 }
 
 // GenCandidates 生成候选。Auto 组内的事件不再进 LLM。
+// 拆成 autoGroups / llmPairs 两个纯函数,便于离线校准跨源阈值(issue #48 T2)—— 校准要能
+// 直接对「给定一批事件,哪些对会进 LLM 确认」取证,而不是只看最终合并结果。
 func GenCandidates(events []model.Event) Candidate {
-	norms := make([]string, len(events))
-	big := make([]map[string]struct{}, len(events))
-	for i := range events {
-		norms[i] = NormalizeTitle(events[i].Title)
-		big[i] = Bigrams(norms[i])
-	}
+	auto, autoIdx := autoGroups(events)
+	return Candidate{Auto: auto, LLM: llmPairs(events, autoIdx)}
+}
 
-	// 高置信:归一化标题全同 + 同类型 → 直合
+// autoGroups 高置信:归一化标题全同 + 同类型 → 直合。
+func autoGroups(events []model.Event) ([][]int, map[int]bool) {
 	byKey := make(map[string][]int)
 	for i := range events {
-		key := norms[i] + "\x00" + events[i].EventType
+		key := NormalizeTitle(events[i].Title) + "\x00" + events[i].EventType
 		byKey[key] = append(byKey[key], i)
 	}
 	var auto [][]int
@@ -132,8 +176,26 @@ func GenCandidates(events []model.Event) Candidate {
 			}
 		}
 	}
+	return auto, autoIdx
+}
 
-	// 中等置信:标题 Jaccard≥0.7 或(实体交集≥1 且 occurred_at≤3天),且同类型
+// llmPairs 中等置信候选对:同类型 + (标题 Jaccard≥0.7 或 (实体交集≥1 且 occurred_at≤3天))。
+//
+// ⚠️ 阈值 0.7 **不随多源下调**(issue #48 红线「扩候选池不降门槛」)。跨源差异的修法在
+// NormalizeTitle 的内嵌前缀抽取(把因措辞差异坍塌的相似度还原),不在放宽门槛。
+//
+// 实测(2026-09-20,163 条 6 源真实标题,见 docs/phase11/design/event-cross-source.md):
+// 抽取前缀后 0.7 阈值下的真实重复对 36 → 65,**同一批标题在 0.6 阈值下也只是 51 → 80** ——
+// 降门槛并不增加「只有降门槛才能捞到」的召回,反而把候选对整体推高、白花 LLM token。
+// 判别边界(同股不同批次药品注册证书 = 不同事件)实测 Jaccard ≤0.515,距 0.7 有 0.185 余量。
+// ⚠️ 注意 Jaccard 只是两个 OR 分支之一,实体交集分支不受本阈值影响。
+func llmPairs(events []model.Event, autoIdx map[int]bool) [][]int {
+	norms := make([]string, len(events))
+	big := make([]map[string]struct{}, len(events))
+	for i := range events {
+		norms[i] = NormalizeTitle(events[i].Title)
+		big[i] = Bigrams(norms[i])
+	}
 	var pool []int
 	for i := range events {
 		if !autoIdx[i] {
@@ -153,7 +215,7 @@ func GenCandidates(events []model.Event) Candidate {
 			}
 		}
 	}
-	return Candidate{Auto: auto, LLM: pairs}
+	return pairs
 }
 
 // ---------- LLM 批量确认 ----------

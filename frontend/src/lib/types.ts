@@ -12,6 +12,11 @@ export type EventItem = {
   status: "confirmed" | "pending" | "archived";
   source: string;
   source_url?: string;
+  /**
+   * 簇内各源来源（issue #48 T2）：同一真实事件被 ≥2 家机构报道过时的来源清单。
+   * 仅跨源簇下发；单源事件/未聚类事件无此字段（不谎报「多源印证」）。
+   */
+  cluster_sources?: { source: string; url?: string; origin?: string }[];
 };
 
 export type Entity = {

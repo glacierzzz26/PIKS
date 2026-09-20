@@ -146,19 +146,23 @@ RUN sed -i "s|deb.debian.org|${APT_MIRROR}|g; s|security.debian.org|${APT_MIRROR
     && apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates tzdata \
     && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+# research 依赖层独立缓存:requirements.txt 不变则不重装(akshare 装一次较慢)。
+# 镜像源不稳定(files.pythonhosted.org 时长读超时),加重试与超时兜底;
+# PYPI_INDEX 可用 --build-arg 覆盖为国内镜像加速。
+COPY research/requirements.txt ./research/requirements.txt
+ARG PYPI_INDEX=https://pypi.org/simple
+RUN pip install --no-cache-dir --retries 10 --timeout 120 \
+      -i "${PYPI_INDEX}" -r research/requirements.txt
+# ⚠️ ARG/ENV 元数据必须排在 **pip install 之后**(2026-09-20 修):GIT_SHORT 每次提交
+# 都变,若这层在 pip 之前,则每次部署都让 pip 层缓存失效、重下全部依赖(实测把
+# research 镜像构建拖到数十分钟,是部署超时的直接原因)。移到之后 → 只要
+# requirements.txt 不变,pip 层永久命中缓存。改这里不得再挪回去。
 ARG GIT_SHORT
 ARG PIKS_VERSION
 ENV PIKS_GIT_SHORT=${GIT_SHORT} \
     PIKS_VERSION=${PIKS_VERSION} \
     PIKS_IMAGE_ROLE=research
-WORKDIR /app
-# research 依赖层独立缓存:requirements.txt 不变则不重装(akshare 装一次较慢)。
-# 镜像源不稳定(files.pythonhosted.org 时长读超时),加重试与超时兜底;
-# PYPI_INDEX 可用 --build-arg 覆盖为国内镜像加速(aliyun 实测约 3.5×)。
-COPY research/requirements.txt ./research/requirements.txt
-ARG PYPI_INDEX=https://pypi.org/simple
-RUN pip install --no-cache-dir --retries 10 --timeout 120 \
-      -i "${PYPI_INDEX}" -r research/requirements.txt
 COPY research/ ./research/
 # 编排器定位 Python 源码/解释器(见 internal/research/runner.go);
 # 容器内无 .venv,依赖装在系统 site-packages,故解释器即 python3。

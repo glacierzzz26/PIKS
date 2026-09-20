@@ -25,8 +25,13 @@ C=/home/rguo/piks
 # tag(正式发版)才取该 tag。不做「改动挺大就造个号」这类推测。
 VER="$(git -C "$REPO" describe --tags --exact-match 2>/dev/null || echo v0.0.0)"
 GS="$(git -C "$REPO" rev-parse --short HEAD)"
-# 国内 pypi.org 时常长读超时(实测本机 15s 无响应),默认走 aliyun 镜像;可 PIKS_PYPI_INDEX 覆盖。
-PYPI_INDEX="${PIKS_PYPI_INDEX:-https://mirrors.aliyun.com/pypi/simple}"
+# 国内 pypi.org 时常长读超时(实测本机 15s 无响应),默认走清华镜像;可 PIKS_PYPI_INDEX 覆盖。
+# ⚠️ 2026-09-20 实测(issue #56 部署卡住的真因):aliyun 源对**本机**只有 ~20 KB/s
+#   (同机 curl 命中其 CDN 可达 4 MB/s,但 Python/pip 的连接恒落坏节点;换 UA 无效),
+#   清华源实测 **5.58 MB/s**(同机同时刻)。故默认由 aliyun 改为 tsinghua ——
+#   aliyun 会让 pip 层下几十 MB 依赖耗时数十分钟,是部署超时的根因。
+#   注意这是**取数链路的环境事实,非代码缺陷**;换线路后需重测,不当作永久结论。
+PYPI_INDEX="${PIKS_PYPI_INDEX:-https://pypi.tuna.tsinghua.edu.cn/simple}"
 
 # ── 干净树门控 ────────────────────────────────────────────────────────────
 DIRTY=""

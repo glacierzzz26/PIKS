@@ -141,10 +141,12 @@ type apiNoteDetail struct {
 
 // ---- handlers ----
 
-// GET /api/v1/events?type&status&q —— 结构化事件流。
+// GET /api/v1/events?type&status&q&sort —— 结构化事件流。
+// sort=time(默认,发生时间倒序)/confidence(置信度倒序)。
 func (s *Server) handleAPIEvents(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	evs, err := s.store.ListEventsForAPI(ctx)
+	sortBy := r.URL.Query().Get("sort")
+	evs, err := s.store.ListEventsForAPI(ctx, sortBy)
 	if err != nil {
 		s.apiErr(w, "events", err)
 		return
@@ -264,9 +266,10 @@ func (s *Server) handleAPIMarketSnapshot(w http.ResponseWriter, r *http.Request)
 	s.writeJSON(w, toSnapshot(snap))
 }
 
-// GET /api/v1/flashes?q&source —— 快讯流(raw_documents 投影)。
+// GET /api/v1/flashes?q&source&sort —— 快讯流(raw_documents 投影)。
+// sort=time(默认,时间倒序)/important(已被抽取成事件的优先)。
 func (s *Server) handleAPIFlashes(w http.ResponseWriter, r *http.Request) {
-	flashes, err := s.store.ListRawDocumentsWithSource(r.Context())
+	flashes, err := s.store.ListRawDocumentsWithSource(r.Context(), r.URL.Query().Get("sort"))
 	if err != nil {
 		s.apiErr(w, "flashes", err)
 		return
@@ -690,7 +693,10 @@ func (s *Server) handleAPIDashboard(w http.ResponseWriter, r *http.Request) {
 		s.apiErr(w, "dashboard", err)
 		return
 	}
-	evs, err := s.store.ListEventsForAPI(ctx)
+	// 事件排序显式指定:该 evs 供 reviewMarkdown 的「高置信事件」取前 3 与
+	// TopEvents 取前 6 两处,**两处都按置信度取**,故传 EventSortConfidence。
+	// (旧实现依赖 ListEventsForAPI 的升序默认值,「高置信事件」实际取到的是最老的 3 条。)
+	evs, err := s.store.ListEventsForAPI(ctx, store.EventSortConfidence)
 	if err != nil {
 		s.apiErr(w, "dashboard", err)
 		return

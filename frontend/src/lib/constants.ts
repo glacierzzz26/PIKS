@@ -120,3 +120,18 @@ export const FLASH_SOURCES = [
   { key: "海外市场", label: "海外市场" },
   { key: "市场传闻", label: "市场传闻" },
 ];
+
+/**
+ * 消息页排序选项（issue #37）—— key 与后端 store.EventSort* / store.FlashSort* 一致。
+ * 空 key = 默认（时间倒序、最新在前），故默认态不写 URL query，深链向后兼容。
+ */
+export const EVENT_SORTS = [
+  { key: "", label: "按时间" },
+  { key: "confidence", label: "按置信度" },
+];
+
+/** 快讯排序：「重要优先」的「重要」= 已被抽取成事件（后端近似口径，见 toFlash）。 */
+export const FLASH_SORTS = [
+  { key: "", label: "按时间" },
+  { key: "important", label: "重要优先" },
+];

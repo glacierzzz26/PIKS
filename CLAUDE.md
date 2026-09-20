@@ -92,7 +92,7 @@ PIKS 是 A 股投资知识系统：快讯/涨停池 → 结构化事件与实体
 - **顺序是硬约束**：`migrate` 必须先于 `web`（`cmd/web/main.go` 读 `app_config`，缺表即 fatal 崩溃循环）；`gateway` 必须最后。
 - **干净树门控**：`deploy.sh` 默认拒绝脏树（镜像从工作树构建却以版本 tag 命名）；调试用 `PIKS_ALLOW_DIRTY=1`（tag 附 `-dirty`）。
 - **发布前必打 tag**；未发版也须在验证记录里写明 `v0.0.0-<hash>`（栈清单记四镜像 tag）。
-- 每次部署**保留回滚镜像** `<name>:rollback-pre-<阶段>`，并在文档登记旧 hash。
+- 每次部署**保留回滚镜像** `<name>:rollback-pre-<阶段>`，并在文档登记旧 hash。⚠️ **回滚快照只打一次、存在即跳过**（回滚点是一次性的；无脑 `tag latest` 会在第二次部署时把回滚点静默改写成新镜像，名字不变、内容已换，真回滚时才发现回滚不了）。
 - ⚠️ **深研不在 web 进程内跑**：web 只建 `pending` 行 + `NOTIFY`，`piks-research` 的 `research-worker` 认领执行（`migrations/0015`、`internal/store/research_queue.go`）。web 容器无 python3，**任何新增的 web 内 `os/exec python3` 都会复现 2026-09-12 事故**（`check-research-isolation.sh` 白名单守卫）。
 
 ## 禁用清单

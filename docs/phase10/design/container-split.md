@@ -180,7 +180,15 @@ nginx 对 `proxy_pass` 里的**字面主机名**只在 worker 启动时解析一
 6. **stack 清单**(`stack-manifest.json`)落 lab:本次上线的四镜像 tag + commit,是
    「生产在跑什么」的单一答案。
 
-**回滚**:`rollback-pre-split`(+ `rollback-pre-split-single` 保留旧单镜像)。
+**回滚**:`rollback-pre-split`(四镜像各一份)+ `rollback-pre-split-single`(拆分前旧单镜像,
+含 nginx+Go+Python 三件套,已实测可启动并服务 `/api/v1/dashboard`)。
+
+> ⚠️ **回滚快照只打一次、绝不覆盖**:回滚点必须指向「升级之前」的形态,它是一次性的。
+> 若无脑 `docker tag latest rollback-pre-X`,第二次部署时 `latest` 已是升级后的新镜像 →
+> 回滚点被**静默改写**成新镜像,名字还叫 `rollback-pre-X`(标签与内容不符,真回滚时才发现
+> 回滚不了)。实施中确实踩到:`-single` 被第二次部署覆盖成了新 tools 像(不含 nginx)。
+> 故脚本改为**存在即跳过**;`-single` 从已知的拆分前 tag(`PIKS_PRE_SPLIT_REF`,默认
+> `piks-tools:v0.0.0-b996864`)取,而非 `latest`。
 
 ## 6. CI 守卫
 
@@ -202,7 +210,7 @@ nginx 对 `proxy_pass` 里的**字面主机名**只在 worker 启动时解析一
 | 上传 10MB 边界 | 2MB → 到 web(400 应用层);11MB → nginx **413** |
 | **resolver 实测** | 重建 web(新容器新 IP)后 **gateway 未重启**,API 仍 200 |
 | 深研 CLI 旁路 | `exec research ./bin/research-run --help` 正常 |
-| 栈清单 | `v0.0.0-4048f5a`(gateway `37f7155` / web `71b5cac` / tools `0658da0` / research `8e6b365`) |
+| 栈清单 | `v0.0.0-616f31b`(gateway `c4377ad` / web `bb80388` / tools `602d148` / research `2426e05`) |
 | 回滚镜像 | `rollback-pre-split`(4 个)+ `rollback-pre-split-single`(旧单镜像 934MB) |
 
 ## 8. 已知代价(如实登记)

@@ -6,7 +6,7 @@
 
 | 文档 | 状态 | 定稿日期 | 备注 |
 |---|---|---|---|
-| [container-split.md](./container-split.md) | ✅ **已定稿并实施** | 2026-09-20 | issue #47。把 `piks-tools`(934MB,同背 nginx + Go web + 12 CLI + Python 深研)拆为 `piks-gateway`(纯 nginx)/ `piks-web`(纯 Go API)/ `piks-tools`(9 管线命令)/ `piks-research`(Python + 深研队列 worker)。单 Dockerfile 多 `--target`。**唯一运行时行为改动**:UI 深研从「web 进程内 `os/exec python3`」改为 **DB 队列**(migration 0015 + `FOR UPDATE SKIP LOCKED` + `LISTEN/NOTIFY` + 租约回收)+ `cmd/research-worker` 常驻。**取代 D-2 单镜像**。已上生产(栈 `v0.0.0-4048f5a`)。 |
+| [container-split.md](./container-split.md) | ✅ **已定稿并实施** | 2026-09-20 | issue #47。把 `piks-tools`(934MB,同背 nginx + Go web + 12 CLI + Python 深研)拆为 `piks-gateway`(纯 nginx)/ `piks-web`(纯 Go API)/ `piks-tools`(9 管线命令)/ `piks-research`(Python + 深研队列 worker)。单 Dockerfile 多 `--target`。**唯一运行时行为改动**:UI 深研从「web 进程内 `os/exec python3`」改为 **DB 队列**(migration 0015 + `FOR UPDATE SKIP LOCKED` + `LISTEN/NOTIFY` + 租约回收)+ `cmd/research-worker` 常驻。**取代 D-2 单镜像**。已上生产(栈 `v0.0.0-616f31b`)。 |
 
 ## 前序阶段
 

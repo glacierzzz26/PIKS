@@ -157,4 +157,4 @@ go build -o bin/ ./cmd/...
 - ✅ P4 能力并入(research 深研)/ P5 前端 IA 个股轴心 / P6 决绝重构 / P7 买入前速评 / P8 手机截图投递 / P9 研报体裁与版面——均已上生产
 - ✅ P10 容器拆分(单镜像 → 四镜像,issue #47):`piks-gateway`/`web`/`tools`/`research`;深研改 DB 队列 + 常驻 worker
 - ✅ 2026-09-17~09-20 修复批次:换手率口径(#4)、资金面龙虎榜(#26)、实体名去空格(#6)、账户资金汇总(#19)、股票代码掩码(#30)、宏观封面数据源(#13)、消息排序(#37)、来源外链(#38)、容器拆分(#47)
-- 📌 最新生产栈:`v0.0.0-4048f5a`(gateway `37f7155` / web `71b5cac` / tools `0658da0` / research `8e6b365`,见 lab `stack-manifest.json`;未发版,版本号恒 `v0.0.0`)
+- 📌 最新生产栈:`v0.0.0-616f31b`(gateway `c4377ad` / web `bb80388` / tools `602d148` / research `2426e05`,见 lab `stack-manifest.json`;未发版,版本号恒 `v0.0.0`)

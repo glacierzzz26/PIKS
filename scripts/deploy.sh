@@ -106,15 +106,30 @@ build_image tools    "$TAG_TOOLS"
 build_image research "$TAG_RESEARCH"
 
 # ── 保留回滚镜像(升级前的 latest → rollback-pre-<阶段>)──────────────────
+# ⚠️ **只快照一次,绝不覆盖**:回滚点必须指向「本次升级之前」的形态,而它是**一次性**的。
+# 若无脑 `docker tag latest rollback-pre-X`,第二次部署时 latest 已是升级后的新镜像 →
+# 回滚点被悄悄改写成新镜像,名字还叫 rollback-pre-X(**标签与内容不符**,真回滚时才发现
+# 回滚不了)。故存在即跳过,只报「已存在」。
 PHASE="${PIKS_PHASE:-split}"
-echo "== 在 lab 保留回滚镜像 rollback-pre-${PHASE}"
-ssh "$LAB" "for i in gateway web tools research postgres; do \
-  docker image inspect piks-\$i:latest >/dev/null 2>&1 && \
-  docker tag piks-\$i:latest piks-\$i:rollback-pre-${PHASE} && echo \"  tagged \$i\"; \
+echo "== 在 lab 保留回滚镜像 rollback-pre-${PHASE}(一次性快照,已存在则不覆盖)"
+ssh "$LAB" "for i in gateway web tools research; do \
+  if docker image inspect piks-\$i:rollback-pre-${PHASE} >/dev/null 2>&1; then \
+    echo \"  \$i: rollback-pre-${PHASE} 已存在,保留不动\"; \
+  elif docker image inspect piks-\$i:latest >/dev/null 2>&1; then \
+    docker tag piks-\$i:latest piks-\$i:rollback-pre-${PHASE} && echo \"  \$i: 快照 latest → rollback-pre-${PHASE}\"; \
+  fi; \
 done; true"
-# 旧单镜像也留一份(回滚到拆分前形态时需要)
-ssh "$LAB" "docker image inspect piks-tools:latest >/dev/null 2>&1 && \
-  docker tag piks-tools:latest piks-tools:rollback-pre-${PHASE}-single && echo '  tagged tools(single)' ; true"
+# 拆分前的**旧单镜像**再单独留一份(回滚到拆分前形态需要;它含 nginx+Go+Python 三件套)。
+# 同样只快照一次:仅在 tag 不存在时从 lab 上**现存的 934MB 单镜像**打 —— 从 v0.0.0-b996864
+# 这一已知的拆分前 tag 取,而非 latest(拆分后 latest 已是 piks-tools 新像,不含 nginx)。
+PRE_SPLIT_REF="${PIKS_PRE_SPLIT_REF:-piks-tools:v0.0.0-b996864}"
+ssh "$LAB" "if docker image inspect piks-tools:rollback-pre-${PHASE}-single >/dev/null 2>&1; then \
+    echo '  tools(single): rollback-pre-${PHASE}-single 已存在,保留不动'; \
+  elif docker image inspect ${PRE_SPLIT_REF} >/dev/null 2>&1; then \
+    docker tag ${PRE_SPLIT_REF} piks-tools:rollback-pre-${PHASE}-single && echo \"  tools(single): 快照 ${PRE_SPLIT_REF} → rollback-pre-${PHASE}-single\"; \
+  else \
+    echo \"  ⚠️ 未找到拆分前单镜像 ${PRE_SPLIT_REF},rollback-pre-${PHASE}-single 未建立\" >&2; \
+  fi"
 
 # ── 传输:只发 lab 上还没有的 tag ─────────────────────────────────────────
 TO_SEND=()

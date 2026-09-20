@@ -4,8 +4,10 @@ import { Link } from "react-router-dom";
 import { X } from "lucide-react";
 import type { EventItem } from "@/lib/types";
 import { EVENT_TYPE_LABEL } from "@/lib/format";
+import { SINGLE_SOURCE_LABEL } from "@/lib/constants";
 import { Chip, ConfidenceBar } from "@/components/ui/Num";
-import { SourceLink } from "@/components/ui/SourceLink";
+import EventConflicts from "@/components/events/EventConflicts";
+import EventSources from "@/components/events/EventSources";
 
 /** 事件详情抽屉：事实 / 影响 / 来源（机器事实与 AI 推断分开展示，只读） */
 export default function EventDetail({
@@ -45,6 +47,11 @@ function EventBody({ event }: { event: EventItem }) {
         <Chip tone={event.status === "confirmed" ? "down" : "amber"}>
           {event.status === "confirmed" ? "已确认" : "待复核"}
         </Chip>
+        {/* 来源维度（issue #49 T3）：与上面的抽取态是**两条正交的轴**。
+            用 dim 而非 amber —— amber 已被「待复核」占用，同色会让人以为是一回事。 */}
+        {event.source_count === 1 && (
+          <Chip tone="dim">{SINGLE_SOURCE_LABEL}</Chip>
+        )}
         <span className="num ml-auto text-xs text-faint">
           {event.occurred_at.slice(0, 16).replace("T", " ")}
         </span>
@@ -86,40 +93,11 @@ function EventBody({ event }: { event: EventItem }) {
       </Section>
 
       <Section title="来源">
-        <Sources event={event} />
+        <EventSources event={event} />
       </Section>
-    </div>
-  );
-}
 
-/**
- * 来源区：单源时一行（原行为）；跨源簇（≥2 家机构）时列出**各源来源**——
- * 哪家机构报道的 + 各家原文链接 + 上游一级源（如金十标注的「新华社」）。
- * 白话文案，不出现 cluster/聚类 等实现黑话（P6-2 纪律）。
- */
-function Sources({ event }: { event: EventItem }) {
-  const srcs = event.cluster_sources;
-  if (!srcs || srcs.length < 2) {
-    return (
-      <span className="text-[13px] text-faint">
-        <SourceLink source={event.source} url={event.source_url} showIcon />
-      </span>
-    );
-  }
-  return (
-    <div className="text-[13px]">
-      <div className="mb-2 text-faint">{srcs.length} 家媒体报道了同一件事</div>
-      <ul className="m-0 list-none p-0">
-        {srcs.map((s, i) => (
-          <li key={`${s.source}-${i}`} className="mb-1.5 flex flex-wrap items-baseline gap-2">
-            <SourceLink source={s.source} url={s.url} showIcon />
-            {s.origin && (
-              <span className="text-xs text-faint">转自 {s.origin}</span>
-            )}
-            {!s.url && <span className="text-xs text-faint">（无原文链接）</span>}
-          </li>
-        ))}
-      </ul>
+      {/* 跨源数值冲突（issue #49 T3）：只在真检出时出现。 */}
+      <EventConflicts items={event.event_conflicts ?? []} />
     </div>
   );
 }

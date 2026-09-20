@@ -51,7 +51,7 @@ research/      深研 Python agent(独立运行时见下「深研并入」;不�
 migrations/    SQL 迁移(前向,无 down;0001~0015)
 prompts/       AI 抽取提示词(extract.md)
 configs/       docker-compose(dev/prod)+ .env 模板 + nginx.conf
-scripts/       dev 侧 setup.sh/deploy.sh/check-research-isolation.sh/check-image-topology.sh;lab 侧 pipeline.sh/backup.sh/health.sh
+scripts/       dev 侧 setup.sh/deploy.sh/check-research-isolation.sh/check-image-topology.sh;lab 侧 pipeline.sh/backup.sh/health.sh(setup.sh 装 crontab)
 (依赖不入库:go.sum 校验 + GOPROXY 模块代理,见 Dockerfile)
 docs/          架构总览(现状架构,以代码为准)、项目详解、进度总表、各阶段设计定稿 + 实现归档
 PIKS-Vault/    Obsidian vault 存档(界面层已下线,不再更新)
@@ -124,7 +124,7 @@ go build -o bin/ ./cmd/...
 - **服务**:`postgres`(常驻)+ `gateway`(常驻,唯一对外 `:8090`)+ `web`(常驻,私网内 `:8090`,不发布宿主端口)+ `research`(常驻,深研队列 worker)+ `tools`(profile=run,跑管线命令)。
 - **文档**:设计 `docs/phase3/design/prod-deploy.md`(D-P1~P12);实现与验收 `docs/phase3/stages/prod.md`;四镜像拆分设计 `docs/phase10/design/container-split.md`。
 - **运维速查**:
-  - 更新:`./scripts/deploy.sh`(dev 侧按镜像建/传 → migrate → 起 web/research/gateway)
+  - 更新:`./scripts/deploy.sh`(dev 侧按镜像建/传 → 同步 compose **与 lab 侧 `scripts/`** → migrate → 起 web/research/gateway)
   - 日管线:crontab 每 15min 自判(北京时间非交易日/已过 16:10/今日未跑),stamp 防重跑
   - 备份:每晚 `pg_dump` → `/home/rguo/piks/backups/`,14 天留存
   - 日志:`ssh lab 'tail -50 /home/rguo/piks/logs/pipeline-$(date +%F).log'`

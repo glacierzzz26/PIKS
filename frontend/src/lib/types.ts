@@ -17,6 +17,23 @@ export type EventItem = {
    * 仅跨源簇下发；单源事件/未聚类事件无此字段（不谎报「多源印证」）。
    */
   cluster_sources?: { source: string; url?: string; origin?: string }[];
+  /**
+   * 报道该事件的**机构**数（issue #49 T3），未聚类事件 = 1。
+   * 必须看它而非 cluster_sources：后者是 omitempty，单源与未聚类都不下发，
+   * 光凭「有没有 cluster_sources」分不清「只有 1 家」和「还没聚类」。
+   * ⚠️ 客观计数，不是可信度判断：单一来源 ≠ 消息不实。
+   */
+  source_count?: number;
+  /**
+   * 跨源数值冲突（issue #49 T3）：同一个量被报成不同的数。
+   * 带**双方原文**，页面必须两条都显示（禁止静默择一）。
+   */
+  event_conflicts?: {
+    unit: string;
+    values: number[];
+    sentence_a: string;
+    sentence_b: string;
+  }[];
 };
 
 export type Entity = {

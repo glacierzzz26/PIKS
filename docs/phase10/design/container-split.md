@@ -161,15 +161,23 @@ nginx 对 `proxy_pass` 里的**字面主机名**只在 worker 启动时解析一
 
 ## 5. deploy.sh 重写
 
-1. **每镜像版本 = 自己输入的 git tree hash**(`git rev-parse HEAD:<path>` → `hash-object`),
-   与 HEAD hash 解耦。改前端不动 web/tools/research 的 tag → 它们**既不重建也不传输**。
-2. `docker build --target <role>`(tag 已存在则跳过)→ `save|load`(仅传 lab 上缺的 tag)。
-3. **干净树门控**:镜像从**工作树**构建却以**版本 tag** 命名,工作树脏时 tag 与内容不符。
+1. **每镜像版本 = 自己输入的 hash**,与 HEAD hash 解耦。输入集**必须覆盖该镜像构建真正读的
+   每个文件** —— 少算一个就是「改了文件、tag 不动、不重建不传输,生产跑旧像」的**静默错误**,
+   比多算严重得多。故:
+   - **前端** → 整个 `frontend/` 的 git tree(递归覆盖 `index.html`/`vite.config.ts`/
+     `tailwind.config.ts`/`package-lock.json` 等全部构建输入;`node_modules`/`dist` 已 gitignore,
+     不在 tree 里)+ `configs/nginx.conf`。
+   - **Go** → **`go list -deps` 取该命令的真实依赖闭包**,而非手列目录。手列在「新增一个 import」
+     时静默漏掉(实施中实测:`research-worker` 依赖 `internal/model`,手列清单曾漏它;工具链
+     不可用时回退整树 hash = 安全方向)。
+2. 改前端不动 web/tools/research 的 tag → 它们**既不重建也不传输**。
+3. `docker build --target <role>`(tag 已存在则跳过)→ `save|load`(仅传 lab 上缺的 tag)。
+4. **干净树门控**:镜像从**工作树**构建却以**版本 tag** 命名,工作树脏时 tag 与内容不符。
    默认拒绝;调试用 `PIKS_ALLOW_DIRTY=1`(tag 附 `-dirty`)。
-4. **顺序硬约束**:`up postgres` → `run --rm tools ./bin/migrate` → `up web research` →
+5. **顺序硬约束**:`up postgres` → `run --rm tools ./bin/migrate` → `up web research` →
    `up gateway`。migrate 必须先于 web(`cmd/web/main.go` 启动即读 `app_config`,缺表 fatal
    崩溃循环);gateway 必须最后(否则 nginx 短暂反代半启动的 web)。
-5. **stack 清单**(`stack-manifest.json`)落 lab:本次上线的四镜像 tag + commit,是
+6. **stack 清单**(`stack-manifest.json`)落 lab:本次上线的四镜像 tag + commit,是
    「生产在跑什么」的单一答案。
 
 **回滚**:`rollback-pre-split`(+ `rollback-pre-split-single` 保留旧单镜像)。

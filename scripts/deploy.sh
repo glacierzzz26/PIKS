@@ -41,25 +41,40 @@ if [ -n "$(git -C "$REPO" status --porcelain)" ]; then
   fi
 fi
 
-# ── 按镜像的输入算 tree hash(镜像内容 ↔ 源码状态一一对应)──────────────
-# git rev-parse HEAD:<path> 取该路径在 HEAD 的树对象,串联后 hash 成短标识。
-tree_hash() {
-  git -C "$REPO" rev-parse HEAD:"$1" >/dev/null 2>&1 || { echo "?"; return; }
+# ── 按镜像的输入算 hash(镜像内容 ↔ 源码状态一一对应)────────────────────
+# ⚠️ 输入集必须**覆盖该镜像构建时真正读的每一个文件** —— 少算一个就是「改了文件、tag 不动、
+# 于是不重建不传输,生产跑旧像」的静默错误(比多算严重得多)。故:
+#   - 前端:整个 frontend/ 的 git tree(递归覆盖 index.html/vite.config.ts/tailwind.config.ts/
+#     package-lock.json 等全部构建输入;node_modules/dist 本就 gitignore,不在 tree 里)。
+#   - Go:**用 `go list -deps` 取该命令的真实依赖闭包**,而非手列目录 —— 手列会在「新增一个
+#     import」时静默漏掉(实测:research-worker 依赖 internal/model,手列清单曾漏它)。
+tree_hash() {  # 参数:git 路径(文件或目录);目录递归覆盖其全部跟踪文件
   local args=()
   for p in "$@"; do args+=("HEAD:$p"); done
   git -C "$REPO" rev-parse "${args[@]}" | git hash-object --stdin | cut -c1-7
 }
 
-# 每个镜像的输入集(改这里的路径就改对应的升级半径)。
-HASH_GATEWAY="$(tree_hash frontend/src frontend/package.json configs/nginx.conf)"
-HASH_WEB="$(tree_hash cmd/web internal)"
-HASH_TOOLS="$(tree_hash cmd internal migrations prompts go.mod go.sum)"
-HASH_RESEARCH="$(tree_hash research/src research/requirements.txt cmd/research-run cmd/research-worker internal/research internal/store internal/ai internal/config go.mod)"
+# go_deps_hash <cmd>:该命令 Go 依赖闭包(内部包)的树 hash。
+# 无宿主 go 工具链时**回退到整个 cmd+internal 树**(过近似 = 安全方向:宁可多重建,不可漏)。
+go_deps_hash() {
+  local deps args=()
+  deps="$(cd "$REPO" && go list -deps -f '{{.ImportPath}}' "./cmd/$1" 2>/dev/null \
+          | sed -n 's|^piks/||p')"
+  if [ -z "$deps" ]; then
+    echo "-- 警告:go list 不可用,回退整树 hash($1 会随任何 Go 改动重建)" >&2
+    tree_hash cmd internal
+    return
+  fi
+  while IFS= read -r d; do [ -n "$d" ] && args+=("HEAD:$d"); done <<< "$deps"
+  git -C "$REPO" rev-parse "${args[@]}" | git hash-object --stdin | cut -c1-7
+}
 
-TAG_GATEWAY="${VER}-${HASH_GATEWAY}${DIRTY}"
-TAG_WEB="${VER}-${HASH_WEB}${DIRTY}"
-TAG_TOOLS="${VER}-${HASH_TOOLS}${DIRTY}"
-TAG_RESEARCH="${VER}-${HASH_RESEARCH}${DIRTY}"
+short() { printf '%s' "$1" | git hash-object --stdin | cut -c1-7; }
+
+TAG_GATEWAY="${VER}-$(tree_hash frontend configs/nginx.conf)${DIRTY}"
+TAG_WEB="${VER}-$(short "$(tree_hash go.mod go.sum)$(go_deps_hash web)")${DIRTY}"
+TAG_TOOLS="${VER}-$(short "$(tree_hash go.mod go.sum migrations prompts)$(go_deps_hash migrate)")${DIRTY}"
+TAG_RESEARCH="${VER}-$(short "$(tree_hash go.mod research)$(go_deps_hash research-run)$(go_deps_hash research-worker)")${DIRTY}"
 STACK_TAG="${VER}-${GS}${DIRTY}"
 
 echo "== 栈 ${STACK_TAG}(commit ${GS})"

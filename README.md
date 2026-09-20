@@ -1,6 +1,8 @@
 # PIKS — Personal Investment Knowledge System
 
-个人 A 股投资知识系统:把公开市场信息(新闻快讯、行情涨停池)自动加工成**结构化事件与实体**,沉淀为个人知识库。**PostgreSQL 是唯一数据源,Web 是界面**(迭代 5 起 PG 直渲 Web,取代 Obsidian/GitHub 界面层)。
+个人 A 股投资知识系统:把公开市场信息(新闻快讯、行情涨停池)自动加工成**结构化事件与实体**,沉淀为个人知识库。**PostgreSQL 是唯一数据源,React SPA 是界面**(迭代 5 建 Web 平台取代 Obsidian/GitHub;2026-08-29 前端去 Next.js 改 **Vite SPA + nginx 网关**,Go 只提供 JSON API)。
+
+> **架构速查**:完整现状架构见 [`docs/架构总览.md`](docs/架构总览.md)(以代码为准)。
 
 ## 核心理念
 
@@ -17,21 +19,21 @@ migrate → collector(东财 7x24 快讯) → worker(AI 抽取 events) → clust
 ```
 
 9 个管线命令(见 `cmd/`),各自幂等、可单独重跑;失败步骤记录不阻断(下次重试)。
-> 迭代 5-2 起:`publisher` / vault / GitHub 下线(Web 直读 PG,管线已无发布步骤)。
+> 迭代 5-2 起:vault / GitHub 下线(SPA 直读 PG API,管线已无发布步骤);`publisher` 命令保留但**未调度**。
 
 ## 功能模块
 
 - **每日管线**:新闻→事件抽取→语义去重聚类(含重审视 Pass 修跨簇重复)→涨停池→实体构建→市场情绪→每日复盘→对账,全自动幂等。
-- **Web 平台**(`cmd/web`,PG 直渲,lab :8090):看板 / 事件 / 实体 / 图谱(原生 SVG 缩放·拖拽·点选看内容) / 复盘 / 对账 / 笔记(personal_notes 编辑,含事件卡「我的理解」) / 周报(规则聚合 + AI 综述手动触发) / 交易(截图识别录入 + AI 带引用解读 + 持仓 AI 诊断) / AI 对话(问答带引用 + 截图 vision 识别) / 设置(大模型配置)。
-- **交易闭环**(2026-08-28,dev):每日自交易截图 → 视觉抽取 → 确认入库;AI 解读带知识库引用、防未来函数;持仓 AI 诊断;本周交易/持仓进周报。**dev-only,未部署 lab**。
+- **Web 平台**(`cmd/web` JSON API + React SPA,lab :8090):今天(自选)/ 市场概况 / 消息(重要 + 快讯双 tab)/ 涨停股 / 研报(独立阅读器)/ 个股分析 / 个股中心 `/stock/:code`(含买入前速评)/ 交易与持仓(截图识别录入 + AI 带引用解读 + 持仓 AI 诊断)/ 持仓诊断 / 周报(规则聚合 + AI 综述手动触发)/ 笔记 / 问 AI(问答带引用 + 截图 vision)/ 设置(大模型配置);实体库·图谱·对账移入设置页「数据与运维」。
+- **交易闭环**(2026-08-28):每日自交易截图 → 视觉抽取 → 确认入库;AI 解读带知识库引用、防未来函数;持仓 AI 诊断;本周交易/持仓进周报。后续已上生产(截图识别依赖视觉模型配置;`/settings` 配好后可用)。
 
 ## 技术栈
 
 | 层 | 选型 |
 |---|---|
 | 语言 | Go 1.26(静态编译,依赖走 go.mod/go.sum + 模块代理,不入库) |
-| 数据源 | PostgreSQL 16(唯一 Source of Truth;11 个前向迁移) |
-| 界面 | Web(PG 直渲 HTML + 原生 SVG 图谱;Obsidian/GitHub 已下线,`PIKS-Vault/` 仅存档) |
+| 数据源 | PostgreSQL 16(唯一 Source of Truth;**13 个前向迁移**,0001~0013) |
+| 界面 | **React SPA**(Vite 5 + React 18 + TS,React Router v6;Tailwind 只做布局,视觉走 `globals.css` 语义类;ECharts 按需 + 自绘 SVG 力导图谱;nginx 单入口 :8090 服务静态 + 反代 `/api/*`)。Obsidian/GitHub 已下线,`PIKS-Vault/` 仅存档 |
 | AI | OpenCode Zen,OpenAI 兼容;**base URL 必须带 `/go` 路由**(`https://opencode.ai/zen/go/v1`);配置存 `app_config` 表(/settings 可编辑),模型分层 extract/reasoning/vision |
 | 部署 | Docker Compose(dev 单机 + 生产 lab) |
 
@@ -40,15 +42,18 @@ migrate → collector(东财 7x24 快讯) → worker(AI 抽取 events) → clust
 ```
 cmd/           13 个可执行命令(9 个管线:migrate/collector/worker/cluster/quote-collector/
               entity-build/market-state/daily-review/reconcile + web 常驻服务 + probe 探针
-              + publisher 遗留 + research-run 深研编排)
-internal/      业务包(collector/web/store/config/model/research/...)
-research/      个股深研 Python agent(独立运行时,见下「深研并入」;不自带 SQLite,产物落 PG)
-migrations/    SQL 迁移(前向,无 down;0001~0012)
+              + research-run 深研编排 + publisher 遗留未调度)
+internal/      12 个业务包(store 最大 32 文件 / web 21 / research 9 / collector 6
+              / ai 4 / cluster 3 / publish 3 / entityextract 2 / marketstate 2
+              / extract 1 / model 1 / config 1)
+frontend/      React SPA(Vite;src 135 文件 / 12.4k 行;27 条路由;产物 dist/)
+research/      深研 Python agent(独立运行时见下「深研并入」;不写库、不调 LLM,产物落 PG)
+migrations/    SQL 迁移(前向,无 down;0001~0013)
 prompts/       AI 抽取提示词(extract.md)
 configs/       docker-compose(dev/prod)+ .env 模板
 scripts/       dev 侧 setup.sh/deploy.sh/check-research-isolation.sh;lab 侧 pipeline.sh/backup.sh/health.sh
 (依赖不入库:go.sum 校验 + GOPROXY 模块代理,见 Dockerfile)
-docs/          项目详解、进度总表、各阶段设计定稿 + 实现归档
+docs/          架构总览(现状架构,以代码为准)、项目详解、进度总表、各阶段设计定稿 + 实现归档
 PIKS-Vault/    Obsidian vault 存档(界面层已下线,不再更新)
 ```
 
@@ -126,11 +131,13 @@ go build -o bin/ ./cmd/...
 | 文档 | 内容 |
 |---|---|
 | `docs/项目详解.md` | 全局架构、数据流、技术栈、边界、执行决策(权威决策登记处) |
+| **`docs/架构总览.md`** | **以代码为准的完整现状架构**(三运行时 / 数据层 / API / 前端 / 部署 / 约束速查 / 文档偏差审计) |
 | `docs/进度总表.md` | 里程碑跟踪(各阶段状态 + 子阶段明细 + 契约缺口 + 已知遗留) |
 | `docs/phase1/` | 迭代 0 地基 + 迭代 1 可靠性(冻结) |
 | `docs/phase2/` | 迭代 2~5(增值 + Web 平台)设计定稿 + 实现归档(冻结);G8/聚类质量/周报综述/交易/交易闭环 |
 | `docs/phase3/` | 生产化(设计定稿 + 实现验收归档) |
-| `PIKS架构设计文档.md` | v1.0 权威架构蓝图(元信息含现状偏差注记) |
+| `docs/phase4/`~`phase9/` | 能力并入(research)/ 前端 IA / 决绝重构 / 买入前速评 / 手机投递 / 研报体裁 |
+| `PIKS架构设计文档.md` | v1.0 权威架构蓝图(冻结不改正文;顶部含现状偏差注记) |
 
 ## 安全红线
 
@@ -141,6 +148,8 @@ go build -o bin/ ./cmd/...
 ## 当前状态
 
 - ✅ 迭代 0~3:最小闭环 → 可靠性 → 市场情报 → 实体补全(真实数据全链运行)
-- ✅ 迭代 4~5:个人学习闭环 + Web 平台(PG 直渲:看/写/理解/周报/AI 对话/截图;vault/GitHub 停更)
+- ✅ 迭代 4~5:个人学习闭环 + Web 平台(vault/GitHub 已停更,`PIKS-Vault/` 存档)
 - ✅ 生产化 P3:lab(192.168.0.202)部署落地,验收全过;Web :8090 常驻
-- ✅ dev 验收全过、**未部署 lab**(随未来镜像重建生效):G8 /chat 语义检索、聚类质量重审视 Pass、周报 AI 综述、交易功能、交易闭环
+- ✅ P4 能力并入(research 深研,单镜像)/ P5 前端 IA 个股轴心 / P6 决绝重构 / P7 买入前速评 / P8 手机截图投递 / P9 研报体裁与版面——均已上生产
+- ✅ 2026-09-17~09-20 修复批次:换手率口径(#4)、资金面龙虎榜(#26)、实体名去空格(#6)、账户资金汇总(#19)、股票代码掩码(#30)、宏观封面数据源(#13)、消息排序(#37)、来源外链(#38)
+- 📌 最新生产镜像:`v0.0.0-b996864`(未发版,版本号恒 `v0.0.0`)

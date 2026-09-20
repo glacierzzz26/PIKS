@@ -1,57 +1,100 @@
 # PIKS Frontend
 
-PIKS 前端（Next.js 重构版）：只读 PostgreSQL 投影数据的专业化 Web 界面。
+PIKS 的呈现层:**Vite 5 + React 18 + TypeScript 纯客户端 SPA**。
+消费 Go 的 `/api/v1` JSON 接口(只读投影 + 写接口),静态产物 `frontend/dist/` 由 nginx 服务。
+
+> 完整架构见 `../docs/架构总览.md`;前端规范见根目录 `../CLAUDE.md`。
 
 ## 技术栈
 
-- Next.js 14（App Router）+ React 18 + TypeScript
-- Tailwind CSS（设计令牌见 `tailwind.config.ts`，与《PIKS 前端重构规范》一致）
-- ECharts（连板梯队 / 行业分布）
-- React Flow（@xyflow/react，实体关系图谱）
-- TanStack Table（事件表 / 涨停池表）
-- Framer Motion（抽屉与过场动画）
-- lucide-react（线性图标）
+| 用途 | 选型 | 备注 |
+|---|---|---|
+| 构建 | Vite 5 | dev 端口 **3100**;无代码分割(全部路由静态 import) |
+| 框架 | React 18 + TypeScript(strict) | `tsconfig` **未开** `noUnusedLocals` / `noUncheckedIndexedAccess` |
+| 路由 | React Router v6 | 单 `BrowserRouter`,27 条路由;筛选态写 URL query |
+| 样式 | Tailwind(**只做布局**)+ `src/globals.css`(**唯一视觉源**) | 3 档圆角 token;A 股涨红跌绿 |
+| 图表 | ECharts 5 | `echarts/core` 按需注册(`BarChart`/`LineChart`/`Grid`/`Tooltip`/`LabelLayout`/`CanvasRenderer`),**禁全量 import** |
+| 图谱 | 自绘 SVG 力导 | `components/graph/useForceSim.ts`,无第三方图库 |
+| 图标 | lucide-react | 线性图标,**禁 emoji** |
+| Markdown | react-markdown + remark-gfm | 无 heading id,故页面自行按 `##` 切章并注入锚点(`lib/report.ts`) |
+| E2E | Playwright | 经 `scripts/e2e_check.mjs` 调用 |
 
 ## 运行
 
 ```bash
 npm install
-npm run dev    # http://localhost:3000
+npm run dev      # http://localhost:3100(代理 /api → localhost:8090)
 
-# 生产
-npm run build && npm start
+npm run lint     # tsc --noEmit
+npm run build    # 产物 dist/
+npm run e2e      # node scripts/e2e_check.mjs(需本地 PG + Go :8090)
 ```
+
+dev 需先起 Go 后端(`../bin/web`,:8090)与 PostgreSQL(:5433)。
 
 ## 数据源
 
-`NEXT_PUBLIC_API_BASE_URL`（默认 `http://localhost:8090/api/v1`）指向 Go 后端 `cmd/web`。
-后端未连接时自动降级为内置演示数据，界面会显示「演示数据」徽章 —— 数据诚实，宁缺毋假。
+`API_BASE = import.meta.env.VITE_API_BASE_URL || "/api/v1"`(`src/lib/api.ts`)。
+**默认相对路径** —— 生产同源走 nginx,dev 走 vite proxy(`vite.config.ts` 单条 `"/api" → http://localhost:8090`)。
 
-### REST 端点约定（只读投影，供后端对齐实现）
+- **无演示数据兜底**:后端不可达即报错,不做 mock 降级(数据诚实)。
+- **无重试、无超时**;失败尽力读 `body.error`。
+- **分页是纯客户端**(`hooks/usePagedQuery.ts`),API 不收 `page`/`size`。
 
-列表端点统一支持分页：`page`（1 起）、`size`（默认 20，可选 50/100）。
+### 端点(`src/lib/api.ts` 的 `ENDPOINTS`,27 键)
 
-| 端点 | 说明 | 查询参数 |
-|---|---|---|
-| `GET /events` | 结构化事件流 | `type` `status` `q` `from` `to` `page` `size` |
-| `GET /entities` | 统一实体 | `type` `q` `page` `size` |
-| `GET /relationships` | 实体关系 | — |
-| `GET /market/snapshot` | 市场状态快照（含涨停池） | `date` |
-| `GET /flashes` | 快讯流（raw_documents 投影） | `q` `source` `page` `size` |
-| `GET /notes` `GET /notes/:id` | 文档（复盘/笔记/周报 Markdown） | `type` `page` `size` |
+| 端点 | 方法 / 查询 |
+|---|---|
+| `/events` | GET `?type=&status=&q=&from=&to=` |
+| `/entities` | GET `?type=&q=&status=` |
+| `/relationships` | GET |
+| `/market/snapshot` | GET `?date=` |
+| `/flashes` | GET `?q=&source=` |
+| `/notes` · `/notes/:id` | GET · GET/PUT/DELETE |
+| `/dashboard` `/watchlist` `/recon` `/reviews` `/account` | GET |
+| `/trades` · `/trades/import` · `/trades/confirm` | GET/POST |
+| `/stock/:code` | GET(调用方自行 `.replace(":code", code)`) |
+| `/chat` · `/chat/clear` | GET/POST |
+| `/settings` · `/settings/form` | GET/POST |
+| `/weekly` · `/weekly/detail` · `/weekly/generate` | GET/POST |
+| `/research-runs` · `/research-runs/:runId` | GET/POST |
 
-## 页面模块
+## 目录结构
 
-- `/` 事件流（核心）：市场速览 + 类型/状态筛选（URL query 可分享）+ 表格 + 详情抽屉
-- `/entities` 实体库：列表 + 详情 + React Flow 关系图谱（聚焦邻域）
-- `/ladder` 涨停梯队：情绪头图 + 连板阶梯图 + 行业分布 + 涨停池表
-- `/flashes` 快讯流：按日分组时间线，重要快讯高亮
-- `/docs`、`/docs/[id]` Markdown 文档阅读
+```
+src/
+  App.tsx            路由表(27 条)+ ShellLayout
+  main.tsx           入口
+  globals.css        唯一视觉源(2,091 行语义类 + token)
+  pages/             27 个页面(含 note/[id]/edit、stock/[code]、m/upload 等子目录)
+  components/        graph/ stock/ trades/ report/ research/ weekly/ reviews/
+                     dashboard/ events/ home/ ladder/ watch/ chat/ settings/
+                     layout/ md/ note/ charts/ ui/
+  hooks/             useData(唯一 fetch 原语) / usePagedQuery / useUrlState
+                     useResearchRun / usePrebuy / useResearchDelta / useTradeImport
+  lib/               api.ts / types.ts(666 行,全领域类型) / format.ts
+                     chartTheme.ts / image.ts / constants.ts / glossary.ts(术语表)
+                     report.ts / reportList.ts / research.ts
+```
 
-## 已实现的规范约束
+## 关键约定
 
-- 涨红跌绿（A 股习惯）；数字等宽 + tabular-nums + 右对齐（`Num` 组件）
-- 全部筛选状态写入 URL query；全局 ⌘K 命令面板（页面 / 实体 / 命令）
-- 异步操作 loading / error / empty 三态；核心数字区不使用 skeleton loader
-- 组件单文件 ≤150 行；逻辑 >50 行抽 hook（`useUrlState` / `useData`）
-- 非对称栅格（8/4、5/7、7/5），无 3 栏等宽
+- **页面路由名 ≠ 文件名**:`/research` → `pages/analyst.tsx`;`/events` → `pages/events.tsx` 而 `/flashes` → `pages/messages.tsx`。
+- **`/entities` `/graph` `/recon` 不在侧栏**,唯一应用内入口 = `components/settings/OpsCard.tsx`。
+- **导航单一真源** = `components/layout/navItems.ts`(12 项)。
+- **`useResearchRun` 的 `profile` 必填** —— 隐式默认会静默造出遗留 `complete-stock` run。
+- **`hooks/useData` 是唯一 fetch 原语**(`AbortController` 清理,`AbortError` 静默不报错)。
+- **三态纪律**:统一用 `components/ui/States.tsx` 的 `LoadingBlock` / `ErrorState` / `EmptyState`;
+  核心数字区**不用 skeleton loader**。
+- **`"use client"` 是惰性残留**(纯 Vite 构建无 RSC),无需模仿。
+- **力导图 ref 内的 Map 不得在 effect 内清空**,否则节点全落 (0,0)(`useForceSim.ts` 有注释)。
+
+## 已知技术债
+
+登记于 `../docs/架构总览.md` §11,摘要:
+
+- 组件超 150 行:`NoteForm.tsx`(200)、`CommandPalette.tsx`(152)。
+- 45 处 `rounded-[…]` 魔法值(39 处等价于 DEFAULT token,应用 `rounded`)。
+- `pages/graph.tsx` 筛选态用局部 `useState`,**不可分享 URL**。
+- `pages/chat.tsx:55` 错误气泡用了 ⚠️ emoji(全站唯一用户可见违例)。
+- 无代码分割;118 个文件顶部 `"use client"` 可整批清理。

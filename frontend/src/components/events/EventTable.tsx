@@ -49,6 +49,11 @@ export default function EventTable({
                 <b>{e.title}</b>
                 <span className="meta">
                   来源：<SourceLink source={e.source} url={e.source_url} />
+                  {e.cluster_sources && e.cluster_sources.length >= 2 ? (
+                    <span className="ml-1.5 text-accent">
+                      · {e.cluster_sources.length} 家印证
+                    </span>
+                  ) : null}
                   {e.summary ? ` · ${e.summary.slice(0, 24)}` : ""}
                 </span>
               </div>

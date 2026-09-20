@@ -38,6 +38,19 @@ type apiEventItem struct {
 	Status     string        `json:"status"`
 	Source     string        `json:"source"`
 	SourceURL  *string       `json:"source_url,omitempty"`
+	// ClusterSources 簇内各源来源(issue #48 T2):同一真实事件被哪些机构报道过。
+	// 仅当事件属于一个**跨源**簇(≥2 个不同机构)时才下发 ——单源簇/未聚类事件省略该字段,
+	// 前端据此判断是否展示「N 源印证」;不给单源事件挂一个只有自己的「多源」假象。
+	ClusterSources []apiClusterSource `json:"cluster_sources,omitempty"`
+}
+
+// apiClusterSource 簇内一个来源:机构名 + 该机构原文链接 + 上游一级源(若有)。
+type apiClusterSource struct {
+	Source string `json:"source"`
+	URL    string `json:"url,omitempty"`
+	// Origin 上游自带的一级源(金十 extra.source,如「新华社」):「这条快讯转述的是谁」,
+	// 与「我们从哪个机构采到」(Source)是两件事,前端分区展示。
+	Origin string `json:"origin,omitempty"`
 }
 
 type apiAffected struct {
@@ -162,7 +175,8 @@ func (s *Server) handleAPIEvents(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 
-	out := make([]apiEventItem, 0, len(evs))
+	filtered := make([]store.EventForAPI, 0, len(evs))
+	clusterIDs := make([]string, 0, len(evs))
 	for _, ev := range evs {
 		if typ != "" && ev.EventType != typ {
 			continue
@@ -173,7 +187,21 @@ func (s *Server) handleAPIEvents(w http.ResponseWriter, r *http.Request) {
 		if q != "" && !strSub(q, ev.Title, orStr(ev.Summary, "")) {
 			continue
 		}
-		out = append(out, toEventItem(ev, idx))
+		filtered = append(filtered, ev)
+		if ev.ClusterID != nil {
+			clusterIDs = append(clusterIDs, *ev.ClusterID)
+		}
+	}
+	// 簇内各源来源(issue #48 T2):一次批量取,避免每事件一次往返。
+	clusters, err := s.store.ListClusterSources(ctx, clusterIDs)
+	if err != nil {
+		s.apiErr(w, "cluster sources", err)
+		return
+	}
+
+	out := make([]apiEventItem, 0, len(filtered))
+	for _, ev := range filtered {
+		out = append(out, toEventItem(ev, idx, clusters))
 	}
 	s.writeJSON(w, out)
 }
@@ -403,7 +431,7 @@ func buildNameIndex(ents []model.Entity) map[string]nameRef {
 	return idx
 }
 
-func toEventItem(ev store.EventForAPI, idx map[string]nameRef) apiEventItem {
+func toEventItem(ev store.EventForAPI, idx map[string]nameRef, clusters map[string][]store.ClusterSource) apiEventItem {
 	at := ev.CreatedAt
 	if ev.OccurredAt != nil {
 		at = *ev.OccurredAt
@@ -422,7 +450,7 @@ func toEventItem(ev store.EventForAPI, idx map[string]nameRef) apiEventItem {
 		}
 		affected = append(affected, af)
 	}
-	return apiEventItem{
+	out := apiEventItem{
 		ID:         ev.ID,
 		Title:      ev.Title,
 		EventType:  ev.EventType,
@@ -435,6 +463,18 @@ func toEventItem(ev store.EventForAPI, idx map[string]nameRef) apiEventItem {
 		Source:     ev.SourceName,
 		SourceURL:  ev.SourceURL,
 	}
+	// 仅在簇内确有 ≥2 家机构时才挂 cluster_sources —— 单源簇不谎报「多源印证」(issue #48)。
+	if ev.ClusterID != nil {
+		if srcs := clusters[*ev.ClusterID]; len(srcs) >= 2 {
+			out.ClusterSources = make([]apiClusterSource, 0, len(srcs))
+			for _, cs := range srcs {
+				out.ClusterSources = append(out.ClusterSources, apiClusterSource{
+					Source: cs.Source, URL: orStr(cs.URL, ""), Origin: orStr(cs.Origin, ""),
+				})
+			}
+		}
+	}
+	return out
 }
 
 // eventStatusFront 后端知识状态 → 前端展示状态(confirmed/pending)。

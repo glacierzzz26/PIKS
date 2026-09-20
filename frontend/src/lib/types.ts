@@ -67,6 +67,8 @@ export type Flash = {
   source: string;
   important: boolean;
   event_id?: string;
+  /** 原文出处（raw_documents.url）；缺省 = 不可点，退化为纯文本 */
+  url?: string;
 };
 
 export type Doc = {
@@ -604,6 +606,8 @@ export type StockEvent = {
   occurred_at: string;
   confidence: number;
   source: string;
+  /** 原文出处；缺省 = 不可点，退化为纯文本 */
+  source_url?: string;
 };
 
 export type StockNote = {

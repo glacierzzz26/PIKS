@@ -4,18 +4,23 @@ import { Suspense, useState } from "react";
 import { Plus, Upload } from "lucide-react";
 import { useData } from "@/hooks/useData";
 import { ENDPOINTS } from "@/lib/api";
-import type { TradeRow, PositionRow } from "@/lib/types";
+import type { TradeRow, PositionRow, AccountRow } from "@/lib/types";
 import Pagination from "@/components/ui/Pagination";
 import { LoadingBlock, EmptyState, ErrorState } from "@/components/ui/States";
 import { Chip, Num } from "@/components/ui/Num";
 import { usePagedQuery } from "@/hooks/usePagedQuery";
 import TradeTable from "@/components/trades/TradeTable";
 import PositionTable from "@/components/trades/PositionTable";
+import AccountCard from "@/components/trades/AccountCard";
 import TradeAddForm from "@/components/trades/TradeAddForm";
 import ImportFlow from "@/components/trades/ImportFlow";
 import PosReview from "@/components/trades/PosReview";
 
-type TradesData = { trades: TradeRow[]; positions: PositionRow[] };
+type TradesData = {
+  trades: TradeRow[];
+  positions: PositionRow[];
+  account: AccountRow | null;
+};
 
 /** 交易（交互）：成交/持仓表 + 手动录入 + 截图导入 + AI 解读 */
 export default function Page() {
@@ -35,6 +40,7 @@ function TradesInner() {
   const tr = useData<TradesData>({ path: ENDPOINTS.trades });
   const records = tr.data?.trades ?? [];
   const positions = tr.data?.positions ?? [];
+  const account = tr.data?.account ?? null;
 
   const all = side ? records.filter((t) => t.side === side) : records;
   const rows = paginate(all);
@@ -89,6 +95,9 @@ function TradesInner() {
           <ImportFlow onDone={() => tr.refresh()} />
         </div>
       )}
+
+      {/* 账户资金卡（issue #19）：放在三态分支之外 —— 即便暂无持仓，采到的账户汇总也该显示 */}
+      {!tr.loading && !tr.error && <AccountCard account={account} className="mb-3.5" />}
 
       {tr.loading ? (
         <div className="panel">

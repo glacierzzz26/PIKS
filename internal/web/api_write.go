@@ -312,16 +312,28 @@ type apiPreviewWatch struct {
 	Name    string `json:"name"`
 }
 
+type apiPreviewAccount struct {
+	TotalAsset string `json:"total_asset"`
+	TotalMV    string `json:"total_mv"`
+	FloatPL    string `json:"float_pl"`
+	DailyPL    string `json:"daily_pl"`
+}
+
 type apiImportPreview struct {
 	Kind         string               `json:"kind"`
 	AttachmentID string               `json:"attachment_id"`
 	Trades       []apiPreviewTrade    `json:"trades"`
 	Positions    []apiPreviewPosition `json:"positions"`
 	Watch        []apiPreviewWatch    `json:"watch"`
+	Account      apiPreviewAccount    `json:"account"` // 仅 position(issue #19)
 }
 
 func toAPIImportPreview(p *ImportPreview) apiImportPreview {
-	out := apiImportPreview{Kind: p.Kind, AttachmentID: p.AttachmentID, Trades: []apiPreviewTrade{}, Positions: []apiPreviewPosition{}, Watch: []apiPreviewWatch{}}
+	out := apiImportPreview{Kind: p.Kind, AttachmentID: p.AttachmentID, Trades: []apiPreviewTrade{}, Positions: []apiPreviewPosition{}, Watch: []apiPreviewWatch{},
+		Account: apiPreviewAccount{
+			TotalAsset: p.Account.TotalAsset, TotalMV: p.Account.TotalMV,
+			FloatPL: p.Account.FloatPL, DailyPL: p.Account.DailyPL,
+		}}
 	for _, t := range p.Trades {
 		out.Trades = append(out.Trades, apiPreviewTrade{
 			Include: t.Include, Exists: t.Exists, Date: t.Date, Code: t.Code,
@@ -479,6 +491,23 @@ func (s *Server) tradeConfirmAPI(w http.ResponseWriter, r *http.Request) {
 		if err := s.store.InsertPositions(ctx, ps); err != nil {
 			apiErrJSON(w, http.StatusInternalServerError, "持仓入库失败: "+err.Error())
 			return
+		}
+		// 账户汇总(issue #19):四项**任一有值**才落快照 —— 全空时不留一行空壳。
+		// 逐项 parseF(空串→NULL,截图上没有的绝不填 0)。同日 upsert,与 positions 同 snapshot_date。
+		snapDate := time.Now().In(cst)
+		acc := model.AccountSnapshot{
+			SnapshotDate: snapDate,
+			TotalAsset:   parseF(p.Account.TotalAsset),
+			TotalMV:      parseF(p.Account.TotalMV),
+			FloatPL:      parseF(p.Account.FloatPL),
+			DailyPL:      parseF(p.Account.DailyPL),
+			Source:       "screenshot", AttachmentID: optStr(p.AttachmentID),
+		}
+		if acc.TotalAsset != nil || acc.TotalMV != nil || acc.FloatPL != nil || acc.DailyPL != nil {
+			if err := s.store.UpsertAccountSnapshot(ctx, acc); err != nil {
+				apiErrJSON(w, http.StatusInternalServerError, "账户汇总入库失败: "+err.Error())
+				return
+			}
 		}
 		s.writeJSON(w, map[string]any{"ok": true, "skipped_no_code": skippedNoCode})
 		return

@@ -1,5 +1,6 @@
 // daily-review 每日复盘聚合页命令(迭代 2,设计 §3.3):读 market_snapshots → 02-Market/YYYY-MM-DD.md → git commit。
-// 复用 publisher 的 md5 幂等(重跑零提交,§5.6);「我的判断」占位,个人内容走 09-Personal 分域(D17)。
+// 复用 internal/publish 的提交幂等(git status 无变更则跳过提交,重跑零提交,§5.6);
+// 「我的判断」占位,个人内容走 09-Personal 分域(D17)。
 package main
 
 import (

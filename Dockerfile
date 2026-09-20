@@ -25,8 +25,13 @@ ARG GOPROXY=https://goproxy.cn,direct
 ENV GOPROXY=${GOPROXY}
 COPY go.mod go.sum ./
 RUN go mod download && go mod verify
-COPY . .
-# -s -w 去符号表/DWARF:12 个命令单包 ~179MB → 显著下降(panic 栈仍带函数名)。
+# ⚠️ 只 COPY Go 编译真正需要的目录(cmd/ internal/),不含 frontend/ 与 docs/。
+# 原先 `COPY . .` 会把整个仓库灌进本阶段 —— 改一行前端就让本层失效、
+# 13 个二进制全量重编(实测 27s)。收窄后:改前端不再击穿 Go 层。
+# 新增含 .go 文件的顶层目录时须同步此处(否则构建时模块解析不到)。
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
+# -s -w 去符号表/DWARF:单命令 ~10MB → 显著下降(panic 栈仍带函数名)。
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/bin/ ./cmd/...
 
 # 前端静态构建(Vite SPA;dist 是唯一产物)
@@ -39,7 +44,7 @@ RUN npm run build
 
 # ---- 最终阶段:nginx 网关 + Go bins + React dist + research(Python 深研运行时)----
 FROM python:3.12-slim AS tools
-# nginx:网关;git: publisher 二进制保留(未调度);tzdata: TZ 生效。
+# nginx:网关;git: daily-review/reconcile 在 vault 启用时提交(git 命令);tzdata: TZ 生效。
 # 默认 apt 源 deb.debian.org 在国内时常卡死(实测 apt-get install 挂 20+ 分钟无进度),
 # 故默认切 aliyun 镜像;APT_MIRROR 可 --build-arg 覆盖(出国/离线环境可传 deb.debian.org)。
 ARG APT_MIRROR=mirrors.aliyun.com
@@ -70,8 +75,9 @@ COPY research/ ./research/
 ENV PIKS_RESEARCH_DIR=/app/research \
     PIKS_PYTHON_BIN=python3 \
     PYTHONIOENCODING=utf-8
-COPY --from=build /src/migrations /app/migrations
-COPY --from=build /src/prompts /app/prompts
+# 运行时文件资源,直接从构建上下文取(Go 编译不需要它们,故不再经 build 阶段中转)
+COPY migrations/ /app/migrations
+COPY prompts/ /app/prompts
 # 与 dev bin/ 布局一致,脚本统一 ./bin/<cmd>
 COPY --from=build /out/bin/ /app/bin/
 # nginx 网关配置 + 前端静态文件

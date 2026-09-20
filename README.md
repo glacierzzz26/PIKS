@@ -19,7 +19,7 @@ migrate → collector(东财 7x24 快讯) → worker(AI 抽取 events) → clust
 ```
 
 9 个管线命令(见 `cmd/`),各自幂等、可单独重跑;失败步骤记录不阻断(下次重试)。
-> 迭代 5-2 起:vault / GitHub 下线(SPA 直读 PG API,管线已无发布步骤);`publisher` 命令保留但**未调度**。
+> 迭代 5-2 起:vault / GitHub 下线(SPA 直读 PG API,管线已无发布步骤)。
 
 ## 功能模块
 
@@ -40,9 +40,9 @@ migrate → collector(东财 7x24 快讯) → worker(AI 抽取 events) → clust
 ## 仓库布局
 
 ```
-cmd/           13 个可执行命令(9 个管线:migrate/collector/worker/cluster/quote-collector/
+cmd/           12 个可执行命令(9 个管线:migrate/collector/worker/cluster/quote-collector/
               entity-build/market-state/daily-review/reconcile + web 常驻服务 + probe 探针
-              + research-run 深研编排 + publisher 遗留未调度)
+              + research-run 深研编排)
 internal/      12 个业务包(store 最大 32 文件 / web 21 / research 9 / collector 6
               / ai 4 / cluster 3 / publish 3 / entityextract 2 / marketstate 2
               / extract 1 / model 1 / config 1)

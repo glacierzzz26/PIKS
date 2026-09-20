@@ -25,7 +25,7 @@
 #    --run-id 可选:上层编排(Go cmd/research-run)传入稳定幂等键;独立 CLI 不需要。
 #    ⚠️ 主体码含冒号(宏观 macro:cn_cpi)时**务必加引号** —— 现代壳里 `macro:` 一般
 #    不会触发词分割,但引号能防 zsh 通配与未来扩展;Go 侧走 argv 数组,无此问题。
-python3 -m src.cli research <主体码> [--days N] [--profile complete-stock|short-term|prebuy|index|macro] [--out-dir DIR] [--run-id ID]
+python3 -m src.cli research <主体码> [--days N] [--profile complete-stock|company|stock|short-term|prebuy|industry|macro] [--out-dir DIR] [--run-id ID]
 
 # 2. 把 LLM 的三段定性渲染进报告 + Number Lint(数字一致性机检)
 #    --prior-metrics 可选:既往研报的 metrics JSON(数组,Go 侧落成 {code}_prior_metrics.json),
@@ -35,6 +35,11 @@ python3 -m src.cli synthesize <产物目录> <代码> --synthesis-file <LLM输�
 # 3. 六项 Quality Gate 机检
 python3 -m src.cli gate <产物目录> <代码> [--json]
 ```
+
+> **档案（profiles，7 个）**：`complete-stock`（full 11 节含 industry，最重；兼容保留）·
+> `company`（full 8 节，公司研报，P9-4）· `stock`（express 7 节，个股分析，P9-4）·
+> `short-term`（express 7 节，仅 2 维评分不含 risk）· `prebuy`（express，去 industry 保留全 6 维评分卡，P7）·
+> `industry`（申万行业，P9-3）· `macro`（宏观四维，P9-5）。⚠️ **行为由 `sections` 驱动，`mode` 字段不参与分支。**
 
 > **退出码**:`synthesize` 在 Number Lint 有 issue 时退 2;`gate` 机检未过退 3。
 > 两者都**已把结果写进产物文件**——非零表示"结果未通过机检",不是"执行失败";

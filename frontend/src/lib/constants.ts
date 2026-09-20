@@ -112,13 +112,19 @@ export const RISK_LEVEL_LABEL: Record<string, string> = {
   high: "高",
 };
 
+/**
+ * 快讯来源筛选（issue #43 T1）—— key 必须**逐字**等于 `sources.name`（机构名）。
+ * 多源采集后 sources 每机构一行：东方财富/金十数据/财联社/新浪财经/同花顺/富途资讯。
+ * 后端按 source 精确匹配（internal/web/api_v1.go handleAPIFlashes），写错即筛不出。
+ */
 export const FLASH_SOURCES = [
   { key: "", label: "全部来源" },
-  { key: "东财快讯", label: "东财快讯" },
-  { key: "公司公告", label: "公司公告" },
-  { key: "券商研报", label: "券商研报" },
-  { key: "海外市场", label: "海外市场" },
-  { key: "市场传闻", label: "市场传闻" },
+  { key: "东方财富", label: "东方财富" },
+  { key: "金十数据", label: "金十数据" },
+  { key: "财联社", label: "财联社" },
+  { key: "新浪财经", label: "新浪财经" },
+  { key: "同花顺", label: "同花顺" },
+  { key: "富途资讯", label: "富途资讯" },
 ];
 
 /**

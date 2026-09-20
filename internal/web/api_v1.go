@@ -569,11 +569,13 @@ func toSnapshot(snap *model.MarketSnapshot) apiMarketSnapshot {
 
 func toFlash(f store.RawDocWithSource) apiFlash {
 	return apiFlash{
-		ID:        f.ID,
-		Time:      f.FlashAt.In(cst).Format("2006-01-02 15:04"),
-		Content:   f.Title,
-		Source:    f.Source,
-		Important: f.EventID != nil, // 已被抽取成事件 → 高亮(近似,源无独立标记)
+		ID:      f.ID,
+		Time:    f.FlashAt.In(cst).Format("2006-01-02 15:04"),
+		Content: f.Title,
+		Source:  f.Source,
+		// 重要度优先取**源自带标记**(important/confirmed,issue #43);
+		// 无标记的源(东财/新浪/同花顺/富途)退化为「已被抽取成事件」这一既有近似。
+		Important: f.Important || f.EventID != nil,
 		EventID:   orStr(f.EventID, ""),
 		URL:       orStr(f.URL, ""),
 	}

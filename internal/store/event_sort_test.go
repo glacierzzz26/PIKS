@@ -39,14 +39,15 @@ func TestEventOrderByUnknownFallsBackToTime(t *testing.T) {
 	}
 }
 
-// TestFlashOrderBy 默认时间倒序;important 以「已被抽取成事件」为代理优先。
+// TestFlashOrderBy 默认时间倒序;important 以源自带重要度优先(issue #43 起源字段,
+// 此前为「已被抽取成事件」代理)。
 func TestFlashOrderBy(t *testing.T) {
 	if got := flashOrderBy(""); !strings.Contains(got, "flash_at DESC") {
 		t.Errorf("快讯默认应时间倒序,得 %q", got)
 	}
 	got := flashOrderBy(FlashSortImportant)
-	if !strings.Contains(got, "(event_id IS NOT NULL) DESC") {
-		t.Errorf("重要优先应以 event_id 非空作代理,得 %q", got)
+	if !strings.Contains(got, "source_important DESC") {
+		t.Errorf("重要优先应以源自带重要度(source_important)作键,得 %q", got)
 	}
 	// 重要优先内部仍按时间倒序,否则每天内顺序随机。
 	if !strings.Contains(got, "flash_at DESC") {

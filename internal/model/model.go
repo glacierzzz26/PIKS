@@ -29,6 +29,7 @@ type RawDocument struct {
 	Status          string          `db:"status"`
 	PipelineVersion *string         `db:"pipeline_version"`
 	Error           *string         `db:"error"`
+	Extra           json.RawMessage `db:"extra"` // 上游原始字段原样留存(issue #43);缺省 {}
 	CreatedAt       time.Time       `db:"created_at"`
 }
 

@@ -5,18 +5,22 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 )
 
 // RawNews 采集适配器的唯一输出(与具体源无关的归一化 DTO)。
+// Extra 为该源上游原始字段的**原样留档**(issue #43):热度/分级/溯源等时序信号
+// 一旦丢弃不可回溯(这些接口只回最近 20–50 条),故采集层负责保存、使用层再决定取用。
 type RawNews struct {
 	ExternalID  string
 	URL         string
 	Title       string
 	Content     string
 	PublishedAt *time.Time
+	Extra       json.RawMessage
 }
 
 type Driver interface {
@@ -30,6 +34,16 @@ func NewDriver(name, input string) (Driver, error) {
 		return &fileDriver{path: input}, nil
 	case "dongcai":
 		return newDongcaiDriver(), nil
+	case "jin10":
+		return newJin10Driver(), nil
+	case "cls":
+		return newCLSDriver(), nil
+	case "sina":
+		return newSinaDriver(), nil
+	case "ths":
+		return newThsDriver(), nil
+	case "futu":
+		return newFutuDriver(), nil
 	default:
 		return nil, fmt.Errorf("unknown driver: %s", name)
 	}

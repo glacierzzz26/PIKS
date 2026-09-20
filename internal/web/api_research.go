@@ -198,6 +198,9 @@ func (s *Server) researchRunTrigger(w http.ResponseWriter, r *http.Request) {
 	created, err := s.store.CreateResearchRun(ctx, &store.ResearchRun{
 		RunID: runID, Code: code, Symbol: research.SubjectFullCode(code),
 		Profile: profile, AsOf: time.Now(), Status: research.StatusPending,
+		// Quick/Days 随行落库(迁移 0015):拆镜像后执行方是独立 worker,它只拿得到
+		// research_runs 这一行 —— 不落库则认领后无从还原运行参数。
+		Quick: req.Quick, Days: req.Days,
 	})
 	if err != nil {
 		cancel()

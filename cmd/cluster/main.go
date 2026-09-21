@@ -17,7 +17,7 @@ import (
 )
 
 func main() {
-	limit := flag.Int("limit", 100, "max unclustered events per run")
+	limit := flag.Int("limit", 0, "max unclustered events per run (<=0 = 不限,默认取全部)")
 	batch := flag.Int("batch", 20, "LLM pairs per prompt")
 	reexamine := flag.Bool("reexamine", true, "run cross-cluster reexamination pass after normal clustering")
 	flag.Parse()
@@ -45,6 +45,15 @@ func main() {
 		finishFail(ctx, s, runID, err)
 	}
 
+	// issue #53:默认不限(取全部未聚类事件)。若调用方显式传了 -limit>0,先探测是否被截断,
+	// 把结果写进 task_runs.meta,不再让「取不下的事件」静默留在池外。
+	truncated := false
+	if *limit > 0 {
+		truncated, err = s.UnclusteredEventsTruncated(ctx, *limit)
+		if err != nil {
+			finishFail(ctx, s, runID, err)
+		}
+	}
 	events, err := s.ListUnclusteredEvents(ctx, *limit)
 	if err != nil {
 		finishFail(ctx, s, runID, err)
@@ -89,6 +98,13 @@ func main() {
 		"merged":         merged,
 		"ai_tokens":      tokens,
 		"budget_checked": cfg.AIDailyTokenBudget > 0,
+		// issue #53:显式记录截断状态,别让「取不下的事件」静默留在池外。
+		"limit":          *limit, // <=0 = 不限
+		"truncated":      truncated,
+	}
+	if truncated {
+		fmt.Fprintf(os.Stderr, "WARN: cluster limit=%d 截断未聚类事件,本次仅处理最旧 %d 条;剩余未处理(见 -limit,0=不限)\n",
+			*limit, len(events))
 	}
 
 	// 重审视 Pass(design cluster-quality):既有 canonical 跨簇互检 + 新事件↔既有簇。

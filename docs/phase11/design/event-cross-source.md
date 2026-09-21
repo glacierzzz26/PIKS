@@ -265,7 +265,7 @@ extraction 审计轨迹。故与 T2 的 `cluster_sources` 同范式:**读路径�
 
 **不做**:不改 `events.status`(8 处正向白名单会静默吞事件:`events.go:41,77,131,151,179,203,240`、`search.go:41`、`event_clusters.go:48`);
 不加迁移;不改 canonical 选取;**不改写 facts/标题**;不实现 issue #45 的三级分级。
-`cmd/cluster` 默认 `-limit 100` 会静默漏聚类(进而把「没跑到」显成「单一来源」)—— **另开 issue #53**,不塞进本 PR。
+`cmd/cluster` 默认 `-limit 100` 会静默漏聚类(进而把「没跑到」显成「单一来源」)—— **另开 issue #53**(2026-09-21 已修:`-limit` 默认改 0=不限,`truncated` 记入 `task_runs.meta`;见 §13)。
 
 ## 11. `scripts/` 编排漂移(实现期发现的根因,随本 PR 修)
 
@@ -302,3 +302,27 @@ extraction 审计轨迹。故与 T2 的 `cluster_sources` 同范式:**读路径�
 - **产品后果**:按 T3 规则,生产 **663/669 = 99.1%** 的事件会被标「单一来源」(生产只 1 个源)。
   标签按设计**正确**,但 99% 命中率等于**噪音而非信号** —— **T3 的 UI 价值取决于 lab 多源采集落地**。
 - 本任务 **dev-only**,未部署 lab。
+
+## 13. `-limit` 静默截断修复(issue #53,2026-09-21)
+
+**根因**:`cmd/cluster` 默认 `-limit 100`,`ListUnclusteredEvents` 按 `created_at ASC` 只取最旧
+100 条;超出部分**不报错、不告警、不进日志**,`task_runs` 记「成功」。生产实测坐实:
+**首 100 条候选 autoGroups=0 / llmPairs=20(几乎全是实体分支噪音),而全量 190 条才出
+autoGroups=6 / llmPairs=199** —— 旧窗口**一条真重复都碰不到**。
+
+**修法**(零 schema):
+- `cmd/cluster -limit` 默认 **0 = 不限**(取全部未聚类事件);`-limit>0` 仍保留给调试。
+- `store.UnclusteredEventsTruncated(limit)`:limit>0 时探测「未聚类事件是否多于 limit」。
+- 命中截断时写 `task_runs.meta` 的 `limit`/`truncated`,并往 stderr 打 **WARN**(不再静默)。
+
+**生产量化**(2026-09-21,`190` 条未聚类事件,真实 LLM 确认 `deepseek/deepseek-v4.1-flash`):
+
+| 口径 | 簇数 | 被合并事件 | 仍单条 |
+|---|---|---|---|
+| 当前生产库(已跑过两次 `-limit 100`) | 6 | 13 | 196 |
+| 去掉 limit(全量 190,确定性 `autoGroups`) | 9 | 9 | 172 |
+| 去掉 limit(全量 190,**确定性 + LLM 确认** `is_same`) | **13** | **14** | 163 |
+
+⇒ 修复后同一批数据多合出 **7 簇 / +14 条事件**(相较旧的 **+9 簇 / +15 条** 全量口径的确定性部分)。
+⚠️ 未修复时被截断的那部分恰是「后 90 条」,其中含金十/富途/新浪对同一事件的多家报道
+(如「卡什卡利」系列 6 对完全同题在库中只剩单条)。

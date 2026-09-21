@@ -197,15 +197,45 @@ func (s *Store) MarkEventPublished(ctx context.Context, id string) error {
 
 // ListUnclusteredEvents 返回未聚类候选(cluster_id IS NULL),供 cluster 命令使用。
 // 含已发布但从未聚类的事件:新事件可能与该已发布事件是同一真实事件,需一并参与去重。
+// limit<=0 = 不限(取全部),供 cmd/cluster 默认用 —— 见 UnclusteredEventsTruncated。
+//
+// ⚠️ issue #53:limit>0 时是**硬截断**(ORDER BY created_at 取最旧 N 条)。调用方必须
+// 用 UnclusteredEventsTruncated 显式检查是否被截断并记录,否则会静默漏聚类。
 func (s *Store) ListUnclusteredEvents(ctx context.Context, limit int) ([]model.Event, error) {
-	rows, err := s.Pool.Query(ctx,
-		`SELECT `+eventCols+` FROM events
+	q := `SELECT ` + eventCols + ` FROM events
 		 WHERE cluster_id IS NULL AND status IN ('extracted','verified','published')
-		 ORDER BY created_at LIMIT $1`, limit)
+		 ORDER BY created_at`
+	var rows pgx.Rows
+	var err error
+	if limit > 0 {
+		rows, err = s.Pool.Query(ctx, q+` LIMIT $1`, limit)
+	} else {
+		rows, err = s.Pool.Query(ctx, q)
+	}
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Event])
+}
+
+// UnclusteredEventsTruncated 报告未聚类事件是否多于 limit(issue #53)。
+// 调用方在 limit>0 时用它把「本次被 limit 截掉了多少」显式记录进 task_runs.meta,
+// 不再让截断静默发生。limit<=0 = 不限,恒 false。
+func (s *Store) UnclusteredEventsTruncated(ctx context.Context, limit int) (bool, error) {
+	if limit <= 0 {
+		return false, nil
+	}
+	var n int
+	err := s.Pool.QueryRow(ctx,
+		`SELECT count(*) FROM (
+		   SELECT 1 FROM events
+		   WHERE cluster_id IS NULL AND status IN ('extracted','verified','published')
+		   LIMIT $1
+		 ) t`, limit+1).Scan(&n)
+	if err != nil {
+		return false, err
+	}
+	return n > limit, nil
 }
 
 // ListEventsByCluster 返回某簇全部成员(按 created_at 升序)。

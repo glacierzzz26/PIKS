@@ -9,11 +9,11 @@
 | [event-cross-source.md](./event-cross-source.md) | ✅ **已实现**(dev-only) | 2026-09-20 | issue **#48**(epic **#43** 任务卡 **T2**)。同一真实事件被多个机构源报道 → 聚到一簇 + **簇内可见各源来源**(机构名 + 原文链接 + 上游一级源)。核心 = **归一化加固**(抽取 `【】` 内嵌标题前缀,把被正文稀释的跨源相似度**还原**),**不改阈值 0.7**(红线「扩候选池不降门槛」;实测降门槛不增加专属召回)。**零 schema**(复用 `events.cluster_id` + `raw_documents.source_id/url/extra`)。阈值校准就地实测:163 条 6 源真实标题,0.7 下重复对 **36 → 65**,新增 29 对逐条核对**均为同一事件**。 |
 | [event-cross-source.md](./event-cross-source.md) §8~§12 | ✅ **已实现**(dev-only) | 2026-09-20 | issue **#49**(任务卡 **T3**,同一文档续写)。**漏报/冲突检测**:① 单源可见 —— 新增 `source_count`(机构级去重计数;`cluster_sources` 是 `omitempty` **反推不出**单源,会与「未聚类」混淆),单源标「**单一来源**」(中性措辞,**不说可疑**,绝不丢弃事件);② 冲突可见 —— 纯规则数值比对(`internal/cluster/conflicts.go`,单位白名单 + 骨架 Jaccard 门控 **0.6**),**留双方原文**、显性展示,**禁止静默择一**。门控按**生产 1410 条真实事实句**标定:随机句对误报 **0.0750% @0.6**,8 组同标题重复 **0 差异**,对抗集 **0/4**。已知召回边界(远改写 J≈0.47~0.50 落在误报带内,规则不可分)如实登记并**钉测**,留给 #45。**零 schema**;顺修 `deploy.sh` 的 `scripts/` 同步(编排漂移根因)。⚠️ 生产无跨机构簇,99.1% 事件会被标单源 —— **UI 价值取决于 lab 多源采集落地**。 |
 
-## P11 公告独立源(巨潮)✅ 已实现(2026-09-21)
+## P11 公告独立源(巨潮)✅ 已实现并合并(2026-09-21)
 
 | 文档 | 状态 | 日期 | 备注 |
 |---|---|---|---|
-| [announcement-source.md](./announcement-source.md) | ✅ **已实现**(dev-only) | 2026-09-21 | issue **#50**(epic **#43** 任务卡 **T4**,填 **G3** 公告缺口)。巨潮资讯网公告接入日管线采集,`source_type='announcement'` / `status='collected'`;**不进 LLM**(官方披露无真假问题);消息页新增「公告」tab(`GET /api/v1/announcements`)。⚠️ **只存标题 + 原文外链,不存正文** —— 东财正文接口实测被 IP 级限流(300 连发 209 失败;连接复用 60/60 RST),巨潮正文只在 PDF 里。⚠️ **含迁移 `0016`**:`raw_documents` 去重键按「源是否带 `external_id`」分派(公告标题会重名,实测 1377 行只有 1375 个不同标题,标题键会**静默丢行**);**该迁移与 `InsertRawDocument` 的 `ON CONFLICT` 必须成对改**,否则快讯采集全线崩。 |
+| [announcement-source.md](./announcement-source.md) | ✅ **已实现并合并**(PR #63;**未上生产**) | 2026-09-21 | issue **#50**(epic **#43** 任务卡 **T4**,填 **G3** 公告缺口)。巨潮资讯网公告接入日管线采集,`source_type='announcement'` / `status='collected'`;**不进 LLM**(官方披露无真假问题);消息页新增「公告」tab(`GET /api/v1/announcements`)。⚠️ **只存标题 + 原文外链,不存正文** —— 东财正文接口实测被 IP 级限流(300 连发 209 失败;连接复用 60/60 RST),巨潮正文只在 PDF 里。⚠️ **含迁移 `0016`**:`raw_documents` 去重键按「源是否带 `external_id`」分派(公告标题会重名,实测 1377 行只有 1375 个不同标题,标题键会**静默丢行**);**该迁移与 `InsertRawDocument` 的 `ON CONFLICT` 必须成对改**,否则快讯采集全线崩。 |
 
 ## 阶段序列(epic #43)
 
@@ -22,7 +22,7 @@
 | **T1** 事件多源采集(≥3 独立机构) | 6 机构源 + `extra` 落库 | ✅ 已完成 | PR #46 / `50ddaf3`(迁移 `0014`) |
 | **T2** 同事件判定(复用 cluster) | 本篇 §1~§7 | ✅ 已实现(dev-only) | issue #48 |
 | **T3** 漏报 / 冲突检测 | 单源标注(机构级)+ 数值冲突双源留原文 | ✅ 已实现(dev-only) | issue #49(本篇 §8~§12) |
-| **T4** 公告第二源(巨潮) | 公告链路补独立机构 | ✅ **已实现**(dev-only) | issue #50([announcement-source.md](./announcement-source.md)) |
+| **T4** 公告独立源(巨潮) | 公告链路补独立机构 | ✅ **已实现并合并**(PR #63;**未上生产**) | issue #50([announcement-source.md](./announcement-source.md)) |
 
 ## 前序阶段
 

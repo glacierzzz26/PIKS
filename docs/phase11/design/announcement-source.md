@@ -1,4 +1,4 @@
-# T4 公告独立源(巨潮资讯网)✅ 已实现(dev-only)
+# T4 公告独立源(巨潮资讯网)✅ 已实现并合并(PR #63)
 
 > 阶段:事件类多源交叉验证(epic issue #43 的任务卡 **T4**,顺带 **G3** 公告缺口)。2026-09-21。
 > 前置:[event-cross-source.md](./event-cross-source.md)(T2/T3)。

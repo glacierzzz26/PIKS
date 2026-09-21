@@ -15,6 +15,19 @@
 |---|---|---|---|
 | [announcement-source.md](./announcement-source.md) | ✅ **已实现并合并**(PR #63;**未上生产**) | 2026-09-21 | issue **#50**(epic **#43** 任务卡 **T4**,填 **G3** 公告缺口)。巨潮资讯网公告接入日管线采集,`source_type='announcement'` / `status='collected'`;**不进 LLM**(官方披露无真假问题);消息页新增「公告」tab(`GET /api/v1/announcements`)。⚠️ **只存标题 + 原文外链,不存正文** —— 东财正文接口实测被 IP 级限流(300 连发 209 失败;连接复用 60/60 RST),巨潮正文只在 PDF 里。⚠️ **含迁移 `0016`**:`raw_documents` 去重键按「源是否带 `external_id`」分派(公告标题会重名,实测 1377 行只有 1375 个不同标题,标题键会**静默丢行**);**该迁移与 `InsertRawDocument` 的 `ON CONFLICT` 必须成对改**,否则快讯采集全线崩。 |
 
+## 数据源分层与采集策略(A/B/C/D)📝 草案,待评审(2026-09-21)
+
+| 文档 | 状态 | 日期 | 备注 |
+|---|---|---|---|
+| [source-tiering.md](./source-tiering.md) | 📝 **草案,未定稿** | 2026-09-21 | 给已有/新增数据源**分层**并定采集策略。**核查出四处事实前提与代码不符**:① 公告现在**零成本**(T4 `status='collected'` 不进 LLM)→「分级降 80% 成本」不成立,分级降级为**只落标签**;② 巨潮 `announcementType` 实测**不可解**(`announcementTypeName` 逐条 null),分级只能靠**标题规则**;③ 互动平台**无免费全市场入口**(`stock_irm_cninfo` 是 per-stock;`newircs/index/latest`、`search/search` 均 404)→ B 层**暂缓**;④ **热榜源与 `morning-brief` 在代码库中均不存在** → D 层是**从零新建**非「降级」。 |
+
+## S1 公告分级(issue #68)✅ 已实现(dev-only)
+
+| 文档 | 状态 | 日期 | 备注 |
+|---|---|---|---|
+| [announcement-grading.md](./announcement-grading.md) | ✅ **已实现**(dev-only) | 2026-09-21 | issue **#68** S1 = [source-tiering.md](./source-tiering.md) §3 落地。公告 ~1200 条/日全平铺「看不过来」→ `internal/announce` **纯规则标题分级**(must/important/routine/noise),**只落标签、不进 LLM**(公告零成本,分级无成本收益,价值纯展示层)。判定次序 **否定式→中介衍生件→必读→重要→噪音→常规→默认常规**(前两步不可省:实测「最近五年未被处罚」含 must 词但语义相反、「重大资产重组…核查意见」是券商衍生件)。校准(2026-09-18 单日 **1196** 条):**必读 14 / 重要 226 / 常规 678 / 噪音 278** → 必读+重要 **20.1%**,可折叠 **79.9%**(跨 5 交易日 79.9~87.5%);Go 规则与 Python 校准**逐条一致**。**含迁移 `0017`**(`grade` 列 + CHECK + 部分索引)。前端默认折叠为必读+重要,`gradeMatch` 把 `NULL` 当「常规」→ **只折叠、不隐藏**(红线)。⚠️ `status='collected'` 逐字不变,公告仍不进 LLM。**未上生产**。 |
+
+
 ## 阶段序列(epic #43)
 
 | 任务卡 | 内容 | 状态 | 落地 |

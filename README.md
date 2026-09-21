@@ -32,7 +32,7 @@ migrate → collector(东财 7x24 快讯) → worker(AI 抽取 events) → clust
 | 层 | 选型 |
 |---|---|
 | 语言 | Go 1.26(静态编译,依赖走 go.mod/go.sum + 模块代理,不入库) |
-| 数据源 | PostgreSQL 16(唯一 Source of Truth;**15 个前向迁移**,0001~0015) |
+| 数据源 | PostgreSQL 16(唯一 Source of Truth;**17 个前向迁移**,0001~0017) |
 | 界面 | **React SPA**(Vite 5 + React 18 + TS,React Router v6;Tailwind 只做布局,视觉走 `globals.css` 语义类;ECharts 按需 + 自绘 SVG 力导图谱;nginx 单入口 :8090 服务静态 + 反代 `/api/*`)。Obsidian/GitHub 已下线,`PIKS-Vault/` 仅存档 |
 | AI | OpenCode Zen,OpenAI 兼容;**base URL 必须带 `/go` 路由**(`https://opencode.ai/zen/go/v1`);配置存 `app_config` 表(/settings 可编辑),模型分层 extract/reasoning/vision |
 | 部署 | Docker Compose(dev 单机 + 生产 lab) |
@@ -43,12 +43,11 @@ migrate → collector(东财 7x24 快讯) → worker(AI 抽取 events) → clust
 cmd/           13 个可执行命令(9 个管线:migrate/collector/worker/cluster/quote-collector/
               entity-build/market-state/daily-review/reconcile + web 常驻 API + research-run
               深研 CLI + research-worker 深研队列 worker + probe 探针(不进任何镜像))
-internal/      12 个业务包(store 34 文件 / web 21 / collector 13 / research 10
-              / ai 4 / publish 3 / cluster 3 / marketstate 2 / entityextract 2
-              / extract 1 / model 1 / config 1)
-frontend/      React SPA(Vite;src 135 文件 / 12.4k 行;27 条路由;产物 dist/)
+internal/      13 个业务包(store / web / collector / research / ai / cluster / publish
+              / announce(公告分级规则)/ entityextract / marketstate / extract / model / config)
+frontend/      React SPA(Vite;src 142 文件;27 条路由;产物 dist/)
 research/      深研 Python agent(独立运行时见下「深研并入」;不写库、不调 LLM,产物落 PG)
-migrations/    SQL 迁移(前向,无 down;0001~0015)
+migrations/    SQL 迁移(前向,无 down;0001~0017)
 prompts/       AI 抽取提示词(extract.md)
 configs/       docker-compose(dev/prod)+ .env 模板 + nginx.conf
 scripts/       dev 侧 setup.sh/deploy.sh/check-research-isolation.sh/check-image-topology.sh/check-event-type-parity.sh;lab 侧 pipeline.sh/backup.sh/health.sh(setup.sh 装 crontab)
@@ -143,6 +142,7 @@ go build -o bin/ ./cmd/...
 | `docs/phase3/` | 生产化(设计定稿 + 实现验收归档) |
 | `docs/phase4/`~`phase9/` | 能力并入(research)/ 前端 IA / 决绝重构 / 买入前速评 / 手机投递 / 研报体裁 |
 | `docs/phase10/` | 容器拆分(单镜像 → 四镜像,issue #47)设计定稿 |
+| `docs/phase11/` | 事件类多源交叉验证(epic #43 T2/T3/T4)+ 数据源分层续篇(issue #68 公告分级)设计 |
 | `PIKS架构设计文档.md` | v1.0 权威架构蓝图(冻结不改正文;顶部含现状偏差注记) |
 
 ## 安全红线

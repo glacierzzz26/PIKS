@@ -15,6 +15,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"piks/internal/announce"
 	"piks/internal/collector"
 	"piks/internal/config"
 	"piks/internal/model"
@@ -151,10 +152,17 @@ func runOne(ctx context.Context, s *store.Store, sp spec, input string) error {
 	// 公告等原始事件源落 'collected':已采集、无需 LLM 抽取(issue #50)。
 	// 快讯源保持空 → InsertRawDocument 默认 'raw'(待抽取)。
 	status := ""
-	if sp.SourceType == "announcement" {
+	isAnnounce := sp.SourceType == "announcement"
+	if isAnnounce {
 		status = "collected"
 	}
 	for _, n := range news {
+		// 公告分级(issue #68 A 层):标题级规则判定,只落标签、不进 LLM(见 announce.Grade)。
+		// 快讯源不参与分级,留空(NULL)。
+		grade := ""
+		if isAnnounce {
+			grade = announce.Grade(n.Title)
+		}
 		ok, err := s.InsertRawDocument(ctx, &model.RawDocument{
 			SourceID:    src.ID,
 			ExternalID:  collector.StrPtr(n.ExternalID),
@@ -164,6 +172,7 @@ func runOne(ctx context.Context, s *store.Store, sp spec, input string) error {
 			ContentHash: collector.ContentHash(n.Content),
 			PublishedAt: n.PublishedAt,
 			Status:      status,
+			Grade:       collector.StrPtr(grade),
 			Extra:       n.Extra,
 		})
 		switch {

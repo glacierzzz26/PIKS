@@ -13,7 +13,7 @@ import (
 )
 
 const rawDocCols = `id,source_id,external_id,url,title,content,content_hash,` +
-	`published_at,retrieved_at,status,pipeline_version,error,extra,created_at`
+	`published_at,retrieved_at,status,grade,pipeline_version,error,extra,created_at`
 
 // InsertRawDocument 幂等插入;命中去重索引时返回 (false, nil)。
 // 注意:ON CONFLICT DO NOTHING 冲突时无错误,须用 RowsAffected()==1 判断是否真插入。
@@ -31,11 +31,11 @@ func (s *Store) InsertRawDocument(ctx context.Context, doc *model.RawDocument) (
 		extra = json.RawMessage(`{}`)
 	}
 	ct, err := s.Pool.Exec(ctx,
-		`INSERT INTO raw_documents(source_id,external_id,url,title,content,content_hash,published_at,status,extra)
-		 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
+		`INSERT INTO raw_documents(source_id,external_id,url,title,content,content_hash,published_at,status,grade,extra)
+		 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
 		 ON CONFLICT DO NOTHING`,
 		doc.SourceID, doc.ExternalID, doc.URL, doc.Title, doc.Content,
-		doc.ContentHash, doc.PublishedAt, defaultStr(doc.Status, "raw"), extra)
+		doc.ContentHash, doc.PublishedAt, defaultStr(doc.Status, "raw"), doc.Grade, extra)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -161,10 +161,12 @@ type RawDocAnnouncement struct {
 	SecCode     *string   `db:"sec_code"`
 	SecName     *string   `db:"sec_name"`
 	PageColumn  *string   `db:"page_column"`
+	Grade       *string   `db:"grade"` // 分级(issue #68);历史行为 NULL
 }
 
 // ListAnnouncementsWithSource 公告流(仅 source_type='announcement'),时间倒序。
 // 时间口径与快讯一致:published_at 缺失回退 retrieved_at/created_at。
+// grade(issue #68 A 层)随投影下发,供前端按级折叠;NULL=未分级(本迁移前的历史行)。
 func (s *Store) ListAnnouncementsWithSource(ctx context.Context) ([]RawDocAnnouncement, error) {
 	rows, err := s.Pool.Query(ctx, `
 		SELECT rd.id,
@@ -174,7 +176,8 @@ func (s *Store) ListAnnouncementsWithSource(ctx context.Context) ([]RawDocAnnoun
 			rd.url,
 			rd.extra->>'sec_code'    AS sec_code,
 			rd.extra->>'sec_name'    AS sec_name,
-			rd.extra->>'page_column' AS page_column
+			rd.extra->>'page_column' AS page_column,
+			rd.grade
 		FROM raw_documents rd
 		JOIN sources s ON s.id=rd.source_id
 		WHERE s.source_type='announcement'

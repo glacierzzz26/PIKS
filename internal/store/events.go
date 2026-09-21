@@ -16,14 +16,8 @@ const eventCols = `id,raw_document_id,title,event_type,summary,facts,affected,oc
 	`confidence,status,pipeline_version,source_id,cluster_id,published_at,created_at,updated_at,valid_from,valid_to`
 
 func (s *Store) CreateEvent(ctx context.Context, ev *model.Event) (string, error) {
-	facts := ev.Facts
-	if len(facts) == 0 {
-		facts = json.RawMessage(`[]`)
-	}
-	affected := ev.Affected
-	if len(affected) == 0 {
-		affected = json.RawMessage(`[]`)
-	}
+	facts := emptyToArrayIfScalar(ev.Facts)
+	affected := emptyToArrayIfScalar(ev.Affected)
 	var id string
 	err := s.Pool.QueryRow(ctx,
 		`INSERT INTO events(raw_document_id,title,event_type,summary,facts,affected,occurred_at,confidence,status,pipeline_version,source_id)
@@ -32,6 +26,26 @@ func (s *Store) CreateEvent(ctx context.Context, ev *model.Event) (string, error
 		ev.OccurredAt, ev.Confidence, defaultStr(ev.Status, "extracted"), ev.PipelineVersion, ev.SourceID).
 		Scan(&id)
 	return id, err
+}
+
+// emptyToArrayIfScalar 把「非 JSON 数组」的值归一为 `[]`。
+//
+// ⚠️ 不能只判 `len(b) == 0`:`json.Marshal(nil)` 产出字面量 `null`(长度 4),
+// 只看长度会放行 —— 这正是 issue #71 生产事故(entity-build 每轮报
+// SQLSTATE 22023)的成因。改为按 **JSON 语义值**判定:空 / `null` → `[]`。
+// 非数组的其它值(理论上不该出现)一并归一,方向安全:宁可存空数组,不可存标量。
+func emptyToArrayIfScalar(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return json.RawMessage(`[]`)
+	}
+	var probe any
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return json.RawMessage(`[]`)
+	}
+	if _, ok := probe.([]any); !ok {
+		return json.RawMessage(`[]`)
+	}
+	return raw
 }
 
 // ListEventsForPublish 返回已抽取/已验证、尚未发布的事件。

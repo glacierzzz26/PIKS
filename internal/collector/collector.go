@@ -44,6 +44,8 @@ func NewDriver(name, input string) (Driver, error) {
 		return newThsDriver(), nil
 	case "futu":
 		return newFutuDriver(), nil
+	case "cninfo-announce":
+		return newCninfoAnnounceDriver(), nil
 	default:
 		return nil, fmt.Errorf("unknown driver: %s", name)
 	}

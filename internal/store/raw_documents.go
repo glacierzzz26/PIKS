@@ -15,9 +15,16 @@ import (
 const rawDocCols = `id,source_id,external_id,url,title,content,content_hash,` +
 	`published_at,retrieved_at,status,pipeline_version,error,extra,created_at`
 
-// InsertRawDocument 幂等插入;命中 (source_id, content_hash) 唯一约束时返回 (false, nil)。
+// InsertRawDocument 幂等插入;命中去重索引时返回 (false, nil)。
 // 注意:ON CONFLICT DO NOTHING 冲突时无错误,须用 RowsAffected()==1 判断是否真插入。
 // extra 为该源上游原始字段原样留存(issue #43);传 nil 落 '{}'。
+//
+// 去重键按源的能力分派(迁移 0016,issue #50):不带 external_id 的源按
+// (source_id, content_hash) 去重;带 external_id 的源按
+// (source_id, external_id, content_hash) 去重。两条皆为 **partial unique index**,
+// 故这里**不能**写带键名的 ON CONFLICT(…)(partial index 无法作为推断目标,
+// 且两侧键不同无法用同一条表达式覆盖)。用无目标的 ON CONFLICT DO NOTHING:
+// 任一唯一索引冲突即跳过 —— 语义明确,且新增去重维度时无需再改此处。
 func (s *Store) InsertRawDocument(ctx context.Context, doc *model.RawDocument) (bool, error) {
 	extra := doc.Extra
 	if len(extra) == 0 {
@@ -26,7 +33,7 @@ func (s *Store) InsertRawDocument(ctx context.Context, doc *model.RawDocument) (
 	ct, err := s.Pool.Exec(ctx,
 		`INSERT INTO raw_documents(source_id,external_id,url,title,content,content_hash,published_at,status,extra)
 		 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
-		 ON CONFLICT (source_id, content_hash) DO NOTHING`,
+		 ON CONFLICT DO NOTHING`,
 		doc.SourceID, doc.ExternalID, doc.URL, doc.Title, doc.Content,
 		doc.ContentHash, doc.PublishedAt, defaultStr(doc.Status, "raw"), extra)
 	if err != nil {
@@ -113,6 +120,10 @@ type RawDocWithSource struct {
 // 一文档多事件时取最早事件;published_at 缺失时回退 retrieved_at/created_at。
 // title 可空:多源后部分源(金十)无独立标题字段,标题由正文前段派生,派生失败即 NULL
 // → COALESCE 到正文,保证快讯行始终可读(issue #43)。
+//
+// ⚠️ **排除 source_type='announcement'**(issue #50):公告是官方披露、非「快讯」语义,
+// 且有独立的 /api/v1/announcements 投影。不加此过滤,公告会混进快讯 tab
+// (编译期无强制,只有这条 SQL 把关)。
 func (s *Store) ListRawDocumentsWithSource(ctx context.Context, sort string) ([]RawDocWithSource, error) {
 	rows, err := s.Pool.Query(ctx, `
 		SELECT id, flash_at, title, source, event_id, url, source_important FROM (
@@ -128,6 +139,7 @@ func (s *Store) ListRawDocumentsWithSource(ctx context.Context, sort string) ([]
 			FROM raw_documents rd
 			JOIN sources s ON s.id=rd.source_id
 			LEFT JOIN events ev ON ev.raw_document_id=rd.id
+			WHERE s.source_type <> 'announcement'
 			ORDER BY rd.id, ev.created_at
 		) t `+flashOrderBy(sort))
 	if err != nil {
@@ -135,4 +147,41 @@ func (s *Store) ListRawDocumentsWithSource(ctx context.Context, sort string) ([]
 	}
 	defer rows.Close()
 	return pgx.CollectRows(rows, pgx.RowToStructByName[RawDocWithSource])
+}
+
+// RawDocAnnouncement 公告只读投影(api_v1):raw_documents 里的原始事件源,
+// 按 sources.source_type='announcement' 过滤(issue #50)。
+// SecCode/SecName/PageColumn 取自采集时留存的 extra(巨潮列);缺失时为空,不造值。
+type RawDocAnnouncement struct {
+	ID          string    `db:"id"`
+	AnnouncedAt time.Time `db:"announced_at"`
+	Title       string    `db:"title"`
+	Source      string    `db:"source"`
+	URL         *string   `db:"url"`
+	SecCode     *string   `db:"sec_code"`
+	SecName     *string   `db:"sec_name"`
+	PageColumn  *string   `db:"page_column"`
+}
+
+// ListAnnouncementsWithSource 公告流(仅 source_type='announcement'),时间倒序。
+// 时间口径与快讯一致:published_at 缺失回退 retrieved_at/created_at。
+func (s *Store) ListAnnouncementsWithSource(ctx context.Context) ([]RawDocAnnouncement, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT rd.id,
+			COALESCE(rd.published_at, rd.retrieved_at, rd.created_at) AS announced_at,
+			COALESCE(rd.title, rd.content) AS title,
+			s.name AS source,
+			rd.url,
+			rd.extra->>'sec_code'    AS sec_code,
+			rd.extra->>'sec_name'    AS sec_name,
+			rd.extra->>'page_column' AS page_column
+		FROM raw_documents rd
+		JOIN sources s ON s.id=rd.source_id
+		WHERE s.source_type='announcement'
+		ORDER BY announced_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[RawDocAnnouncement])
 }

@@ -20,6 +20,7 @@ export const ENDPOINTS = {
   relationships: "/relationships", // GET
   marketSnapshot: "/market/snapshot", // GET ?date=YYYY-MM-DD
   flashes: "/flashes", // GET ?q=&source=
+  announcements: "/announcements", // GET ?q=&source= 公告（原始事件源，issue #50）
   notes: "/notes", // GET
   note: "/notes/:id", // GET/PUT/DELETE
   dashboard: "/dashboard", // GET

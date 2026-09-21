@@ -16,6 +16,7 @@ export const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api/v1";
 /** API 端点约定（供后端 cmd/web 增加只读投影接口时对齐） */
 export const ENDPOINTS = {
   events: "/events", // GET ?type=&status=&q=&from=&to=
+  eventTypes: "/event-types", // GET 事件类型枚举 key+label（真源=后端，issue #61）
   entities: "/entities", // GET ?type=&q=&status=
   relationships: "/relationships", // GET
   marketSnapshot: "/market/snapshot", // GET ?date=YYYY-MM-DD

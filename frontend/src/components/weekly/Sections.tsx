@@ -2,6 +2,7 @@
 
 import { Link } from "react-router-dom";
 import { Chip } from "@/components/ui/Num";
+import { useEventTypes } from "@/lib/eventTypes";
 import type {
   WeeklySnap,
   WeeklyEvent,
@@ -55,13 +56,16 @@ export function SnapSection({ snaps }: { snaps: WeeklySnap[] }) {
 
 /** 本周事件列表 */
 export function EventSection({ events }: { events: WeeklyEvent[] }) {
+  // 类型 label 取后端枚举（issue #61）——此处此前裸渲染 `e.event_type`，
+  // 绕过所有映射层，直接把英文 key 显示给用户。
+  const { labelOf } = useEventTypes();
   return (
     <ul className="flex flex-col divide-y divide-line">
       {events.map((e) => (
         <li key={e.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
           <span className="num w-10 shrink-0 text-xs text-faint">{e.date}</span>
           <span className="flex-1 truncate">{e.title}</span>
-          <Chip tone="dim">{e.event_type}</Chip>
+          <Chip tone="dim">{labelOf(e.event_type) ?? e.event_type}</Chip>
         </li>
       ))}
     </ul>

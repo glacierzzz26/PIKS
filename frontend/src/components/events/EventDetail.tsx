@@ -3,7 +3,7 @@
 import { Link } from "react-router-dom";
 import { X } from "lucide-react";
 import type { EventItem } from "@/lib/types";
-import { EVENT_TYPE_LABEL } from "@/lib/format";
+import { useEventTypes } from "@/lib/eventTypes";
 import { SINGLE_SOURCE_LABEL } from "@/lib/constants";
 import { Chip, ConfidenceBar } from "@/components/ui/Num";
 import EventConflicts from "@/components/events/EventConflicts";
@@ -38,11 +38,12 @@ export default function EventDetail({
 }
 
 function EventBody({ event }: { event: EventItem }) {
+  const { labelOf } = useEventTypes();
   return (
     <div className="flex-1 overflow-auto p-5">
       <div className="flex flex-wrap items-center gap-2">
         <Chip tone="accent">
-          {EVENT_TYPE_LABEL[event.event_type] ?? event.event_type}
+          {labelOf(event.event_type) ?? event.event_type}
         </Chip>
         <Chip tone={event.status === "confirmed" ? "down" : "amber"}>
           {event.status === "confirmed" ? "已确认" : "待复核"}

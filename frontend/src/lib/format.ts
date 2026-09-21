@@ -60,16 +60,8 @@ export const ENTITY_TYPE_LABEL: Record<string, string> = {
   region: "地区",
 };
 
-export const EVENT_TYPE_LABEL: Record<string, string> = {
-  policy: "政策",
-  earnings: "财报业绩",
-  product_launch: "产品发布",
-  supply_agreement: "供需协议",
-  industry_event: "行业动态",
-  investment: "投资动向",
-  sales_data: "销售数据",
-  rumor: "传闻待证",
-};
+// ⚠️ `EVENT_TYPE_LABEL` 已删除（issue #61）：类型 label 的唯一真源在后端，
+// 经 `lib/eventTypes.tsx` 的 `useEventTypes().labelOf` 取。此处不得再放本地映射。
 
 export const DOC_TYPE_LABEL: Record<string, string> = {
   "daily-review": "每日复盘",

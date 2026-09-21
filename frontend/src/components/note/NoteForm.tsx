@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useData } from "@/hooks/useData";
 import { ENDPOINTS } from "@/lib/api";
-import { EVENT_TYPE_LABEL } from "@/lib/format";
+import { useEventTypes } from "@/lib/eventTypes";
 import type { EventItem, Entity, NoteInput, NoteDetail } from "@/lib/types";
 import RefPicker from "./RefPicker";
 
@@ -51,6 +51,7 @@ export default function NoteForm({
 
   const events = useData<EventItem[]>({ path: ENDPOINTS.events });
   const entities = useData<Entity[]>({ path: ENDPOINTS.entities });
+  const { labelOf } = useEventTypes();
 
   const statusOptions = type === "belief" ? BELIEF_STATUS : NOTE_STATUS;
   const effStatus = statusOptions.includes(status) ? status : statusOptions[0];
@@ -59,9 +60,9 @@ export default function NoteForm({
     () =>
       (events.data ?? []).map((e) => ({
         id: e.id,
-        label: `${e.title}（${EVENT_TYPE_LABEL[e.event_type] ?? e.event_type}）`,
+        label: `${e.title}（${labelOf(e.event_type) ?? e.event_type}）`,
       })),
-    [events.data]
+    [events.data, labelOf]
   );
   const entOpts = useMemo(
     () => (entities.data ?? []).map((e) => ({ id: e.id, label: e.name })),

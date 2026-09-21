@@ -1,5 +1,6 @@
 import { Navigate, Outlet, Route, Routes, useParams } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
+import { EventTypesProvider } from "@/lib/eventTypes";
 import Watchlist from "@/pages/home";
 import Dashboard from "@/pages/dashboard";
 import Events from "@/pages/events";
@@ -48,42 +49,44 @@ function ShellLayout() {
  */
 export default function App() {
   return (
-    <Routes>
-      <Route element={<ShellLayout />}>
-        <Route path="/" element={<Watchlist />} />
-        <Route path="/market" element={<Dashboard />} />
-        <Route path="/events" element={<Events />} />
-        <Route path="/events/:id" element={<EventByID />} />
-        <Route path="/entities" element={<Entities />} />
-        <Route path="/entities/:id" element={<EntityRedirect />} />
-        <Route path="/graph" element={<Graph />} />
-        <Route path="/ladder" element={<Ladder />} />
-        {/* /flashes 旧深链：落到消息页快讯 tab（P6-2 合并，保留路由不断链） */}
-        <Route path="/flashes" element={<Messages />} />
-        <Route path="/help" element={<Help />} />
-        <Route path="/recon" element={<Recon />} />
-        <Route path="/reviews" element={<Reviews />} />
-        <Route path="/notes" element={<Notes />} />
-        <Route path="/notes/new" element={<NoteNew />} />
-        <Route path="/notes/:id/edit" element={<NoteEdit />} />
-        <Route path="/notes/:id" element={<NoteDetail />} />
-        <Route path="/weekly" element={<Weekly />} />
-        <Route path="/trades" element={<Trades />} />
-        <Route path="/research" element={<Analyst />} />
-        <Route path="/research/:runId" element={<Research />} />
-        {/* 研报体裁（P9-2 §6）：独立入口，与个股分析并存不互替（D-R1） */}
-        <Route path="/reports" element={<Reports />} />
-        <Route path="/reports/:runId" element={<ReportDetail />} />
-        <Route path="/stock/:code" element={<Stock />} />
-        <Route path="/chat" element={<Chat />} />
-        <Route path="/settings" element={<Settings />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Route>
+    <EventTypesProvider>
+      <Routes>
+        <Route element={<ShellLayout />}>
+          <Route path="/" element={<Watchlist />} />
+          <Route path="/market" element={<Dashboard />} />
+          <Route path="/events" element={<Events />} />
+          <Route path="/events/:id" element={<EventByID />} />
+          <Route path="/entities" element={<Entities />} />
+          <Route path="/entities/:id" element={<EntityRedirect />} />
+          <Route path="/graph" element={<Graph />} />
+          <Route path="/ladder" element={<Ladder />} />
+          {/* /flashes 旧深链：落到消息页快讯 tab（P6-2 合并，保留路由不断链） */}
+          <Route path="/flashes" element={<Messages />} />
+          <Route path="/help" element={<Help />} />
+          <Route path="/recon" element={<Recon />} />
+          <Route path="/reviews" element={<Reviews />} />
+          <Route path="/notes" element={<Notes />} />
+          <Route path="/notes/new" element={<NoteNew />} />
+          <Route path="/notes/:id/edit" element={<NoteEdit />} />
+          <Route path="/notes/:id" element={<NoteDetail />} />
+          <Route path="/weekly" element={<Weekly />} />
+          <Route path="/trades" element={<Trades />} />
+          <Route path="/research" element={<Analyst />} />
+          <Route path="/research/:runId" element={<Research />} />
+          {/* 研报体裁（P9-2 §6）：独立入口，与个股分析并存不互替（D-R1） */}
+          <Route path="/reports" element={<Reports />} />
+          <Route path="/reports/:runId" element={<ReportDetail />} />
+          <Route path="/stock/:code" element={<Stock />} />
+          <Route path="/chat" element={<Chat />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
 
-      {/* 手机投递页：无侧栏，独立布局 */}
-      <Route path="/m" element={<Navigate to="/m/upload" replace />} />
-      <Route path="/m/upload" element={<MobileUpload />} />
-    </Routes>
+        {/* 手机投递页：无侧栏，独立布局 */}
+        <Route path="/m" element={<Navigate to="/m/upload" replace />} />
+        <Route path="/m/upload" element={<MobileUpload />} />
+      </Routes>
+    </EventTypesProvider>
   );
 }
 

@@ -465,6 +465,12 @@ func toEventItem(ev store.EventForAPI, idx map[string]nameRef, clusters map[stri
 	}
 	var facts []string
 	_ = json.Unmarshal(ev.Facts, &facts)
+	if facts == nil {
+		// 空 facts 必须编码成 `[]` 而非 `null`(issue #59 同类):前端 EventDetail
+		// 直接 `event.facts.map()`。unmarshal `null`/缺字段都会留 nil,
+		// 而 `[]` 反序列化出来本就是空 slice —— 故按 nil 判定即可。
+		facts = []string{}
+	}
 	var words []string
 	_ = json.Unmarshal(ev.Affected, &words)
 	affected := make([]apiAffected, 0, len(words))
@@ -582,6 +588,11 @@ func eventStatusOK(backend, filter string) bool {
 func toEntity(e model.Entity) apiEntity {
 	var aliases []string
 	_ = json.Unmarshal(e.Aliases, &aliases)
+	if aliases == nil {
+		// 同 issue #59:空别名须为 `[]`。前端多处直接用(`CommandPalette` 的
+		// `e.aliases.some(...)`、`entities.tsx` 的 `e.aliases.join(...)`)。
+		aliases = []string{}
+	}
 	st := e.Status
 	if st == "" {
 		st = "active"
@@ -679,6 +690,21 @@ func toSnapshot(snap *model.MarketSnapshot) apiMarketSnapshot {
 	})
 
 	return out
+}
+
+// emptyMarketSnapshot 无市场快照时的空态市场块(issue #59)。
+//
+// 存在的唯一理由:apiMarketSnapshot 的 slice 字段留零值会被序列化成 `null`,
+// 而前端按「非可选数组」声明并直接 `.map()`(首页 `/`、`/market`、`/ladder` 均如此)
+// → 空库整页白屏。此函数保证字段齐全且数组为 `[]`。
+//
+// 与 toSnapshot 的空态保持同一形状;标量零值(`""`/`0`)即正确空态,不另外造词。
+func emptyMarketSnapshot() apiMarketSnapshot {
+	return apiMarketSnapshot{
+		Indices:      []apiIndex{},
+		Ladder:       []apiLimitUpStock{},
+		IndustryDist: []apiIndustryDist{},
+	}
 }
 
 func toFlash(f store.RawDocWithSource) apiFlash {
@@ -834,6 +860,10 @@ func (s *Server) handleAPIDashboard(w http.ResponseWriter, r *http.Request) {
 		heldN = len(ps)
 	}
 
+	// ⚠️ 所有数组字段**必须初始化为空 slice,不能留零值 nil**(issue #59):
+	// 零值 slice 经 encoding/json 会序列化成 `null`,而前端类型声明是非可选数组
+	// (`types.ts` 的 `indices: {...}[]`) 并直接 `.map()` → 空库时整页白屏。
+	// 空态必须编码成 `[]` —— 与 CLAUDE.md 强制规则 9(loading/error/**empty** 三态)同源。
 	out := apiDashboard{
 		Stats: []apiStatCard{
 			{Label: "我的自选", Value: watchN},
@@ -841,6 +871,12 @@ func (s *Server) handleAPIDashboard(w http.ResponseWriter, r *http.Request) {
 			{Label: "我的笔记", Value: notes},
 			{Label: "交易记录", Value: trades},
 		},
+		// 无快照日时 Market 字段仍须齐全:前端无条件读 market.trade_date / emotion_score
+		// 等标量,零值结构体正好给出""与 0;数组则由 toSnapshot 显式给空 slice。
+		Market:      emptyMarketSnapshot(),
+		SnapHistory: []apiSnapRow{},
+		TopEvents:   []apiTopEvent{},
+		TaskRuns:    []apiTaskRun{},
 	}
 	if len(snaps) > 0 {
 		out.Market = toSnapshot(&snaps[0])

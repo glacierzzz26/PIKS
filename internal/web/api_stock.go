@@ -79,6 +79,8 @@ func (s *Server) handleAPIStock(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 
+	// 全部数组字段显式初始化(issue #59 同类):零值 slice 会编码成 `null`,
+	// 而前端 `types.ts` 的 StockHub 按非可选数组声明。仅依赖 Go 零值就是 `null` 炸弹。
 	out := apiStockHub{
 		Code:      code,
 		Symbol:    stockSymbol(code),

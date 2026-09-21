@@ -149,6 +149,20 @@ type apiFlash struct {
 	URL string `json:"url,omitempty"`
 }
 
+// apiAnnouncement 公告行(GET /api/v1/announcements,issue #50)。
+// 原始事件源:官方披露,不进 LLM 抽取,故无 event_id/confidence。
+// URL 指向原始 PDF(巨潮);为空时前端退化为纯文本,不渲染死链。
+type apiAnnouncement struct {
+	ID         string `json:"id"`
+	Time       string `json:"time"`
+	Title      string `json:"title"`
+	Source     string `json:"source"`
+	SecCode    string `json:"sec_code,omitempty"`
+	SecName    string `json:"sec_name,omitempty"`
+	PageColumn string `json:"page_column,omitempty"`
+	URL        string `json:"url,omitempty"`
+}
+
 type apiDoc struct {
 	ID        string `json:"id"`
 	Type      string `json:"type"`
@@ -340,6 +354,42 @@ func (s *Server) handleAPIFlashes(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		out = append(out, toFlash(f))
+	}
+	s.writeJSON(w, out)
+}
+
+// GET /api/v1/announcements?q&source —— 公告流(原始事件源,issue #50)。
+// 只读投影:raw_documents 中 source_type='announcement' 的行,按时间倒序。
+// 与「快讯」是**两条独立投影**(快讯查询已显式排除 announcement,互不混入);
+// 公告官方披露、不进 LLM,故无 event_id/置信度字段。
+// 分页沿用本项目既有约定(前端 usePagedQuery 客户端切片),故此处全量下发。
+func (s *Server) handleAPIAnnouncements(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.store.ListAnnouncementsWithSource(r.Context())
+	if err != nil {
+		s.apiErr(w, "announcements", err)
+		return
+	}
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	src := r.URL.Query().Get("source")
+
+	out := make([]apiAnnouncement, 0, len(rows))
+	for _, a := range rows {
+		if src != "" && a.Source != src {
+			continue
+		}
+		if q != "" && !strSub(q, a.Title) {
+			continue
+		}
+		out = append(out, apiAnnouncement{
+			ID:         a.ID,
+			Time:       a.AnnouncedAt.In(cst).Format("2006-01-02 15:04:05"),
+			Title:      a.Title,
+			Source:     a.Source,
+			SecCode:    orStr(a.SecCode, ""),
+			SecName:    orStr(a.SecName, ""),
+			PageColumn: orStr(a.PageColumn, ""),
+			URL:        orStr(a.URL, ""),
+		})
 	}
 	s.writeJSON(w, out)
 }

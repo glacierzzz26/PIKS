@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -38,6 +39,19 @@ func newHTTPSource(timeout, minGap time.Duration, attempts int) *httpSource {
 // 4xx 视为确定性失败,立即返回(退避没用)。
 // extraHeaders 为可选的逐源请求头(如财联社的 Referer)。
 func (h *httpSource) getJSON(ctx context.Context, url string, extraHeaders map[string]string) ([]byte, error) {
+	return h.doJSON(ctx, http.MethodGet, url, "", extraHeaders)
+}
+
+// postFormJSON 以 application/x-www-form-urlencoded 发 POST 取 JSON。
+// 部分上游(如巨潮 cninfo)的查询接口**只认 POST**(实测同参数 GET 直接 500 HTML),
+// 故需 POST 支持。params 须为**已 URL 编码**的查询串(如 "a=1&b=2");
+// 巨潮 seDate 参数含 空格~空格,须由调用方用 url.Values.Encode() 编码。
+func (h *httpSource) postFormJSON(ctx context.Context, url, params string, extraHeaders map[string]string) ([]byte, error) {
+	return h.doJSON(ctx, http.MethodPost, url, params, extraHeaders)
+}
+
+// doJSON 统一的重试 + 限频 + 请求实现(GET/POST 共用,避免两份退避逻辑漂移)。
+func (h *httpSource) doJSON(ctx context.Context, method, url, formBody string, extraHeaders map[string]string) ([]byte, error) {
 	var lastErr error
 	for attempt := 0; attempt < h.attempts; attempt++ {
 		if attempt > 0 {
@@ -50,7 +64,7 @@ func (h *httpSource) getJSON(ctx context.Context, url string, extraHeaders map[s
 			}
 		}
 		h.throttle(ctx)
-		body, retryable, err := h.once(ctx, url, extraHeaders)
+		body, retryable, err := h.once(ctx, method, url, formBody, extraHeaders)
 		if err == nil {
 			return body, nil
 		}
@@ -63,12 +77,20 @@ func (h *httpSource) getJSON(ctx context.Context, url string, extraHeaders map[s
 }
 
 // once 单次请求。retryable=false 表示确定性失败(4xx / 非网络错误),不必退避重试。
-func (h *httpSource) once(ctx context.Context, url string, extraHeaders map[string]string) (body []byte, retryable bool, err error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+// formBody 非空时以表单 POST 发送并带 Content-Type;空则以 GET 发送。
+func (h *httpSource) once(ctx context.Context, method, url, formBody string, extraHeaders map[string]string) (body []byte, retryable bool, err error) {
+	var rdr io.Reader
+	if method == http.MethodPost {
+		rdr = strings.NewReader(formBody)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, url, rdr)
 	if err != nil {
 		return nil, false, err
 	}
 	req.Header.Set("User-Agent", browserUA)
+	if method == http.MethodPost {
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+	}
 	for k, v := range extraHeaders {
 		req.Header.Set(k, v)
 	}

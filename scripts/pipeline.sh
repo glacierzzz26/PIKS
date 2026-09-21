@@ -36,12 +36,16 @@ run() {
 # (原 publisher 命令已删除;渲染逻辑 trace 在 internal/publish,由 daily-review/reconcile/web 复用。)
 # 事件类多源(issue #43 T1):`collector -driver all` 依次跑 6 个独立机构源
 # (东财/金十/财联社/新浪/同花顺/富途),每源落各自机构名 sources 行;单源失败不阻断其余源。
+# 公告(issue #50 T4):`collector -driver cninfo-announce` 单独跑巨潮全市场个股公告
+# (~1200 条/日),落 source_type='announcement' / status='collected' ——
+# **不进 LLM 抽取**(worker 只取 status='raw'),也不报对账异常。放在 worker 之前无妨:
+# 公告永不入 raw 队列,顺序不敏感;显式列在与快讯相邻处便于阅读。
 # file 驱动仅迭代0 保底,生产不用。
 # ⚠️ 多源后单日入库量升至 ~180 条(原东财单源 ~50),worker 默认 -limit 50 会恒追不上、
 # 积压 raw 永不清零 → 显式抬高到 -limit 300(覆盖一日量;token 护栏仍是 ai_daily_token_budget)。
 # 日期敏感命令显式 -date $TODAY:quote-collector / market-state / daily-review / reconcile。
 ok=1
-for c in migrate "collector -driver all" "worker -limit 300" cluster "quote-collector -date $TODAY" entity-build "market-state -date $TODAY" "daily-review -date $TODAY" "reconcile -date $TODAY"; do
+for c in migrate "collector -driver all" "collector -driver cninfo-announce" "worker -limit 300" cluster "quote-collector -date $TODAY" entity-build "market-state -date $TODAY" "daily-review -date $TODAY" "reconcile -date $TODAY"; do
   # shellcheck disable=SC2086   # $c 含参数时按空格拆分为独立参数
   if run $c; then echo "== ok $c" >> "$L"; else echo "== FAIL $c" >> "$L"; ok=0; fi
 done

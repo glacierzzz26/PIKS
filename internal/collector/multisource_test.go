@@ -299,3 +299,99 @@ func TestToRaw(t *testing.T) {
 		t.Errorf("不可序列化值应退化为 {}, got %s", toRaw(func() {}))
 	}
 }
+
+// 巨潮公告(issue #50 T4):字段取自 2026-09-17 实测响应。
+// 重点:①ExternalID=announcementId 进去重键;②URL 指向**原始 PDF**(巨潮相对东财的实质优势);
+// ③Content=标题占位,**绝不存正文**(正文只在 PDF 里,announcementContent 恒空);
+// ④announcementType 是不可解数字码,原样留档但**不猜测**含义。
+func TestNormalizeCninfoAnnounce(t *testing.T) {
+	items := []cninfoAnnounce{
+		{
+			AnnouncementID:    "1225570820",
+			SecCode:           "301505",
+			SecName:           "苏州规划",
+			AnnouncementTitle: "关于公司对外投资认购基金份额的公告",
+			AnnouncementTime:  1789646720000, // 毫秒
+			AdjunctURL:        "finalpage/2026-09-17/1225570820.PDF",
+			AdjunctSize:       201,
+			AdjunctType:       "PDF",
+			PageColumn:        "SZCY",
+			AnnouncementType:  "01010503||010112||010115||011705",
+			ColumnID:          "09020202||160203||250301||251302",
+		},
+		{
+			// 缺 announcementId → 跳过(无法构成可去重的公告)。
+			AnnouncementID: "", AnnouncementTitle: "无编号公告",
+		},
+		{
+			// 缺标题 → 跳过。
+			AnnouncementID: "X", AnnouncementTitle: "   ",
+		},
+	}
+	got := normalizeCninfoAnnounce(items)
+	if len(got) != 1 {
+		t.Fatalf("len=%d want 1(缺 announcementId/标题应跳过)", len(got))
+	}
+	a := got[0]
+	if a.ExternalID != "1225570820" {
+		t.Errorf("ExternalID 应为 announcementId(去重键), got %q", a.ExternalID)
+	}
+	if a.URL != "http://static.cninfo.com.cn/finalpage/2026-09-17/1225570820.PDF" {
+		t.Errorf("URL 应为原始 PDF 绝对地址, got %q", a.URL)
+	}
+	// 上游 title 不含简称前缀 → 补「代码 简称:」。
+	if a.Title != "301505 苏州规划:关于公司对外投资认购基金份额的公告" {
+		t.Errorf("Title=%q", a.Title)
+	}
+	// 正文只在 PDF 里:只存标题占位。
+	if a.Content != "关于公司对外投资认购基金份额的公告" {
+		t.Errorf("Content 应为标题占位, got %q", a.Content)
+	}
+	if a.PublishedAt == nil || a.PublishedAt.UnixMilli() != 1789646720000 {
+		t.Errorf("PublishedAt=%v want unix-ms 1789646720000", a.PublishedAt)
+	}
+	ex := decodeExtra(t, a.Extra)
+	if ex["sec_code"] != "301505" {
+		t.Errorf("extra.sec_code=%v want 301505", ex["sec_code"])
+	}
+	if ex["adjunct_type"] != "PDF" {
+		t.Errorf("extra.adjunct_type=%v want PDF", ex["adjunct_type"])
+	}
+	// 数字码原样留存,不解读。
+	if ex["announcement_type"] != "01010503||010112||010115||011705" {
+		t.Errorf("extra.announcement_type 应原样留存数字码, got %v", ex["announcement_type"])
+	}
+}
+
+// 缺 secCode/secName 时标题如实退化,不补造;无 adjunctUrl 时 URL 为空(前端退化纯文本)。
+func TestCninfoDegenerateFields(t *testing.T) {
+	got := normalizeCninfoAnnounce([]cninfoAnnounce{
+		{AnnouncementID: "A1", AnnouncementTitle: "某某公告", AnnouncementTime: 1789646720000},
+	})
+	if len(got) != 1 {
+		t.Fatalf("len=%d want 1", len(got))
+	}
+	if got[0].Title != "某某公告" {
+		t.Errorf("无代码无简称时标题应原样, got %q", got[0].Title)
+	}
+	if got[0].URL != "" {
+		t.Errorf("无 adjunctUrl 时 URL 应如实为空, got %q", got[0].URL)
+	}
+	// 只有简称无代码 → 不加前缀(代码是检索锚点,缺则不加「:」前缀)。
+	got2 := normalizeCninfoAnnounce([]cninfoAnnounce{
+		{AnnouncementID: "A2", SecName: "某某", AnnouncementTitle: "公告"},
+	})
+	if got2[0].Title != "公告" {
+		t.Errorf("仅简称无代码时应原样, got %q", got2[0].Title)
+	}
+}
+
+// 时间非正数如实为 nil,不造 1970 假时间。
+func TestCninfoTime(t *testing.T) {
+	if cninfoTime(0) != nil || cninfoTime(-1) != nil {
+		t.Error("非正数毫秒应返回 nil")
+	}
+	if got := cninfoTime(1789646720000); got == nil || got.UnixMilli() != 1789646720000 {
+		t.Errorf("合法毫秒应正确解析, got %v", got)
+	}
+}

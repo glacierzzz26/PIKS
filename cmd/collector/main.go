@@ -23,6 +23,10 @@ import (
 
 // sourceSpec 一个机构源的采集规格:驱动名 + sources.name(机构名)+ source_type。
 // 机构名是**独立机构的标识**(非任务名),前端「快讯」tab 的来源筛选以此为准。
+//
+// ⚠️ source_type 还决定**是否送 LLM 抽取**(见 runOne):'announcement' 的源是官方披露、
+// 无真假问题,落 status='collected' —— 既不进 worker(只取 status='raw'),
+// 也不报对账异常(processed_no_event 只看 status='processed')。issue #50 T4。
 var sourceSpecs = []struct {
 	Driver     string
 	Name       string // sources.name —— 机构名
@@ -34,11 +38,14 @@ var sourceSpecs = []struct {
 	{"sina", "新浪财经", "news"},
 	{"ths", "同花顺", "news"},
 	{"futu", "富途资讯", "news"},
+	// 公告作为**原始事件源**接入(issue #50 / #43 T4):官方披露站(证监会指定),
+	// 只存标题+外链,不抓正文(正文只在 PDF 里)。
+	{"cninfo-announce", "巨潮资讯", "announcement"},
 }
 
 func main() {
 	var (
-		driverFlag = flag.String("driver", "file", "collector driver: file|all|dongcai|jin10|cls|sina|ths|futu")
+		driverFlag = flag.String("driver", "file", "collector driver: file|all|dongcai|jin10|cls|sina|ths|futu|cninfo-announce")
 		input      = flag.String("input", "", "file driver input path")
 		sourceName = flag.String("source", "", "source name (机构名) override;默认按 driver 映射")
 	)
@@ -141,6 +148,12 @@ func runOne(ctx context.Context, s *store.Store, sp spec, input string) error {
 	}
 
 	newCount, dupCount, failCount := 0, 0, 0
+	// 公告等原始事件源落 'collected':已采集、无需 LLM 抽取(issue #50)。
+	// 快讯源保持空 → InsertRawDocument 默认 'raw'(待抽取)。
+	status := ""
+	if sp.SourceType == "announcement" {
+		status = "collected"
+	}
 	for _, n := range news {
 		ok, err := s.InsertRawDocument(ctx, &model.RawDocument{
 			SourceID:    src.ID,
@@ -150,6 +163,7 @@ func runOne(ctx context.Context, s *store.Store, sp spec, input string) error {
 			Content:     n.Content,
 			ContentHash: collector.ContentHash(n.Content),
 			PublishedAt: n.PublishedAt,
+			Status:      status,
 			Extra:       n.Extra,
 		})
 		switch {

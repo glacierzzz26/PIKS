@@ -93,6 +93,22 @@ export type Flash = {
   url?: string;
 };
 
+/**
+ * 公告（原始事件源，issue #50）—— 官方披露，不进 LLM 抽取，
+ * 故**没有** event_id / confidence（对比 Flash）。
+ * url 指向原始 PDF（巨潮）或公告详情页；缺省 = 退化为纯文本。
+ */
+export type Announcement = {
+  id: string;
+  time: string;
+  title: string;
+  source: string;
+  sec_code?: string;
+  sec_name?: string;
+  page_column?: string;
+  url?: string;
+};
+
 export type Doc = {
   id: string;
   type: string; // note/belief/case/mistake/daily-review/weekly（周报走 weekly）

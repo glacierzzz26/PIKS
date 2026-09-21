@@ -4,6 +4,9 @@ package collector
 //
 // 免费源无 SLA(issue #43 §红线):统一限频 + 指数退避;失败不抛给调用方时须如实返回错误,
 // 由 cmd/collector 决定该源是否暂停,**绝不猜测或补造数据**。
+//
+// issue #68 C 层提频(盘中每 3 分钟)前加了 **per-host 反封禁护栏**(令牌桶/空响应哨兵/熔断,
+// 见 limiter.go);`doJSON` 已接入,新增驱动只要走 `httpSource` 即自动受护栏保护。
 
 import (
 	"context"
@@ -51,7 +54,11 @@ func (h *httpSource) postFormJSON(ctx context.Context, url, params string, extra
 }
 
 // doJSON 统一的重试 + 限频 + 请求实现(GET/POST 共用,避免两份退避逻辑漂移)。
+//
+// 限频两层(issue #68 C 层):per-source `throttle`(驱动礼貌间隔)+ **per-host 令牌桶护栏**
+// (`limiterFor(url)`,同 host 跨驱动/跨分页共享,压突发)。熔断开路时直接返回、不再重试。
 func (h *httpSource) doJSON(ctx context.Context, method, url, formBody string, extraHeaders map[string]string) ([]byte, error) {
+	lim := limiterFor(url)
 	var lastErr error
 	for attempt := 0; attempt < h.attempts; attempt++ {
 		if attempt > 0 {
@@ -64,7 +71,13 @@ func (h *httpSource) doJSON(ctx context.Context, method, url, formBody string, e
 			}
 		}
 		h.throttle(ctx)
+		if err := lim.wait(ctx, h.onWait); err != nil {
+			return nil, err // 熔断开路:不发网络 I/O,也不再重试
+		}
 		body, retryable, err := h.once(ctx, method, url, formBody, extraHeaders)
+		// 熔断依据:有响应(含 4xx —— 请求问题,非 host 不可用)即判 host 存活;
+		// 网络错误与 5xx 计为失败。空响应哨兵由驱动层经 observe() 另行喂入(此处看不到条目数)。
+		lim.record(err == nil || !retryable)
 		if err == nil {
 			return body, nil
 		}

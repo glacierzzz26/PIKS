@@ -90,9 +90,12 @@ func (d *sinaDriver) Fetch(ctx context.Context) ([]RawNews, error) {
 		return nil, fmt.Errorf("sina: code=%d msg=%s", r.Result.Status.Code, r.Result.Status.Msg)
 	}
 	if r.Result.Data == nil || r.Result.Data.Feed == nil {
+		observeFetch(sinaFeedURL, 0)
 		return nil, nil
 	}
-	return normalizeSina(r.Result.Data.Feed.List), nil
+	out := normalizeSina(r.Result.Data.Feed.List)
+	observeFetch(sinaFeedURL, len(out))
+	return out, nil
 }
 
 // normalizeSina 真实 DTO → 归一化 RawNews(纯函数,可离线单测)。

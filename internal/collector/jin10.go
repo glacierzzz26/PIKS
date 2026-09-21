@@ -76,7 +76,9 @@ func (d *jin10Driver) Fetch(ctx context.Context) ([]RawNews, error) {
 	if r.Status != 200 {
 		return nil, fmt.Errorf("jin10: status=%d %s", r.Status, r.Message)
 	}
-	return normalizeJin10(r.Data), nil
+	out := normalizeJin10(r.Data)
+	observeFetch(jin10FeedURL, len(out))
+	return out, nil
 }
 
 // normalizeJin10 真实 DTO → 归一化 RawNews(纯函数,可离线单测)。

@@ -117,6 +117,32 @@ services:
     networks: [piks]
     command: ["sh", "-c", "true"]
 
+  # 盘中快讯采集常驻进程(issue #68 C 层)。**复用 piks-tools 镜像**(故仍是四镜像),
+  # 与 tools 的唯一差别是 command:常驻循环 -interval 3m 而非跑一轮即退。
+  #
+  # ⚠️ 为什么常驻而非「cron 每 3 分钟拉起一次」:反封禁护栏里的**空响应哨兵与熔断**靠
+  #   **跨轮累积**状态(连续 N 次空/连败才触发);一次性进程每轮从零开始,两条护栏形同虚设。
+  #   常驻进程把状态留在内存,护栏才真正生效。日管线的 `collector -driver all`(16:10 后
+  #   补一轮)保持不变 —— 二者幂等 + 迁移 0016 去重,重复无害。
+  # ⚠️ 只跑快讯源(-driver news,6 家):公告(巨潮)单日 ~1200 条/40 页翻页重,
+  #   留日管线采一次,不进盘中高频循环。
+  collector:
+    image: piks-tools:latest
+    container_name: piks-collector
+    env_file: [".env"]
+    environment:
+      - TZ=Asia/Shanghai
+      - PIKS_DATABASE_URL=postgres://piks:${PIKS_DB_PASSWORD:-piks_dev_password}@postgres:5432/piks?sslmode=disable
+      - SSL_CERT_DIR=/etc/ssl/certs:/certs
+    volumes:
+      - ./certs:/certs:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    command: ["./bin/collector", "-driver", "news", "-interval", "3m"]
+    networks: [piks]
+
 networks:
   piks:
 

@@ -113,6 +113,7 @@ func (d *cninfoAnnounceDriver) Fetch(ctx context.Context) ([]RawNews, error) {
 			break
 		}
 	}
+	observeFetch(cninfoQueryURL, len(out))
 	return out, nil
 }
 

@@ -79,9 +79,12 @@ func (d *thsDriver) Fetch(ctx context.Context) ([]RawNews, error) {
 		return nil, fmt.Errorf("ths: code=%s msg=%s", r.Code, r.Msg)
 	}
 	if r.Data == nil {
+		observeFetch(thsFeedURL, 0)
 		return nil, nil
 	}
-	return normalizeThs(r.Data.List), nil
+	out := normalizeThs(r.Data.List)
+	observeFetch(thsFeedURL, len(out))
+	return out, nil
 }
 
 // normalizeThs 真实 DTO → 归一化 RawNews(纯函数,可离线单测)。

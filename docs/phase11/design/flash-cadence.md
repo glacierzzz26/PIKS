@@ -1,9 +1,12 @@
 # C 层:快讯提频(盘中 3 分钟)+ 反封禁护栏 ✅ 已实现(dev-only)
 
 > 阶段:数据源分层(issue #68,epic #43 续篇)的 **C 层 = 快讯改用法**。2026-09-21。
-> 前置:[announcement-source.md](./announcement-source.md)(A 层 S1 公告分级,PR #69 待审)。
-> ⚠️ **本文为 C 层唯一记录**:A/B/C/D 分层总设计(`source-tiering.md`)在 PR #69 分支上
-> 尚未合入 dev,故 C 层的设计与实测**在此独立成篇**,不引未合入的文件。
+> 前置:[source-tiering.md](./source-tiering.md)(A/B/C/D 分层总设计,§5 即本层)、
+> [announcement-grading.md](./announcement-grading.md)(S1 公告分级)。
+>
+> ⚠️ **本文是 C 层的实现记录**。总设计 §5 定的是「做什么、为什么」,本文落「怎么做的 +
+> 实测数据」。分层总设计(`source-tiering.md`)与 S1 记录随 PR #69 合入 dev;C 层的实现
+> 独立开在 `dev` 上(本 PR),故 S2 的实测结论与 S3 的护栏/常驻设计**在此独立成篇**。
 
 ## 1. 目标与结论
 

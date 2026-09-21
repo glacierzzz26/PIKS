@@ -26,6 +26,34 @@ export const SINGLE_SOURCE_LABEL = "单一来源";
 export const SINGLE_SOURCE_HINT =
   "目前只有这一家机构在报。独家报道很常见，不代表消息不实，只是还没有旁证。";
 
+/**
+ * 公告分级（issue #68 A 层）。key 与后端 `internal/announce` 的常量严格一致；
+ * 后端经 `GET /api/v1/announcements` 的 `grade` 字段下发。
+ *
+ * ⚠️ 这是**机器按标题关键词判的（Inference）不是事实** —— UI 必须如实标注，
+ * 不得表述成「官方认定重要」（同 P7 量价形态的标注纪律）。
+ *
+ * ⚠️ 折叠≠隐藏（issue #68 §3.3 红线）：噪音只是默认收起，必须留「查看全部」入口。
+ * 空 grade（未分级的历史行）按「常规」显示 —— 与后端 gradeMatch 的口径一致。
+ */
+export const ANNOUNCE_GRADES = [
+  { key: "must", label: "必读", hint: "监管动作 / 退市风险 / 重大重组 / 控制权变更" },
+  { key: "important", label: "重要", hint: "股权激励 / 回购 / 增减持 / 重大合同" },
+  { key: "routine", label: "常规", hint: "定期报告 / 三会决议 / 权益分派" },
+  { key: "noise", label: "噪音", hint: "工商变更 / 独董述职 / 券商律所衍生文件" },
+] as const;
+
+export type AnnounceGrade = (typeof ANNOUNCE_GRADES)[number]["key"];
+
+/** 未分级（grade 空）按常规显示，与后端 API 口径一致。 */
+export const ANNOUNCE_GRADE_FALLBACK: AnnounceGrade = "routine";
+
+/** 级别 → 中文标签；未知/空值回落「常规」。 */
+export function announceGradeLabel(grade?: string): string {
+  const hit = ANNOUNCE_GRADES.find((g) => g.key === grade);
+  return hit ? hit.label : "常规";
+}
+
 export const ENTITY_TYPES = [
   { key: "", label: "全部" },
   { key: "company", label: "公司" },

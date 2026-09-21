@@ -106,6 +106,8 @@ export type Announcement = {
   sec_code?: string;
   sec_name?: string;
   page_column?: string;
+  /** 分级（issue #68 A 层）：must|important|routine|noise；空=未分级（历史行，按常规显示）。 */
+  grade?: string;
   url?: string;
 };
 

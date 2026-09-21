@@ -27,6 +27,7 @@ type RawDocument struct {
 	PublishedAt     *time.Time      `db:"published_at"`
 	RetrievedAt     time.Time       `db:"retrieved_at"`
 	Status          string          `db:"status"`
+	Grade           *string         `db:"grade"` // 公告分级(issue #68);快讯源为 NULL
 	PipelineVersion *string         `db:"pipeline_version"`
 	Error           *string         `db:"error"`
 	Extra           json.RawMessage `db:"extra"` // 上游原始字段原样留存(issue #43);缺省 {}

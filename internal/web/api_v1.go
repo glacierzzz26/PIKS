@@ -160,7 +160,10 @@ type apiAnnouncement struct {
 	SecCode    string `json:"sec_code,omitempty"`
 	SecName    string `json:"sec_name,omitempty"`
 	PageColumn string `json:"page_column,omitempty"`
-	URL        string `json:"url,omitempty"`
+	// Grade 分级(issue #68 A 层):must/important/routine/noise;空=未分级
+	// (本迁移前的历史行)。**机器判定(Inference)非事实**,前端须如实标注。
+	Grade string `json:"grade,omitempty"`
+	URL   string `json:"url,omitempty"`
 }
 
 type apiDoc struct {
@@ -381,6 +384,11 @@ func (s *Server) handleAPIAnnouncements(w http.ResponseWriter, r *http.Request) 
 	}
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	src := r.URL.Query().Get("source")
+	// grade 过滤(issue #68 A 层):按级别折叠时前端传 grade=must|important|routine|noise。
+	// 值为 "all"/空 时不过滤。**未分级的行(grade=NULL)不匹配任何具体级别** ——
+	// 前端把 NULL 归入「常规」展示,故后端按 grade=routine 查询时**同时**放行 NULL
+	// (历史行不能因为没分级就从「常规」视图里消失;宁可多显示,不可误隐藏)。
+	grd := r.URL.Query().Get("grade")
 
 	out := make([]apiAnnouncement, 0, len(rows))
 	for _, a := range rows {
@@ -388,6 +396,10 @@ func (s *Server) handleAPIAnnouncements(w http.ResponseWriter, r *http.Request) 
 			continue
 		}
 		if q != "" && !strSub(q, a.Title) {
+			continue
+		}
+		ag := orStr(a.Grade, "")
+		if grd != "" && grd != "all" && !gradeMatch(ag, grd) {
 			continue
 		}
 		out = append(out, apiAnnouncement{
@@ -398,10 +410,20 @@ func (s *Server) handleAPIAnnouncements(w http.ResponseWriter, r *http.Request) 
 			SecCode:    orStr(a.SecCode, ""),
 			SecName:    orStr(a.SecName, ""),
 			PageColumn: orStr(a.PageColumn, ""),
+			Grade:      ag,
 			URL:        orStr(a.URL, ""),
 		})
 	}
 	s.writeJSON(w, out)
+}
+
+// gradeMatch 级别过滤匹配。空 grade(未分级的历史行)按「常规」对待 ——
+// 与前端把 NULL 显示为常规一致,避免历史行在任何级别视图里都查不到。
+func gradeMatch(rowGrade, filter string) bool {
+	if rowGrade == "" {
+		rowGrade = "routine"
+	}
+	return rowGrade == filter
 }
 
 // GET /api/v1/notes?type —— 笔记列表(personal_notes 投影)。

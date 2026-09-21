@@ -4,7 +4,8 @@ import { useState } from "react";
 import { Search, X } from "lucide-react";
 import { useData } from "@/hooks/useData";
 import { usePagedQuery } from "@/hooks/usePagedQuery";
-import { EVENT_TYPES, EVENT_STATUS, EVENT_SORTS } from "@/lib/constants";
+import { EVENT_STATUS, EVENT_SORTS } from "@/lib/constants";
+import { useEventTypes } from "@/lib/eventTypes";
 import { ENDPOINTS } from "@/lib/api";
 import EventDetail from "@/components/events/EventDetail";
 import EventTable from "@/components/events/EventTable";
@@ -18,6 +19,8 @@ export default function EventsTab() {
     usePagedQuery();
   const [selected, setSelected] = useState<EventItem | null>(null);
   const [kw, setKw] = useState(query.q ?? "");
+  const { filterOptions, loading: typesLoading, error: typesError } =
+    useEventTypes();
 
   const events = useData<EventItem[]>({
     path: ENDPOINTS.events,
@@ -43,13 +46,27 @@ export default function EventsTab() {
           className="f-sel"
           value={query.type ?? ""}
           onChange={(e) => setFilter("type", e.target.value)}
+          disabled={typesLoading || !!typesError}
+          title={
+            typesError
+              ? `类型枚举加载失败：${typesError}`
+              : typesLoading
+                ? "类型枚举加载中…"
+                : "按事件类型筛选"
+          }
         >
-          {EVENT_TYPES.map((t) => (
+          {filterOptions.map((t) => (
             <option key={t.key} value={t.key}>
               {t.label}
             </option>
           ))}
         </select>
+        {/* 类型枚举来自后端（issue #61），拿不到时如实报，不放任下拉静默只剩「全部类型」 */}
+        {typesError && (
+          <span className="text-[12.5px]" style={{ color: "var(--warn)" }}>
+            类型筛选不可用
+          </span>
+        )}
         <select
           className="f-sel"
           value={query.sort ?? ""}

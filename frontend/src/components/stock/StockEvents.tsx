@@ -1,7 +1,7 @@
 "use client";
 
 import { useNavigate } from "react-router-dom";
-import { EVENT_TYPE_LABEL } from "@/lib/format";
+import { useEventTypes } from "@/lib/eventTypes";
 import { ConfidenceBar } from "@/components/ui/Num";
 import { SourceLink } from "@/components/ui/SourceLink";
 import { StockSectionEmpty } from "@/components/stock/StockHeader";
@@ -10,6 +10,7 @@ import type { StockEvent } from "@/lib/types";
 /** 个股中心「相关事件」区块：affects 到该公司实体的事件（时间倒序）。 */
 export default function StockEvents({ events }: { events: StockEvent[] }) {
   const navigate = useNavigate();
+  const { labelOf, toneOf } = useEventTypes();
 
   if (events.length === 0) {
     return <StockSectionEmpty tip="暂无相关事件（该股尚未被事件抽取关联）" />;
@@ -46,8 +47,9 @@ export default function StockEvents({ events }: { events: StockEvent[] }) {
                 {e.occurred_at.slice(0, 10)}
               </td>
               <td>
-                <span className="type-tag t-ev">
-                  {EVENT_TYPE_LABEL[e.event_type] ?? e.event_type}
+                {/* 类型配色与 label 均取后端枚举（issue #61）；此处曾硬编码 t-ev */}
+                <span className={`type-tag ${toneOf(e.event_type)}`}>
+                  {labelOf(e.event_type) ?? e.event_type}
                 </span>
               </td>
               <td className="text-left font-medium">

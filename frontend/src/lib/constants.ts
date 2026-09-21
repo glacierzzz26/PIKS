@@ -1,16 +1,12 @@
 /** UI 筛选常量（来自领域枚举，非演示数据） */
 
-export const EVENT_TYPES = [
-  { key: "", label: "全部类型" },
-  { key: "policy", label: "政策" },
-  { key: "earnings", label: "财报业绩" },
-  { key: "product_launch", label: "产品发布" },
-  { key: "supply_agreement", label: "供需协议" },
-  { key: "industry_event", label: "行业动态" },
-  { key: "investment", label: "投资动向" },
-  { key: "sales_data", label: "销售数据" },
-  { key: "rumor", label: "传闻待证" },
-];
+/**
+ * ⚠️ 事件类型（`EVENT_TYPES`）**已移出本文件**（issue #61）。
+ * 类型 key **与**中文 label 的唯一真源是后端 `model.EventTypes`，前端经
+ * `GET /api/v1/event-types` 消费，见 `lib/eventTypes.tsx` 的 `useEventTypes()`。
+ * 此处**不得**再放本地类型表 —— 曾经这里的 8 值枚举与后端 9 值权威枚举漂移，
+ * 导致 92% 事件露英文原值、6/8 过滤项永远为空。
+ */
 
 export const EVENT_STATUS = [
   { key: "", label: "全部状态" },

@@ -358,6 +358,16 @@ func (s *Server) handleAPIFlashes(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, out)
 }
 
+// GET /api/v1/event-types —— 事件类型枚举(issue #61)。
+//
+// 真源 = `model.EventTypes`(单一切片)。前端**不存本地类型表**,下拉/标签/配色一律由此
+// 驱动 —— 后端加类型时前端零改动即跟上,这是修掉「前后端枚举漂移」的根治手段。
+//
+// ⚠️ 不要改回「只下发 key、前端自带 label」:那样后端加类型前端照样回落英文,漂移只修一半。
+func (s *Server) handleAPIEventTypes(w http.ResponseWriter, r *http.Request) {
+	s.writeJSON(w, model.EventTypes)
+}
+
 // GET /api/v1/announcements?q&source —— 公告流(原始事件源,issue #50)。
 // 只读投影:raw_documents 中 source_type='announcement' 的行,按时间倒序。
 // 与「快讯」是**两条独立投影**(快讯查询已显式排除 announcement,互不混入);

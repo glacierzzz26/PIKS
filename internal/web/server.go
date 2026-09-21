@@ -39,6 +39,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/flashes", s.handleAPIFlashes)
 	// 公告流(issue #50):原始事件源原始投影,与快讯互不混入(见 store 两条查询的 source_type 过滤)。
 	mux.HandleFunc("/api/v1/announcements", s.handleAPIAnnouncements)
+	mux.HandleFunc("/api/v1/event-types", s.handleAPIEventTypes)
 	mux.HandleFunc("/api/v1/notes", s.handleAPINotes)
 	mux.HandleFunc("/api/v1/notes/", s.handleAPINote)
 	mux.HandleFunc("/api/v1/dashboard", s.handleAPIDashboard)

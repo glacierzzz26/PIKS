@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,17 +18,32 @@ import (
 	"piks/internal/store"
 )
 
-const allowedEventTypes = "policy,earnings,industry,accident,international,tech,macro,company,other"
+// ⚠️ 事件类型枚举的**唯一真源是 `model.EventTypes`**(issue #61)。此处不再手抄第二份 ——
+// 曾经这里一份 `allowedEventTypes`、下面 Schema 里再抄一份 `enum`,两处都与前端漂移过。
+var allowedEventTypes = model.EventTypeCSV()
 
-const JSONSchema = `{"type":"object","properties":{"events":{"type":"array","maxItems":5,"items":{"type":"object","properties":{
+const jsonSchemaTmpl = `{"type":"object","properties":{"events":{"type":"array","maxItems":5,"items":{"type":"object","properties":{
 "title":{"type":"string"},
-"event_type":{"type":"string","enum":["policy","earnings","industry","accident","international","tech","macro","company","other"]},
+"event_type":{"type":"string","enum":[%s]},
 "summary":{"type":"string"},
 "facts":{"type":"array","items":{"type":"string"}},
 "affected":{"type":"array","items":{"type":"string"}},
 "occurred_at":{"type":"string"},
 "confidence":{"type":"number","minimum":0,"maximum":1}
 },"required":["title","event_type","facts","confidence"]}}},"required":["events"]}`
+
+// JSONSchema 由真源拼出 enum 字面量 —— 不会再与 allowedEventTypes 漂移。
+var JSONSchema = fmt.Sprintf(jsonSchemaTmpl, eventTypeEnumJSON())
+
+// eventTypeEnumJSON 把真源 key 拼成 JSON 字符串数组字面量:`"policy","earnings",…`。
+func eventTypeEnumJSON() string {
+	keys := model.EventTypeKeys()
+	quoted := make([]string, 0, len(keys))
+	for _, k := range keys {
+		quoted = append(quoted, strconv.Quote(k))
+	}
+	return strings.Join(quoted, ",")
+}
 
 type ExtractedEvent struct {
 	Title      string   `json:"title"`
@@ -185,12 +201,10 @@ func validate(data json.RawMessage) ([]ExtractedEvent, error) {
 
 func normalizeEventType(t string) string {
 	t = strings.ToLower(strings.TrimSpace(t))
-	for _, a := range strings.Split(allowedEventTypes, ",") {
-		if t == a {
-			return t
-		}
+	if model.IsEventType(t) {
+		return t
 	}
-	return "other"
+	return model.EventTypeFallback
 }
 
 func clamp01(v float64) float64 {

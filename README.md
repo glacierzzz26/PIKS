@@ -51,7 +51,7 @@ research/      深研 Python agent(独立运行时见下「深研并入」;不�
 migrations/    SQL 迁移(前向,无 down;0001~0015)
 prompts/       AI 抽取提示词(extract.md)
 configs/       docker-compose(dev/prod)+ .env 模板 + nginx.conf
-scripts/       dev 侧 setup.sh/deploy.sh/check-research-isolation.sh/check-image-topology.sh;lab 侧 pipeline.sh/backup.sh/health.sh(setup.sh 装 crontab)
+scripts/       dev 侧 setup.sh/deploy.sh/check-research-isolation.sh/check-image-topology.sh/check-event-type-parity.sh;lab 侧 pipeline.sh/backup.sh/health.sh(setup.sh 装 crontab)
 (依赖不入库:go.sum 校验 + GOPROXY 模块代理,见 Dockerfile)
 docs/          架构总览(现状架构,以代码为准)、项目详解、进度总表、各阶段设计定稿 + 实现归档
 PIKS-Vault/    Obsidian vault 存档(界面层已下线,不再更新)
@@ -77,6 +77,8 @@ worker)。深研**不再由 web 进程内 `os/exec python3` 触发** —— web 
 ./scripts/check-research-isolation.sh
 # 镜像拓扑检查(四 target 内容边界;防 web 混入 nginx/Python)
 ./scripts/check-image-topology.sh
+# 事件类型枚举单一真源检查(防前端再存本地枚举表;issue #61)
+./scripts/check-event-type-parity.sh
 
 # 两侧测试(可各自独立跑)
 go test ./internal/research/...                                 # fixture 状态机,不依赖 Python

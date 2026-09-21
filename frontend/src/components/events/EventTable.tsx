@@ -1,20 +1,12 @@
 "use client";
 
-import { EVENT_TYPE_LABEL } from "@/lib/format";
 import { ConfidenceBar } from "@/components/ui/Num";
 import { SourceLink } from "@/components/ui/SourceLink";
+import { useEventTypes } from "@/lib/eventTypes";
 import type { EventItem } from "@/lib/types";
 
-export const TYPE_TAG: Record<string, string> = {
-  policy: "t-mix",
-  earnings: "t-idx",
-  product_launch: "t-ev",
-  supply_agreement: "t-bond",
-  industry_event: "t-idx",
-  investment: "t-mix",
-  sales_data: "t-ev",
-  rumor: "t-gray",
-};
+// 类型 label 与配色**不在前端**（issue #61）：唯一真源是后端 `model.EventTypes`，
+// 经 `useEventTypes()` 取。此处曾硬编码 8 值 TYPE_TAG，与后端 9 值枚举漂移。
 export const STATUS_ST: Record<string, { cls: string; label: string }> = {
   confirmed: { cls: "st-down", label: "已确认" },
   pending: { cls: "st-amber", label: "待复核" },
@@ -29,6 +21,7 @@ export default function EventTable({
   events: EventItem[];
   onSelect: (e: EventItem) => void;
 }) {
+  const { labelOf, toneOf } = useEventTypes();
   return (
     <table className="table">
       <thead>
@@ -69,8 +62,8 @@ export default function EventTable({
               </div>
             </td>
             <td>
-              <span className={`type-tag ${TYPE_TAG[e.event_type] ?? "t-gray"}`}>
-                {EVENT_TYPE_LABEL[e.event_type] ?? e.event_type}
+              <span className={`type-tag ${toneOf(e.event_type)}`}>
+                {labelOf(e.event_type) ?? e.event_type}
               </span>
             </td>
             <td className="num-t">{e.affected.length} 个</td>

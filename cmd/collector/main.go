@@ -1,9 +1,18 @@
 // collector 采集命令:源适配器 → 归一化 → content_hash 去重 → raw_documents。
-// 源健康监控:单次运行 fetch 连续失败 ≥3 次 → 暂停该源(见设计 §4 源健康监控)。
 //
 // issue #43 T1:事件类多源采集。`-driver all` 依次跑全部独立机构源,每源落各自的
 // sources 行(**机构名**,不再是任务名 `news-flash`),使前端可区分来源。
-// 单源失败**不阻断**其余源(免费源无 SLA);该源自身按既有纪律连续失败 3 次暂停。
+// 单源失败**不阻断**其余源(免费源无 SLA)。
+//
+// issue #68 C 层:两种运行模式。
+//   - **一次性**(默认,`-interval=0`):跑一轮即退,供日管线收盘后补齐(pipeline.sh)。
+//   - **常驻**(`-interval>0`):交易时段内每 interval 采一轮,反封禁护栏
+//     (令牌桶/空响应哨兵/熔断,见 internal/collector/limiter.go)的状态
+//     **留内存跨轮生效** —— 一次性进程每轮从零开始,哨兵与熔断无从累积。
+//     形态仿 cmd/research-worker(常驻 + signal.NotifyContext + 优雅退出)。
+//
+// ⚠️ 常驻循环**只跑快讯源**(`-driver news`):公告(巨潮)单日 ~1200 条 / 40 页,
+// 量小但翻页重,留在日管线 16:10 采一次即可,不进盘中高频循环(否则每 3 分钟重复翻 40 页)。
 package main
 
 import (
@@ -11,7 +20,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -44,11 +57,16 @@ var sourceSpecs = []struct {
 	{"cninfo-announce", "巨潮资讯", "announcement"},
 }
 
+// cst 北京时间(盘中时段闸用)。
+var cst = time.FixedZone("CST", 8*3600)
+
 func main() {
 	var (
-		driverFlag = flag.String("driver", "file", "collector driver: file|all|dongcai|jin10|cls|sina|ths|futu|cninfo-announce")
+		driverFlag = flag.String("driver", "file", "collector driver: file|all|news|dongcai|jin10|cls|sina|ths|futu|cninfo-announce")
 		input      = flag.String("input", "", "file driver input path")
 		sourceName = flag.String("source", "", "source name (机构名) override;默认按 driver 映射")
+		interval   = flag.Duration("interval", 0, "常驻模式轮询间隔(如 3m);0 = 跑一轮即退(日管线用)")
+		session    = flag.String("session", "09:15-15:05", "常驻模式盘中时段闸(北京时间 HH:MM-HH:MM);空 = 不限时段")
 	)
 	flag.Parse()
 
@@ -61,22 +79,91 @@ func main() {
 	defer pool.Close()
 	s := store.New(pool)
 
-	specs, err := resolveSpecs(*driverFlag, *sourceName, *input)
+	specs, err := resolveSpecs(*driverFlag, *sourceName)
 	if err != nil {
 		fatal("collector:", err)
 	}
 
-	// -driver all:单源失败不阻断其余源(免费源无 SLA,#43)。逐源记账。
-	failed := 0
+	if *interval <= 0 {
+		// 一次性模式(日管线):单源失败不阻断;全部失败才退出码非零。
+		if failed, total := runAll(ctx, s, specs, *input); failed == total {
+			fatal("collector: all sources failed")
+		}
+		return
+	}
+
+	runResident(s, specs, *input, *interval, *session)
+}
+
+// runAll 跑一轮全部源,返回 (失败源数, 源总数)。单源失败不阻断其余源(免费源无 SLA,#43)。
+func runAll(ctx context.Context, s *store.Store, specs []spec, input string) (failed, total int) {
 	for _, sp := range specs {
-		if err := runOne(ctx, s, sp, *input); err != nil {
+		if err := runOne(ctx, s, sp, input); err != nil {
 			failed++
 			fmt.Fprintf(os.Stderr, "collector %s/%s FAILED: %v\n", sp.Driver, sp.Name, err)
 		}
 	}
-	if failed == len(specs) {
-		fatal("collector: all sources failed")
+	return failed, len(specs)
+}
+
+// runResident 常驻循环:交易时段内每 interval 采一轮,收到 SIGTERM/SIGINT 优雅退出。
+//
+// 不落「今日已跑」stamp —— 那是日管线的单一日锁,盘中轮询本就不该被它阻断
+// (设计 §5.1 已指出该锁正是盘中不跑的根因)。
+func runResident(s *store.Store, specs []spec, input string, interval time.Duration, session string) {
+	start, end, hasSession := parseSession(session)
+	log.Printf("collector 常驻启动:interval=%s session=%q 源数=%d", interval, session, len(specs))
+
+	stopCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	tick := func() {
+		now := time.Now().In(cst)
+		if !inSession(now, start, end, hasSession) {
+			return // 时段外/非工作日静默跳过(不产生请求)
+		}
+		runAll(stopCtx, s, specs, input)
 	}
+	tick() // 启动即采一轮,不等首个 tick
+
+	for {
+		select {
+		case <-stopCtx.Done():
+			log.Printf("收到关停信号,collector 退出")
+			return
+		case <-ticker.C:
+			tick()
+		}
+	}
+}
+
+// parseSession 解析 "HH:MM-HH:MM" 为当日分钟数;空串或格式非法时 has=false(不限时段)。
+func parseSession(s string) (start, end int, has bool) {
+	if s == "" {
+		return 0, 0, false
+	}
+	var sh, sm, eh, em int
+	if _, err := fmt.Sscanf(s, "%d:%d-%d:%d", &sh, &sm, &eh, &em); err != nil {
+		log.Printf("session 格式非法(%q),按不限时段处理", s)
+		return 0, 0, false
+	}
+	return sh*60 + sm, eh*60 + em, true
+}
+
+// inSession 判断北京时间是否落在 [start,end] 分钟内,且为工作日。
+// has=false 时只判工作日(不限时段)。weekday 用传入时刻自算,便于单测注入。
+func inSession(now time.Time, start, end int, has bool) bool {
+	if wd := now.Weekday(); wd == time.Saturday || wd == time.Sunday {
+		return false
+	}
+	if !has {
+		return true
+	}
+	m := now.Hour()*60 + now.Minute()
+	return m >= start && m <= end
 }
 
 // spec 一个待采集源的解析结果。
@@ -88,11 +175,21 @@ type spec struct {
 
 // resolveSpecs 把 -driver/-source 解析为待采集源清单。
 // 显式 -source 覆盖机构名(单一 driver 时才有意义;file 驱动靠它归属)。
-func resolveSpecs(driver, source, input string) ([]spec, error) {
+func resolveSpecs(driver, source string) ([]spec, error) {
 	if driver == "all" {
 		out := make([]spec, 0, len(sourceSpecs))
 		for _, s := range sourceSpecs {
 			out = append(out, spec{Driver: s.Driver, Name: s.Name, SourceType: s.SourceType})
+		}
+		return out, nil
+	}
+	// news = 仅快讯源(6 个),常驻盘中轮询用:公告翻页重,留在日管线采一次(见文件头)。
+	if driver == "news" {
+		var out []spec
+		for _, s := range sourceSpecs {
+			if s.SourceType == "news" {
+				out = append(out, spec{Driver: s.Driver, Name: s.Name, SourceType: s.SourceType})
+			}
 		}
 		return out, nil
 	}
@@ -131,21 +228,21 @@ func runOne(ctx context.Context, s *store.Store, sp spec, input string) error {
 	if err != nil {
 		return finishFail(ctx, s, runID, sp, err)
 	}
+	// 人工暂停的源**真跳过**(issue #68 C 层):此前 PauseSource 写了 status 却无人读取
+	// (采集照旧每轮去拉),暂停名不副实。现尊重它 —— 与 ReconSilentSources 已排除 paused 同口径。
+	// ⚠️ 不再按「单轮 fetch 连续失败」自动 PauseSource:3 分钟轮询下那样会 3 分钟就停一个源;
+	// 瞬时故障改由 per-host **熔断**承担(时间盒 + 自愈,见 internal/collector/limiter.go)。
+	if src.Status == "paused" {
+		_ = s.FinishTaskRun(ctx, runID, "skipped", "",
+			map[string]any{"source": sp.Name, "driver": sp.Driver, "reason": "source paused"})
+		fmt.Printf("collector %s/%s: skipped (paused)\n", sp.Driver, sp.Name)
+		return nil
+	}
 
-	// fetch(最多 3 次,连续失败则暂停源)
-	var news []collector.RawNews
-	attempts := 0
-	for {
-		attempts++
-		news, err = drv.Fetch(ctx)
-		if err == nil {
-			break
-		}
-		if attempts >= 3 {
-			_ = s.PauseSource(ctx, src.ID)
-			return finishFail(ctx, s, runID, sp,
-				fmt.Errorf("fetch failed after 3 attempts, source paused: %w", err))
-		}
+	// 单次 Fetch(其内部 httpSource 已含最多 3 次退避重试 + per-host 护栏)。
+	news, err := drv.Fetch(ctx)
+	if err != nil {
+		return finishFail(ctx, s, runID, sp, err)
 	}
 
 	newCount, dupCount, failCount := 0, 0, 0

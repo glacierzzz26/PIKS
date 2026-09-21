@@ -95,9 +95,12 @@ func (d *clsDriver) Fetch(ctx context.Context) ([]RawNews, error) {
 		return nil, fmt.Errorf("cls: errno=%s msg=%s", string(r.Errno), r.Msg)
 	}
 	if r.Data == nil {
+		observeFetch(clsFeedURL, 0)
 		return nil, nil
 	}
-	return normalizeCLS(r.Data.RollData), nil
+	out := normalizeCLS(r.Data.RollData)
+	observeFetch(clsFeedURL, len(out))
+	return out, nil
 }
 
 // signedURL 拼查询串并附签名。参数每次重建(签名对参数集敏感)。

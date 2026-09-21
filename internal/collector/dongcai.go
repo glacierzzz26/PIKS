@@ -12,8 +12,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"time"
 )
@@ -21,14 +19,16 @@ import (
 const dongcaiFeedURL = "https://np-weblist.eastmoney.com/comm/web/getFastNewsZhibo"
 
 type dongcaiDriver struct {
-	client   *http.Client
+	http     *httpSource
 	pageSize int
 	maxPages int // 分页上限;time 游标(sortEnd)确保不重复拉取
 }
 
 func newDongcaiDriver() *dongcaiDriver {
 	return &dongcaiDriver{
-		client:   &http.Client{Timeout: 15 * time.Second},
+		// issue #68 C 层:改走共用 httpSource(原自建 http.Client),从而自动获得
+		// 限频 + 退避 + per-host 护栏(令牌桶/空响应哨兵/熔断),与本包其余驱动一致。
+		http:     newHTTPSource(15*time.Second, 2*time.Second, 3),
 		pageSize: 50,
 		maxPages: 1, // 单次运行一页(约50条)足够;调大可拉更多历史
 	}
@@ -75,28 +75,16 @@ func (d *dongcaiDriver) Fetch(ctx context.Context) ([]RawNews, error) {
 		}
 		sortEnd = next
 	}
+	observeFetch(dongcaiFeedURL, len(out))
 	return out, nil
 }
 
 func (d *dongcaiDriver) fetchPage(ctx context.Context, sortEnd string) ([]RawNews, string, error) {
 	url := fmt.Sprintf("%s?client=web&biz=web_724&sortEnd=%s&pageSize=%d&req_trace=collector",
 		dongcaiFeedURL, sortEnd, d.pageSize)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	body, err := d.http.getJSON(ctx, url, nil)
 	if err != nil {
-		return nil, "", err
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-	resp, err := d.client.Do(req)
-	if err != nil {
-		return nil, "", err
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, "", err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("dongcai: HTTP %d: %s", resp.StatusCode, truncate(body, 200))
+		return nil, "", fmt.Errorf("dongcai: %w", err)
 	}
 	var r dongcaiResp
 	if err := json.Unmarshal(body, &r); err != nil {

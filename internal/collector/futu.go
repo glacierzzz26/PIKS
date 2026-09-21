@@ -80,9 +80,12 @@ func (d *futuDriver) Fetch(ctx context.Context) ([]RawNews, error) {
 		return nil, fmt.Errorf("futu: code=%d msg=%s", r.Code, r.Message)
 	}
 	if r.Data == nil || r.Data.Data == nil {
+		observeFetch(futuFeedURL, 0)
 		return nil, nil
 	}
-	return normalizeFutu(r.Data.Data.News), nil
+	out := normalizeFutu(r.Data.Data.News)
+	observeFetch(futuFeedURL, len(out))
+	return out, nil
 }
 
 // normalizeFutu 真实 DTO → 归一化 RawNews(纯函数,可离线单测)。

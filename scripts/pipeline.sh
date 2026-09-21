@@ -42,10 +42,11 @@ run() {
 # 公告永不入 raw 队列,顺序不敏感;显式列在与快讯相邻处便于阅读。
 # file 驱动仅迭代0 保底,生产不用。
 # ⚠️ 多源后单日入库量升至 ~180 条(原东财单源 ~50),worker 默认 -limit 50 会恒追不上、
-# 积压 raw 永不清零 → 显式抬高到 -limit 300(覆盖一日量;token 护栏仍是 ai_daily_token_budget)。
+# 积压 raw 永不清零 → 显式抬高;issue #68 C 层盘中每 3 分钟采集后,单日新增进一步放大
+# (交易日 ~5.5h / 3min ≈ 110 轮),故再抬到 800 覆盖一日量;token 护栏仍是 ai_daily_token_budget。
 # 日期敏感命令显式 -date $TODAY:quote-collector / market-state / daily-review / reconcile。
 ok=1
-for c in migrate "collector -driver all" "collector -driver cninfo-announce" "worker -limit 300" cluster "quote-collector -date $TODAY" entity-build "market-state -date $TODAY" "daily-review -date $TODAY" "reconcile -date $TODAY"; do
+for c in migrate "collector -driver all" "collector -driver cninfo-announce" "worker -limit 800" cluster "quote-collector -date $TODAY" entity-build "market-state -date $TODAY" "daily-review -date $TODAY" "reconcile -date $TODAY"; do
   # shellcheck disable=SC2086   # $c 含参数时按空格拆分为独立参数
   if run $c; then echo "== ok $c" >> "$L"; else echo "== FAIL $c" >> "$L"; ok=0; fi
 done

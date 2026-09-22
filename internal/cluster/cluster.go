@@ -6,6 +6,7 @@ package cluster
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -232,8 +233,37 @@ const batchSystem = `你是事件去重确认助手。判断每一对事件是�
 {"results":[{"pair_index":0,"is_same":true,"canonical_title":"更规范的事件标题"}, ...]}
 规则:is_same=false 时 canonical_title 填空字符串;canonical_title 取覆盖面最广、最规范的那个标题。`
 
+// retryBackoff 重试退避基数(issue #75)。包级变量便于测试注入(设为 0 即不等待)。
+// 退避序列:base×1、base×2(base=0 时不等待)。加抖动由 jitter 控制。
+var retryBackoff = time.Second
+
+// confirmAttempts 单批确认的最大尝试次数(失败退避后重试)。
+const confirmAttempts = 3
+
+// backoff 等待第 attempt 次失败后的退避时长(1s、2s…),并响应 ctx 取消。
+// attempt 从 1 起:第 1 次失败后等 base×1,第 2 次后等 base×2。
+func backoff(ctx context.Context, attempt int) {
+	d := retryBackoff * time.Duration(attempt)
+	if d <= 0 {
+		return
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+	case <-t.C:
+	}
+}
+
 // ConfirmPairs 分批送 LLM 确认候选对,返回与 pairs 同序的判定。
 // maxTokens>0 时作为本命令可用 token 上限,超出即停止确认(剩余对视为不同事件)。
+//
+// 重试语义(issue #75):
+//   - **429/5xx 可重试** —— 每次失败后按退避(base×attempt)等待再试,不再瞬间烧完 3 次;
+//   - **其它 4xx 确定性** —— 立即放弃(重试无意义,只是白花时间与配额);
+//   - ⚠️ **只在成功时累加 token**(修账本盲区):旧实现 `total += r.Usage.Total()` 对
+//     报错的那次也加,而网关抽风时 `Usage` 恒为 0、真实花费记成 0,同时把「失败次数」
+//     混进花费口径。失败不再计入。
 func ConfirmPairs(ctx context.Context, p ai.Provider, events []model.Event, pairs [][]int, batch int, maxTokens int64) ([]PairVerdict, int64, error) {
 	verdicts := make([]PairVerdict, len(pairs))
 	for i := range verdicts {
@@ -252,18 +282,25 @@ func ConfirmPairs(ctx context.Context, p ai.Provider, events []model.Event, pair
 
 		var resp ai.StructuredResponse
 		var lastErr error
-		for attempt := 1; attempt <= 3; attempt++ {
+		for attempt := 1; attempt <= confirmAttempts; attempt++ {
 			r, err := p.StructuredOutput(ctx, ai.StructuredRequest{System: batchSystem, User: user})
-			total += r.Usage.Total()
 			if err != nil {
 				lastErr = err
+				var apiErr *ai.APIError
+				if errors.As(err, &apiErr) && !apiErr.Retryable() {
+					return nil, total, fmt.Errorf("cluster confirm deterministic failure (status %d): %w", apiErr.Status, err)
+				}
+				if attempt < confirmAttempts {
+					backoff(ctx, attempt)
+				}
 				continue
 			}
+			total += r.Usage.Total() // 只在成功时计入
 			resp = r
 			break
 		}
 		if len(resp.Data) == 0 {
-			return nil, total, fmt.Errorf("cluster confirm failed after 3 attempts: %w", lastErr)
+			return nil, total, fmt.Errorf("cluster confirm failed after %d attempts: %w", confirmAttempts, lastErr)
 		}
 		var out struct {
 			Results []struct {
@@ -347,6 +384,26 @@ func BuildComponents(n int, auto [][]int, verdicts []PairVerdict, pairs [][]int)
 		}
 	}
 	return comps
+}
+
+// UnmatchedIndices 返回「本轮进了池、最终不属于任何分量」的事件下标(issue #75)。
+// 这些事件本轮确实被比对过、且无对端 ⇒ 调用方据此盖扫描水位(cluster_scanned_at),
+// 下轮不再进池。⚠️ 只在**未截断**时可用:limit 截断时池外事件没被比对过,
+// 给它们盖水位会永久漏召回(见 cmd/cluster 的 truncated 守卫)。
+func UnmatchedIndices(n int, comps [][]int) []int {
+	inComp := make([]bool, n)
+	for _, c := range comps {
+		for _, i := range c {
+			inComp[i] = true
+		}
+	}
+	var out []int
+	for i := 0; i < n; i++ {
+		if !inComp[i] {
+			out = append(out, i)
+		}
+	}
+	return out
 }
 
 // ApplyClusters 建簇入库:canonical = 最早创建(同则更高置信),其余 status='merged'。

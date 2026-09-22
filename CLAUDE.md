@@ -92,6 +92,7 @@ PIKS 是 A 股投资知识系统：快讯/涨停池 → 结构化事件与实体
 - **各镜像版本 = 自己输入的 git tree hash**（非 HEAD hash）：改前端不动 web/tools/research 的 tag → 它们既不重建也不传输。tag 形如 `v0.0.0-<该镜像短hash>`。⚠️ `TAG_TOOLS` 取 **10 个命令依赖闭包的并集**（`go_deps_hash_all`），不是只 hash `migrate` —— 否则改 `internal/collector` 不动 tag，生产跑旧像。
 - **顺序是硬约束**：`migrate` 必须先于 `web`（`cmd/web/main.go` 读 `app_config`，缺表即 fatal 崩溃循环）；`gateway` 必须最后。`hot-topic` 依赖迁移 0018 的 `hot_topic_items` 表，故也排在 `migrate` 之后。
 - **干净树门控**：`deploy.sh` 默认拒绝脏树（镜像从工作树构建却以版本 tag 命名）；调试用 `PIKS_ALLOW_DIRTY=1`（tag 附 `-dirty`）。
+- ⚠️ **预算护栏 `ai_daily_token_budget` 的 0 = 「护栏关闭」**（不是「不限预算」，issue #75）：为 0 时 `cmd/cluster`/`cmd/worker` 打 WARN 并记 `task_runs.meta.guard_disabled=true`，**不拦任何 LLM 调用**；须经 `/settings` 设为非 0（建议 `1000000`）。日账本口径 = **北京午夜**（`config.BeijingMidnight`），不是 UTC。改 `cmd/cluster` 的收敛/预算行为须同改 `docs/phase2/design/cluster-quality.md` §3.4。
 - **发布前必打 tag**；未发版也须在验证记录里写明 `v0.0.0-<hash>`（栈清单记四镜像 tag）。
 - 每次部署**保留回滚镜像** `<name>:rollback-pre-<阶段>`，并在文档登记旧 hash。⚠️ **回滚快照只打一次、存在即跳过**（回滚点是一次性的；无脑 `tag latest` 会在第二次部署时把回滚点静默改写成新镜像，名字不变、内容已换，真回滚时才发现回滚不了）。
 - ⚠️ **深研不在 web 进程内跑**：web 只建 `pending` 行 + `NOTIFY`，`piks-research` 的 `research-worker` 认领执行（`migrations/0015`、`internal/store/research_queue.go`）。web 容器无 python3，**任何新增的 web 内 `os/exec python3` 都会复现 2026-09-12 事故**（`check-research-isolation.sh` 白名单守卫）。

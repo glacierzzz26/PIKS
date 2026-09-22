@@ -131,8 +131,9 @@ go build -o bin/ ./cmd/...
 - **公网入口**(2026-09-22,issue #78):**https://piks.5home.online** —— 阿里云宿主边缘 Nginx(443,SNI 分流)经 **frp stcp 隧道**回源 lab 的 `piks-gateway:8090`(全栈仍跑 lab,阿里云只做入站;回源口 `127.0.0.1:17010` 只绑 loopback,公网不可达)。⚠️ **当前无鉴权(裸奔)**,见 `docs/架构总览.md` §9.5 与 issue #78。
 - **运维速查**:
   - 更新:`./scripts/deploy.sh`(dev 侧按镜像建/传 → 同步 compose **与 lab 侧 `scripts/`** → migrate → 起 web/research/collector/gateway)
-  - 日管线:crontab 每 15min 自判(北京时间非交易日/已过 16:10/今日未跑);`flock` 单实例锁 + 按步骤台账(只重跑未完成步骤)+ 单步超时 + 失败退避/分型(`deterministic`/`quota` 立即放弃,记 `ABANDON`)
-  - 排查管线:`ssh lab 'tail -50 /home/rguo/piks/logs/pipeline-$(date +%F).log'`;步骤台账目录 `logs/pipeline-<date>.done.d/`,失败计数 `logs/pipeline-<date>.fail.<step>`
+  - 日管线:crontab 每 15min 自判(北京时间非交易日/已过 16:10/今日未跑),stamp 防重跑
+  - 聚类:`./bin/cluster`(候选池收扫水位 + 重审视时间窗;`-window-days` 默认 7、`-dry-run` 只生成候选不调 LLM、`-limit 0` = 不限)
+  - ⚠️ **预算护栏**:`ai_daily_token_budget=0` 的语义是**护栏关闭**(不是「不限预算」)。为 0 时 `cluster`/`worker` 打 WARN 并在 `task_runs.meta` 记 `guard_disabled=true`;须经 `/settings` 设为非 0(建议 `1000000`)才拦得住真实花费
   - 盘中采集:`collector` 常驻服务自判(工作日 + 09:15–15:05 时段闸),每 3 分钟一轮;`per-host` 反封禁护栏(令牌桶/空响应哨兵/熔断)
   - 备份:每晚 `pg_dump` → `/home/rguo/piks/backups/`,14 天留存
   - 日志:`ssh lab 'tail -50 /home/rguo/piks/logs/pipeline-$(date +%F).log'`

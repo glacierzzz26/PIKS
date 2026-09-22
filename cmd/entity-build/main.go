@@ -127,6 +127,7 @@ func main() {
 
 	// 3. AI 批量分类(便宜档,一次);护栏:超日预算则跳过,未匹配词全部 unknown(诚实)
 	classifiedTerms := 0
+	classifyTokens := int64(0)
 	var unknownTerms []string
 	if len(unmatched) > 0 && aiBudgetAvailable(ctx, s, cfg.AIDailyTokenBudget) {
 		cl := entityextract.NewClassifier(newProvider(cfg))
@@ -152,7 +153,9 @@ func main() {
 				}
 			}
 			// detail:分类来的概念/题材留空;company 无代码也留空(架构 §9.3 Unknown 允许)
-			_ = tokens
+			// ⚠️ issue #75 账本盲区:此处 token 曾直接 `_ = tokens` 丢弃 ⇒ 实体归类的
+			// 花费完全不计入 task_runs,预算护栏看不到它(归新 issue 处理「去 LLM」,但记账先补上)。
+			classifyTokens = tokens
 		} else {
 			unknownTerms = append(unknownTerms, unmatched...)
 		}
@@ -214,15 +217,17 @@ func main() {
 	}
 
 	meta := map[string]any{
-		"seed_companies":  len(seeds.companies),
-		"seed_industries": len(seeds.industries),
-		"affected_terms":  len(terms),
-		"matched":         len(matched),
-		"classified":      classifiedTerms,
-		"unknown":         len(unknownTerms),
-		"unknown_names":   unknownTerms,
+		"seed_companies":   len(seeds.companies),
+		"seed_industries":  len(seeds.industries),
+		"affected_terms":   len(terms),
+		"matched":          len(matched),
+		"classified":       classifiedTerms,
+		"unknown":          len(unknownTerms),
+		"unknown_names":    unknownTerms,
 		"entities_created": created,
 		"affects_rels":     relCount,
+		// issue #75 账本盲区:实体归类花费曾完全丢弃,预算护栏因此算不到这部分。
+		"ai_tokens": classifyTokens,
 	}
 	if err := s.FinishTaskRun(ctx, runID, "success", "", meta); err != nil {
 		fail(err)
@@ -446,7 +451,7 @@ func aiBudgetAvailable(ctx context.Context, s *store.Store, budget int64) bool {
 	if budget <= 0 {
 		return true
 	}
-	today, err := s.TokensSince(ctx, time.Now().UTC().Truncate(24*time.Hour))
+	today, err := s.TokensSince(ctx, config.BeijingMidnight(time.Now()))
 	if err != nil {
 		return true
 	}

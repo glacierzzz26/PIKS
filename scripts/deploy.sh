@@ -25,13 +25,15 @@ C=/home/rguo/piks
 # tag(正式发版)才取该 tag。不做「改动挺大就造个号」这类推测。
 VER="$(git -C "$REPO" describe --tags --exact-match 2>/dev/null || echo v0.0.0)"
 GS="$(git -C "$REPO" rev-parse --short HEAD)"
-# 国内 pypi.org 时常长读超时(实测本机 15s 无响应),默认走清华镜像;可 PIKS_PYPI_INDEX 覆盖。
-# ⚠️ 2026-09-20 实测(issue #56 部署卡住的真因):aliyun 源对**本机**只有 ~20 KB/s
-#   (同机 curl 命中其 CDN 可达 4 MB/s,但 Python/pip 的连接恒落坏节点;换 UA 无效),
-#   清华源实测 **5.58 MB/s**(同机同时刻)。故默认由 aliyun 改为 tsinghua ——
-#   aliyun 会让 pip 层下几十 MB 依赖耗时数十分钟,是部署超时的根因。
-#   注意这是**取数链路的环境事实,非代码缺陷**;换线路后需重测,不当作永久结论。
-PYPI_INDEX="${PIKS_PYPI_INDEX:-https://pypi.tuna.tsinghua.edu.cn/simple}"
+# 国内 pypi.org 时常长读超时(实测本机 15s 无响应),默认走国内镜像;可 PIKS_PYPI_INDEX 覆盖。
+# ⚠️ 2026-09-20 实测(issue #57 部署卡住的真因):aliyun 源对**本机**极慢(当次测 ~20 KB/s),
+#   故默认由 aliyun 改为 tsinghua。
+# ⚠️ 2026-09-22 复测并再优化:用**完整装 requirements.txt**(不是单包)对比,结果 ——
+#     aliyun **202.7s** / 清华 18.2s / pypi.org 9.8s / **USTC 8.8s**。
+#   即:① aliyun 仍是最慢(慢 23 倍);② **清华也不是最优,USTC 再快约 2 倍**。
+#   故默认由 tsinghua 改为 **USTC**。单包下载同样复现(aliyun 32.8s vs USTC 1.8s)。
+#   注意这是**取数链路的环境事实,非代码缺陷**;换线路/换构建机后需重测,不当作永久结论。
+PYPI_INDEX="${PIKS_PYPI_INDEX:-https://mirrors.ustc.edu.cn/pypi/simple}"
 
 # ── 干净树门控 ────────────────────────────────────────────────────────────
 DIRTY=""

@@ -255,7 +255,7 @@ extraction 审计轨迹。故与 T2 的 `cluster_sources` 同范式:**读路径�
 | `internal/store/events.go` | 新增 `ListClusterMembersWithFacts(ctx, clusterIDs)` —— `ListClusterSources` 不返回 facts,**故意不按机构去重**(冲突要逐成员 facts) |
 | `internal/web/api_v1.go` | `apiEventItem` 加 `source_count`(非 omitempty)+ `event_conflicts,omitempty`;`toEventItem` 变 4 参;`handleAPIEvents` 批量取成员算冲突,**默认附带** |
 | `frontend/src/lib/types.ts` | `EventItem` 加 `source_count?` / `event_conflicts?` |
-| `frontend/src/components/events/EventDetail.tsx` | chip 行加「单一来源」(`.st-dim`,**不复用 `.st-amber`** —— 那是待复核的色);来源区单源分支加白话说明 |
+| `frontend/src/components/events/EventDetail.tsx` | chip 行加「单一来源」(`.st-dim`,**不复用 `.st-amber`** —— 那是抽取态的色,issue #80 后 `.st-amber` = 已抽取);来源区单源分支加白话说明 |
 | `frontend/src/components/events/EventSources.tsx` **新增** | 来源区(单源一行 / ≥2 家列各源),为守 150 行硬规则拆出 |
 | `frontend/src/components/events/EventConflicts.tsx` **新增** | 冲突分区:逐条列「对不上的数字」+ 双方原文 |
 | `frontend/src/components/events/EventTable.tsx` | 标题行在 `· N 家印证` 旁对称加 `· 单一来源` / `· 说法不一致` |

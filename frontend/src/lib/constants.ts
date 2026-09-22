@@ -8,19 +8,27 @@
  * 导致 92% 事件露英文原值、6/8 过滤项永远为空。
  */
 
+/**
+ * 抽取态筛选项（issue #80 重定义）—— key 与后端 `eventStatusFront` 取值严格一致。
+ *
+ * ⚠️ 只有两个**在产**态：`extracted`（抽取成功，唯一由 `internal/extract` 写入）
+ * 与 `merged`（被聚类并入代表，仍是库里的真实事件）。旧的「已确认」映射
+ * `verified|published` 是**结构上恒空**的死选项 —— 其唯一写入方 vault 发布器
+ * 已于 P6 下线，生产实测无任何 verified/published 行。宁可如实标两态，不给死选项。
+ */
 export const EVENT_STATUS = [
-  { key: "", label: "全部状态" },
-  { key: "confirmed", label: "已确认" },
-  { key: "pending", label: "待复核" },
+  { key: "", label: "全部" },
+  { key: "extracted", label: "已抽取" },
+  { key: "merged", label: "已被合并" },
 ];
 
 /**
  * 来源维度标注（issue #49 T3）——与 EVENT_STATUS（抽取态）是**两条正交的轴**，
- * 不要混用：抽取态说的是「AI 抽得准不准」，来源数说的是「有几家机构在报」。
+ * 不要混用：抽取态说的是「这条报道在库里处于什么状态」，来源数说的是「有几家机构在报」。
  *
- * ⚠️ 措辞取「单一来源」而非「待核」：仓库里 pending 已渲染为「待复核」，
- * 再上一个「待核」两个近义中文标签同屏会混。且「单一来源」是**客观计数**的陈述，
- * 不暗示消息可疑 —— 独家报道是正常且常见的（issue #49 红线）。
+ * ⚠️ 措辞取「单一来源」而非「待核」：抽取态已无「待复核」标签（issue #80 重定义），
+ * 但「单一来源」是**客观计数**的陈述，不暗示消息可疑 —— 独家报道是正常且常见的
+ * （issue #49 红线），这点与标签有无无关，仍不得写成「可疑」。
  */
 export const SINGLE_SOURCE_LABEL = "单一来源";
 export const SINGLE_SOURCE_HINT =

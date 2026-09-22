@@ -129,7 +129,7 @@ for (const { path, kind } of PAGES) {
   try {
     await page.goto(BASE + "/events", { waitUntil: "domcontentloaded", timeout: TIMEOUT });
     await page.waitForSelector(".chip-btn", { timeout: TIMEOUT }).catch(() => {});
-    // ⚠️ 不能按 .chip-btn 总数断言：重要消息 tab 内还有状态筛选 chip(全部状态/已确认/待复核)，
+    // ⚠️ 不能按 .chip-btn 总数断言：重要消息 tab 内还有状态筛选 chip（全部/已抽取/已被合并），
     // 故取 tab 条(filter-bar)内前 3 个 chip 的标签判定。
     const tabs = (await page.locator(".filter-bar").first().locator(".chip-btn").allInnerTexts())
       .slice(0, 3).map((t) => t.trim());
@@ -145,6 +145,97 @@ for (const { path, kind } of PAGES) {
     if (backendUp) report("/events 公告tab可达", annReachable, `announcements 请求=${annReachable}`);
   } catch (e) {
     report("/events tab条", false, `异常 ${String(e).slice(0, 120)}`);
+  }
+  await page.close();
+}
+
+// 消息页筛选回归（issue #80）：断言「点筛选 → URL 真的带上该参数 **且** 列表真的变了」。
+//
+// ⚠️ 为何必须两条一起断：旧版只断言「进某页渲染出 tab 条」，照不到筛选 ——
+// bug 本体是「改动摇篮里就丢了」，URL 静默回退到旧值、UI 无任何反馈。
+// 只查 URL 也不够：筛选可能写进了 URL 但后端没认（如 strSub 不搜 affected），
+// 故必须同时断言**可见列表确实变化**（分页条声称的总数变小）。
+//
+// 挂后端 + 有数据才跑；空库/无后端时如实跳过（不把「没样本」误报成回归）。
+if (backendUp) {
+  const page = await browser.newPage();
+  try {
+    await page.goto(BASE + "/events", { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    const hasRows = await page
+      .waitForSelector(".table tbody tr", { timeout: TIMEOUT })
+      .then(() => true)
+      .catch(() => false);
+
+    // 行数用「分页条声称的总数」而非 DOM 行数 —— 后者被 20/页上限截断，
+    // 全量>20 时筛选前后都恒为 20，无鉴别力。
+    const totalOf = async () => {
+      const t = await page.locator(".pager .num").first().innerText().catch(() => "");
+      const m = t.match(/共\s*(\d+)\s*条/);
+      return m ? Number(m[1]) : null;
+    };
+    const rowsOf = async () => page.locator(".table tbody tr").count();
+
+    if (!hasRows) {
+      report("/events 筛选URL", true, "无事件数据，跳过筛选断言");
+    } else {
+      const totalAll = await totalOf();
+      const rowsAll = await rowsOf();
+
+      // ① 状态 chip：点「已抽取」→ URL 带 status=extracted（旧 bug：此参数被静默丢弃）
+      const before1 = page.url();
+      await page.locator(".filter-bar .chip-btn", { hasText: "已抽取" }).first().click();
+      await page.waitForTimeout(1200);
+      const urlOk = /[?&]status=extracted\b/.test(page.url());
+      report(
+        "/events 筛选URL",
+        urlOk && page.url() !== before1,
+        `点击前=${before1.split("?")[1] ?? "(无)"} 点击后=${page.url().split("?")[1] ?? "(无)"}`
+      );
+
+      // ② 列表确实变短（若后端/前端没把该筛选接上，总数不会动）
+      const totalExtracted = await totalOf();
+      report(
+        "/events 筛选生效",
+        totalAll !== null && totalExtracted !== null && totalExtracted < totalAll,
+        `全部=${totalAll} → 已抽取=${totalExtracted}`
+      );
+
+      // ③ 改页大小：setSize 曾连调两次 setParam（size 被 page 覆盖），断言 size 落到 URL
+      await page.locator(".pager select").selectOption("100");
+      await page.waitForTimeout(1200);
+      report(
+        "/events 页大小URL",
+        /[?&]size=100\b/.test(page.url()),
+        `URL=${page.url().split("?")[1] ?? "(无)"}`
+      );
+      report(
+        "/events 页大小生效",
+        totalAll !== null && (await rowsOf()) >= Math.min(100, totalAll),
+        `全部=${totalAll} 行数=${await rowsOf()}`
+      );
+
+      // ④ 搜索口径：占位符承诺搜「影响实体」，取首行实体名做关键词，断言确实搜得到
+      if (rowsAll > 0) {
+        const ent = (await page.locator(".table tbody tr").first().locator("td").nth(2).innerText())
+          .trim()
+          .split(/[\s,、]+/)[0];
+        if (ent && totalAll !== null && totalAll > 1) {
+          await page.locator(".f-search input").first().fill(ent);
+          await page.locator(".f-search input").first().press("Enter");
+          await page.waitForTimeout(1200);
+          const totalQ = await totalOf();
+          report(
+            "/events 搜影响实体",
+            /[?&]q=/.test(page.url()) && totalQ !== null && totalQ < totalAll,
+            `实体「${ent}」 全部=${totalAll} → 搜索结果=${totalQ}`
+          );
+        } else {
+          report("/events 搜影响实体", true, `样本不足(实体=${ent} 总数=${totalAll})，跳过`);
+        }
+      }
+    }
+  } catch (e) {
+    report("/events 筛选URL", false, `异常 ${String(e).slice(0, 120)}`);
   }
   await page.close();
 }

@@ -45,11 +45,13 @@ function EventBody({ event }: { event: EventItem }) {
         <Chip tone="accent">
           {labelOf(event.event_type) ?? event.event_type}
         </Chip>
-        <Chip tone={event.status === "confirmed" ? "down" : "amber"}>
-          {event.status === "confirmed" ? "已确认" : "待复核"}
+        {/* 抽取态（issue #80 重定义）：extracted=已抽取 / merged=已被聚类并入。
+            与下面的来源维度是**两条正交的轴**，用色亦区分（merged 用 dim）。 */}
+        <Chip tone={event.status === "merged" ? "dim" : "amber"}>
+          {event.status === "merged" ? "已被合并" : "已抽取"}
         </Chip>
         {/* 来源维度（issue #49 T3）：与上面的抽取态是**两条正交的轴**。
-            用 dim 而非 amber —— amber 已被「待复核」占用，同色会让人以为是一回事。 */}
+            用 dim —— 单源是客观陈述，不是异常（独家报道很常见）。 */}
         {event.source_count === 1 && (
           <Chip tone="dim">{SINGLE_SOURCE_LABEL}</Chip>
         )}

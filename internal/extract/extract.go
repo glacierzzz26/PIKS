@@ -129,8 +129,8 @@ func (e *Extractor) Extract(ctx context.Context, doc *model.RawDocument) (int, i
 			Title:           ev.Title,
 			EventType:       normalizeEventType(ev.EventType),
 			Summary:         strPtrIf(ev.Summary),
-			Facts:           mustJSON(ev.Facts),
-			Affected:        mustJSON(ev.Affected),
+			Facts:           mustJSONArray(ev.Facts),
+			Affected:        mustJSONArray(ev.Affected),
 			OccurredAt:      parseTime(ev.OccurredAt),
 			Confidence:      clamp01(ev.Confidence),
 			Status:          "extracted",
@@ -230,7 +230,16 @@ func parseTime(s string) *time.Time {
 	return nil
 }
 
-func mustJSON(v any) json.RawMessage {
+// mustJSONArray 把字符串切片序列化为 **JSON 数组**,nil / 空切片 → 字面量 `[]`。
+//
+// ⚠️ 不能用裸 `json.Marshal`:它对 nil 切片返回字面量 `null` 且 **err == nil**
+// (issue #71 生产事故的根因),于是 events.affected 落成 JSON null,而消费方
+// `jsonb_array_elements_text(e.affected)` 遇标量即报 SQLSTATE 22023 →
+// entity-build 每轮必崩。故此处**必须先判 nil/空**,不能依赖 err。
+func mustJSONArray(v []string) json.RawMessage {
+	if len(v) == 0 {
+		return json.RawMessage("[]")
+	}
 	b, err := json.Marshal(v)
 	if err != nil {
 		return json.RawMessage("[]")

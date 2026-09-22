@@ -119,10 +119,17 @@ func (s *Store) ListRelationshipsFromIDs(ctx context.Context, fromType string, f
 }
 
 // ListAffectedTermEvents affected 词 → 事件 id 映射(实体构建用)。
+//
+// ⚠️ 必须加 `jsonb_typeof(affected) = 'array'` 守卫(issue #71):历史行里存在
+// JSON `null` 的 affected,而 `jsonb_array_elements_text` 遇标量即报
+// SQLSTATE 22023「cannot extract elements from a scalar」,会让 entity-build
+// **整条命令崩掉**(不是跳过坏行)。写入侧已修(emptyToArrayIfScalar),此处是
+// 纵深防御 —— 即便再有标量落库,也只被跳过、不再崩命令。
 func (s *Store) ListAffectedTermEvents(ctx context.Context) (map[string][]string, error) {
 	rows, err := s.Pool.Query(ctx, `
 		SELECT elem AS term, e.id AS event_id
-		FROM events e, jsonb_array_elements_text(e.affected) elem`)
+		FROM events e, jsonb_array_elements_text(e.affected) elem
+		WHERE jsonb_typeof(e.affected) = 'array'`)
 	if err != nil {
 		return nil, err
 	}

@@ -84,11 +84,20 @@ COPY --from=frontend /src/frontend/dist /usr/share/nginx/html
 # ⚠️ 深研不再在 web 进程内跑(拆分后此处无 python3),编排由 research 容器的 worker 认领。
 # ============================================================================
 FROM alpine:3.20 AS web
-ARG GIT_SHORT
-ARG PIKS_VERSION
 # ca-certificates:LLM 调用走 HTTPS(自签网关 CA 经 SSL_CERT_DIR 注入);
 # tzdata:TZ=Asia/Shanghai 生效(time.Now().Truncate(24h) 的日界按北京时间 —— 缺了会漂到 UTC)。
-RUN apk add --no-cache ca-certificates tzdata
+# ⚠️ apk 源换国内镜像:默认 dl-cdn.alpinelinux.org 从构建机实测**极不稳**
+#   (463KB 索引 ~11KB/s,且会中途挂死),apk 层可耗时数分钟乃至被 SIGKILL
+#   (2026-09-21 实测 exit 137 即此)。经实测 aliyun 在容器内可达且稳定
+#   (dl-cdn / 清华 在容器内均不可达)。可用 --build-arg APK_MIRROR=… 覆盖。
+ARG APK_MIRROR=mirrors.aliyun.com
+RUN sed -i "s|dl-cdn.alpinelinux.org|${APK_MIRROR}|g" /etc/apk/repositories && \
+    apk add --no-cache ca-certificates tzdata
+# ⚠️ 版本 ARG/ENV 必须排在 **apk add 之后**(2026-09-21 修,与 research 阶段 #57 同因):
+#   GIT_SHORT 每次提交都变,若排在 apk 之前,该层缓存**每次升级都被击穿** →
+#   每次都要重装 apk(恰好撞上上面那个不稳的 CDN)。挪到 apk 之后即恒定命中缓存。
+ARG GIT_SHORT
+ARG PIKS_VERSION
 ENV PIKS_GIT_SHORT=${GIT_SHORT} \
     PIKS_VERSION=${PIKS_VERSION} \
     PIKS_IMAGE_ROLE=web
@@ -102,11 +111,15 @@ CMD ["/app/bin/web", "-listen", "0.0.0.0:8090"]
 # tools:9 个批处理管线命令 + 运行时文件资源。compose run --rm 跑一次即退,非常驻。
 # ============================================================================
 FROM alpine:3.20 AS tools
-ARG GIT_SHORT
-ARG PIKS_VERSION
 # git:daily-review/reconcile 在 vault 启用时提交(当前 vault 下线,保留以免突发);
 # ca-certificates:管线命令调 LLM 走 HTTPS;tzdata:非交易日判定/复盘日期用北京时间。
-RUN apk add --no-cache git ca-certificates tzdata
+# ⚠️ apk 源换国内镜像(同 web 阶段,2026-09-21):默认 CDN 极不稳会挂死/被 SIGKILL。
+ARG APK_MIRROR=mirrors.aliyun.com
+RUN sed -i "s|dl-cdn.alpinelinux.org|${APK_MIRROR}|g" /etc/apk/repositories && \
+    apk add --no-cache git ca-certificates tzdata
+# ⚠️ 版本 ARG/ENV 排在 apk 之后,避免每次提交击穿 apk 层缓存(同 web 阶段 / #57)。
+ARG GIT_SHORT
+ARG PIKS_VERSION
 ENV PIKS_GIT_SHORT=${GIT_SHORT} \
     PIKS_VERSION=${PIKS_VERSION} \
     PIKS_IMAGE_ROLE=tools

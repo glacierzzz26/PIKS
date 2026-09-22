@@ -7,10 +7,12 @@ import type { EventItem } from "@/lib/types";
 
 // 类型 label 与配色**不在前端**（issue #61）：唯一真源是后端 `model.EventTypes`，
 // 经 `useEventTypes()` 取。此处曾硬编码 8 值 TYPE_TAG，与后端 9 值枚举漂移。
+// 抽取态两个**在产**取值（issue #80）：extracted = 抽取成功（唯一由 internal/extract
+// 写入）；merged = 被聚类并入代表（仍是库里的真实事件）。历史 verified/published 已无
+// 写入方（旧 vault 发布器随 P6 下线），后端将其并入 extracted。
 export const STATUS_ST: Record<string, { cls: string; label: string }> = {
-  confirmed: { cls: "st-down", label: "已确认" },
-  pending: { cls: "st-amber", label: "待复核" },
-  archived: { cls: "st-dim", label: "已归档" },
+  extracted: { cls: "st-amber", label: "已抽取" },
+  merged: { cls: "st-dim", label: "已被合并" },
 };
 
 /** 事件表：点击行打开详情抽屉。 */

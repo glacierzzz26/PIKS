@@ -221,7 +221,7 @@ func (s *Server) handleAPIEvents(w http.ResponseWriter, r *http.Request) {
 		if !eventStatusOK(ev.Status, status) {
 			continue
 		}
-		if q != "" && !strSub(q, ev.Title, orStr(ev.Summary, "")) {
+		if q != "" && !strSub(q, ev.Title, orStr(ev.Summary, ""), affectedTerms(ev.Affected)) {
 			continue
 		}
 		filtered = append(filtered, ev)
@@ -353,6 +353,8 @@ func (s *Server) handleAPIFlashes(w http.ResponseWriter, r *http.Request) {
 		if src != "" && f.Source != src {
 			continue
 		}
+		// Title 即查询里 `COALESCE(rd.title, rd.content)`,也正是前端渲染的那段正文
+		// (apiFlash.Content),故按正文搜索与用户所见一致(issue #80:此前占位符承诺搜正文却只搜标题)。
 		if q != "" && !strSub(q, f.Title) {
 			continue
 		}
@@ -395,7 +397,7 @@ func (s *Server) handleAPIAnnouncements(w http.ResponseWriter, r *http.Request) 
 		if src != "" && a.Source != src {
 			continue
 		}
-		if q != "" && !strSub(q, a.Title) {
+		if q != "" && !strSub(q, a.Title, orStr(a.SecCode, ""), orStr(a.SecName, "")) {
 			continue
 		}
 		ag := orStr(a.Grade, "")
@@ -639,32 +641,33 @@ func conflictsOf(mem []store.ClusterMember) []apiEventConflict {
 	return out
 }
 
-// eventStatusFront 后端知识状态 → 前端展示状态(confirmed/pending)。
+// eventStatusFront 后端 status → 前端筛选/展示口径。
+//
+// ⚠️ 只有两个**在产**知识态(issue #80 实测):`extracted`(抽取成功,唯一由
+// `internal/extract` 写入)与 `merged`(聚类把重复报道并入代表后置的合并态)。
+// 历史上另有 `verified`/`published`,但其**唯一写入方是已随 P6 下线的 vault 发布器**
+// —— 发布生命周期改由 `published_at` 承载(`iter1-reliability.md` §3.4),生产实测
+// 无任何 verified/published 行。故旧映射 `verified|published → confirmed` 是**结构上
+// 恒空**的死选项,已移除;宁可如实标「已抽取」,不给一个永远点不出东西的「已确认」。
 func eventStatusFront(backend string) string {
 	switch backend {
-	case "verified", "published":
-		return "confirmed"
-	case "extracted":
-		return "pending"
 	case "merged":
-		return "archived"
+		return "merged"
+	case "extracted", "verified", "published":
+		// verified/published 为历史遗留行,知识态上仍是「已抽取未合并」。
+		return "extracted"
 	default:
 		return backend
 	}
 }
 
-// eventStatusOK 前端筛选状态匹配:confirmed → verified/published,pending → extracted。
+// eventStatusOK 前端筛选状态匹配。空筛选 = 全放行;其余按**同一口径**精确匹配
+// (与 eventStatusFront 的取值一致:extracted / merged)。
 func eventStatusOK(backend, filter string) bool {
-	switch filter {
-	case "", backend:
+	if filter == "" {
 		return true
-	case "confirmed":
-		return backend == "verified" || backend == "published"
-	case "pending":
-		return backend == "extracted"
-	default:
-		return false
 	}
+	return eventStatusFront(backend) == filter
 }
 
 func toEntity(e model.Entity) apiEntity {
@@ -850,6 +853,15 @@ func fPtrVal(p *float64) float64 {
 
 func fmtRFC3339(t time.Time) string { return t.In(cst).Format(time.RFC3339) }
 
+// affectedTerms 把事件的 `affected` JSON 词表摊平成搜索字段。
+// 事件搜索框承诺搜「影响实体」(events.tsx 占位符),而实体名此前未参与 strSub,
+// 故按公司名搜不到(issue #80)。解析失败按无词处理(与 toEventItem 同口径)。
+func affectedTerms(raw json.RawMessage) string {
+	var words []string
+	_ = json.Unmarshal(raw, &words)
+	return strings.Join(words, " ")
+}
+
 // strSub 大小写不敏感的多字段子串匹配。
 func strSub(q string, fields ...string) bool {
 	q = strings.ToLower(q)
@@ -920,10 +932,12 @@ func (s *Server) handleAPIDashboard(w http.ResponseWriter, r *http.Request) {
 		s.apiErr(w, "dashboard", err)
 		return
 	}
-	// 事件排序显式指定:该 evs 供 reviewMarkdown 的「高置信事件」取前 3 与
-	// TopEvents 取前 6 两处,**两处都按置信度取**,故传 EventSortConfidence。
-	// (旧实现依赖 ListEventsForAPI 的升序默认值,「高置信事件」实际取到的是最老的 3 条。)
-	evs, err := s.store.ListEventsForAPI(ctx, store.EventSortConfidence)
+	// 事件**候选**:此处刻意用排除 merged 的查询(issue #80)。本 evs 供 reviewMarkdown
+	// 的「高置信事件」取前 3 与 TopEvents 取前 6 两处,**两处都按置信度取**,且**都没有**
+	// 知识态筛选 —— 若用含 merged 的 `ListEventsForAPI`(那是前端事件列表专用),
+	// 「已被合并」的重复报道会作为独立条目混进 Top N。
+	// (旧实现依赖该查询的升序默认值,「高置信事件」实际取到的是最老的 3 条 —— 现按置信度。)
+	evs, err := s.store.ListTopEventsForDashboard(ctx)
 	if err != nil {
 		s.apiErr(w, "dashboard", err)
 		return

@@ -132,18 +132,49 @@ func eventOrderBy(sort string) string {
 	return `ORDER BY COALESCE(e.occurred_at, e.created_at) DESC`
 }
 
-// ListEventsForAPI 全部有效事件(extracted/verified/published)+ 来源名 + raw url。
+// eventsListQuery 事件流只读投影查询。includeMerged 决定是否放行 `status='merged'`
+// (被聚类并入代表的重复报道)。
+//
+// 默认 **排除 merged**,与发布/看板口径一致:merged 是「已被同一事件的其它报道吸收」的
+// 冗余,不该在「高置信事件 Top N」「个案研究」这类**未按知识态过滤**的消费方里重复出现。
+// 只有前端的**事件列表**需要它(下方 ListEventsForAPI 传 true),因为那是唯一按
+// 「知识态」分区的消费方(issue #80:否则「已被合并」是恒空死选项)。
+func eventsListQuery(includeMerged bool, sort string) string {
+	statuses := "'extracted','verified','published'"
+	if includeMerged {
+		statuses += ",'merged'"
+	}
+	return `SELECT e.id,e.title,e.event_type,e.summary,e.facts,e.affected,e.occurred_at,e.created_at,
+	        e.confidence,e.status, s.name AS source_name, rd.url AS source_url, e.cluster_id
+	 FROM events e
+	 JOIN sources s ON s.id=e.source_id
+	 LEFT JOIN raw_documents rd ON rd.id=e.raw_document_id
+	 WHERE e.status IN (` + statuses + `)
+	 ` + eventOrderBy(sort)
+}
+
+// ListEventsForAPI 事件流(只读投影)—— **含**被聚类并入的 merged。
 // sort 见 EventSort*(空 = 时间倒序)。
 // cluster_id 供前端批量取「簇内各源来源」用(issue #48 T2);非簇成员为 NULL。
+//
+// ⚠️ **此处必须放行 merged**(issue #80):`GET /api/v1/events` 是**唯一**按知识态分区的
+// 消费方(前端抽取态筛选),排除它会让「已被合并」成为恒空死选项。merged 行仍是知识库里
+// 的真实事件,前端通过 status 如实区分,不冒充代表卡。
+//
+// ⚠️ **看板不能用它**:`handleAPIDashboard` 曾复用它取「高置信事件 Top 6」,那里**没有**
+// 知识态筛选,merged 会作为重复项混入。故该处改用 `ListTopEventsForDashboard`。
 func (s *Store) ListEventsForAPI(ctx context.Context, sort string) ([]EventForAPI, error) {
-	rows, err := s.Pool.Query(ctx,
-		`SELECT e.id,e.title,e.event_type,e.summary,e.facts,e.affected,e.occurred_at,e.created_at,
-		        e.confidence,e.status, s.name AS source_name, rd.url AS source_url, e.cluster_id
-		 FROM events e
-		 JOIN sources s ON s.id=e.source_id
-		 LEFT JOIN raw_documents rd ON rd.id=e.raw_document_id
-		 WHERE e.status IN ('extracted','verified','published')
-		 `+eventOrderBy(sort))
+	rows, err := s.Pool.Query(ctx, eventsListQuery(true, sort))
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByName[EventForAPI])
+}
+
+// ListTopEventsForDashboard 看板「高置信事件」候选 —— **排除 merged**。
+// 与事件列表(含 merged)分开,理由见 eventsListQuery 注释。
+func (s *Store) ListTopEventsForDashboard(ctx context.Context) ([]EventForAPI, error) {
+	rows, err := s.Pool.Query(ctx, eventsListQuery(false, EventSortConfidence))
 	if err != nil {
 		return nil, err
 	}

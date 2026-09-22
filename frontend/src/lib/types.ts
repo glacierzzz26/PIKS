@@ -9,7 +9,8 @@ export type EventItem = {
   affected: { word: string; entity_id?: string; entity_name?: string; code?: string }[];
   occurred_at: string;
   confidence: number;
-  status: "confirmed" | "pending" | "archived";
+  /** 抽取态（issue #80）：extracted=已抽取 / merged=已被聚类并入。 */
+  status: "extracted" | "merged";
   source: string;
   source_url?: string;
   /**

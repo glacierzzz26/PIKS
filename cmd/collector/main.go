@@ -246,12 +246,13 @@ func runOne(ctx context.Context, s *store.Store, sp spec, input string) error {
 	}
 
 	newCount, dupCount, failCount := 0, 0, 0
+	var lastErr error
 	// 公告等原始事件源落 'collected':已采集、无需 LLM 抽取(issue #50)。
 	// 快讯源保持空 → InsertRawDocument 默认 'raw'(待抽取)。
-	status := ""
+	docStatus := ""
 	isAnnounce := sp.SourceType == "announcement"
 	if isAnnounce {
-		status = "collected"
+		docStatus = "collected"
 	}
 	for _, n := range news {
 		// 公告分级(issue #68 A 层):标题级规则判定,只落标签、不进 LLM(见 announce.Grade)。
@@ -268,17 +269,18 @@ func runOne(ctx context.Context, s *store.Store, sp spec, input string) error {
 			Content:     n.Content,
 			ContentHash: collector.ContentHash(n.Content),
 			PublishedAt: n.PublishedAt,
-			Status:      status,
+			Status:      docStatus,
 			Grade:       collector.StrPtr(grade),
 			Extra:       n.Extra,
 		})
-		switch {
-		case err != nil:
-			failCount++
-		case ok:
+		switch classifyInsert(ok, err) {
+		case insertNew:
 			newCount++
-		default:
+		case insertDup:
 			dupCount++
+		case insertFail:
+			failCount++
+			lastErr = err
 		}
 	}
 
@@ -289,12 +291,55 @@ func runOne(ctx context.Context, s *store.Store, sp spec, input string) error {
 		"dup":    dupCount,
 		"failed": failCount,
 	}
+	// issue #64:此前无论 failCount 多少都记 success 并返回 nil,把失败逐级吞掉 ——
+	// ① 进程 exit 0 ⇒ pipeline.sh 写 done 戳、当日不再重试;
+	// ② task_runs.status='success' ⇒ 前端绿色「已完成」而实际 0 条入库;
+	// ③ meta.failed 无任何读取方。现按结局如实记账:
+	//   - 全失败(fetch 到了但一条都没落库)⇒ failed + 返回 error ⇒ 退出码非零,管线不写戳;
+	//   - 部分失败 ⇒ partial(不是 success)+ failed 计数上屏,但单条坏数据不拖垮整源
+	//     (免费源无 SLA 是 #43 既有纪律);dup 不计失败(去重生效 ≠ 数据丢失)。
+	switch {
+	case len(news) > 0 && failCount == len(news):
+		err := fmt.Errorf("all %d inserts failed (last: %v)", failCount, lastErr)
+		_ = s.FinishTaskRun(ctx, runID, "failed", err.Error(), meta)
+		return err
+	case failCount > 0:
+		if err := s.FinishTaskRun(ctx, runID, "partial", "", meta); err != nil {
+			return fmt.Errorf("finish task run: %w", err)
+		}
+		fmt.Printf("collector %s/%s: PARTIAL new=%d dup=%d failed=%d/%d\n",
+			sp.Driver, sp.Name, newCount, dupCount, failCount, len(news))
+		return nil
+	}
 	if err := s.FinishTaskRun(ctx, runID, "success", "", meta); err != nil {
 		return fmt.Errorf("finish task run: %w", err)
 	}
 	fmt.Printf("collector %s/%s: new=%d dup=%d failed=%d\n",
 		sp.Driver, sp.Name, newCount, dupCount, failCount)
 	return nil
+}
+
+// insertOutcome 单条 raw_document 插入的三种结局。
+type insertOutcome int
+
+const (
+	insertNew  insertOutcome = iota // 新入库
+	insertDup                       // 命中去重,已存在(不是失败)
+	insertFail                      // 插入报错
+)
+
+// classifyInsert 把 InsertRawDocument 的 (ok, err) 归一为三种结局。
+// ⚠️ 判定次序不可交换:err 优先于 ok —— `ok=false, err!=nil` 是失败,
+// 若先看 ok 会落进「重复」桶,把真实错误静默计成 dup(正是 #64 的坑)。
+func classifyInsert(ok bool, err error) insertOutcome {
+	switch {
+	case err != nil:
+		return insertFail
+	case ok:
+		return insertNew
+	default:
+		return insertDup
+	}
 }
 
 // ensureSource 取或建该机构源。源被暂停时**不**自动复活(须人工确认,防抖动源空转)。

@@ -306,9 +306,11 @@ export type SnapRow = {
 
 export type TaskRun = {
   command: string;
-  status: "ok" | "failed" | "running";
+  status: "ok" | "failed" | "partial" | "skipped" | "running";
   time: string;
   note?: string;
+  /** 本次未入库条数（task_runs.meta.failed；0 = 无）。issue #64 */
+  failed: number;
 };
 
 export type ReconRow = {

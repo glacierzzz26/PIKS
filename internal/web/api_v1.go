@@ -893,6 +893,9 @@ type apiTaskRun struct {
 	Status  string `json:"status"`
 	Time    string `json:"time"`
 	Note    string `json:"note,omitempty"`
+	// Failed = meta.failed(本次未入库条数)。issue #64:此前只上屏 status,
+	// 后端把失败记进 meta 却无读取方 ⇒ 用户看不到「N 条未入库」。
+	Failed int `json:"failed"`
 }
 
 type apiDashboard struct {
@@ -1027,20 +1030,43 @@ func toSnapHistory(snaps []model.MarketSnapshot) []apiSnapRow {
 	return out
 }
 
+// toTaskRun 把 task_runs 行映射为前端看板的条目。
+//
+// ⚠️ switch **必须显式列出每个已知状态**:未匹配者一律落 'running'(「进行中」),
+// 是另一种误导(issue #64)。新增状态(如 'partial'/'skipped')时**同步改这里**。
 func toTaskRun(r model.TaskRun) apiTaskRun {
 	status := "running"
 	switch r.Status {
 	case "success", "ok", "done":
 		status = "ok"
+	case "partial":
+		status = "partial" // 部分失败:入库了但有条目没落,需如实可见(#64)
 	case "failed", "error":
 		status = "failed"
+	case "skipped":
+		status = "skipped"
 	}
 	return apiTaskRun{
 		Command: r.Command,
 		Status:  status,
 		Time:    r.StartedAt.In(cst).Format("15:04"),
 		Note:    orStr(r.Error, ""),
+		Failed:  metaFailed(r.Meta),
 	}
+}
+
+// metaFailed 读 task_runs.meta.failed(未入库条数)。缺失/非数字 ⇒ 0(如非采集类任务)。
+func metaFailed(raw json.RawMessage) int {
+	if len(raw) == 0 {
+		return 0
+	}
+	var m struct {
+		Failed int `json:"failed"`
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return 0
+	}
+	return m.Failed
 }
 
 // GET /api/v1/recon —— 每日对账。

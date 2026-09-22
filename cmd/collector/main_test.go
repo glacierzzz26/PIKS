@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
@@ -55,7 +56,7 @@ func TestParseSession(t *testing.T) {
 	}
 }
 
-// 常驻模式只跑快讯源(不含公告);all 含公告。
+// TestResolveSpecsNewsExcludesAnnouncement 常驻模式只跑快讯源(不含公告);all 含公告。
 func TestResolveSpecsNewsExcludesAnnouncement(t *testing.T) {
 	news, err := resolveSpecs("news", "")
 	if err != nil {
@@ -75,5 +76,29 @@ func TestResolveSpecsNewsExcludesAnnouncement(t *testing.T) {
 	}
 	if len(all) != 7 {
 		t.Fatalf("all group should have 7 sources (6 news + 1 announcement), got %d", len(all))
+	}
+}
+
+// TestClassifyInsert 钉住 #64 的记账分类(尤其「err 优先于 ok」的次序)。
+//
+// 缺陷形态:`ok=false, err!=nil` 若先看 ok 会落进「重复」桶 —— 真实插入错误被
+// 静默计成 dup,于是 123/123 全失败也算「无失败」→ success / exit 0。
+func TestClassifyInsert(t *testing.T) {
+	cases := []struct {
+		name string
+		ok   bool
+		err  error
+		want insertOutcome
+	}{
+		{"新入库", true, nil, insertNew},
+		{"命中去重", false, nil, insertDup},
+		{"插入报错", false, errors.New("boom"), insertFail},
+		// 关键反证:带错误的插入必须判失败,不能被 ok 值带偏。
+		{"报错且 ok=false(不得当重复)", false, errors.New("boom"), insertFail},
+	}
+	for _, c := range cases {
+		if got := classifyInsert(c.ok, c.err); got != c.want {
+			t.Errorf("%s: classifyInsert(%v, %v) = %d, want %d", c.name, c.ok, c.err, got, c.want)
+		}
 	}
 }

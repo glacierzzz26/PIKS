@@ -19,8 +19,9 @@
 // 🔴 **两个接口都不返回股票名** —— 只有 code + marketid + 加入价/加入日。落 PIKS 的
 // entities 又必须有名字(UNIQUE(type,name)),故名字走 name.go 的 realhead 端点另取。
 //
-// 登录(账密)走 auth.go 的 verify2 四步 → docookie2 换 cookie;cookie 里 sess_tk 是 JWT,
-// exp ≈ 7 天。**无滑块、无设备指纹**。
+// 登录(账密)走 auth.go 的 verify2 四步 → docookie2 换 cookie;cookie 里 sess_tk 是 JWT。
+// **端到端实测通过(2026-09-22)**:实测签出的 sess_tk `exp` 距今 **~31 天**(非早先估的 7 天),
+// 故账密登录的稳态频率约 **1 次/月**。**无滑块、无设备指纹**。
 //
 // ── 本包红线 ──────────────────────────────────────────────────────────────
 // ⚫ 只读。绝不调用 modifySelfStock / 任何写接口(自选由同花顺单向镜像,PIKS 不自作主张)。

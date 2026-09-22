@@ -43,7 +43,7 @@
 
 | 文档 | 状态 | 日期 | 备注 |
 |---|---|---|---|
-| [watchlist-sync.md](./watchlist-sync.md) | ✅ **已实现**(dev-only) | 2026-09-22 | issue **#87**(承接「截图导入太麻烦 → 要自动化」)。同花顺「我的自选」改**服务器每日 3 次自动拉取**(09:00/12:55/18:00),替代截图导入。**成员资格真源不变**(仍 `entities.status='watch'`,不迁表);**新增表 `watchlist_entries`**(迁移 `0020`)**只补加入价/日** —— 因 `entities.detail` 每轮被 entity-build **无条件覆盖**(本表存在的唯一理由,已钉集成回归)。**常驻 `watch-sync` 服务**(复用 tools 镜像,仍四镜像)重启去重靠 DB(`task_runs.meta.slot`)。🔴 两端无签名 GET(名单 + `selfstock_detail` 得加入价/日);🔴 **code→name 三链回退**(本地 → 同花顺 realhead → deferred,**宁缺毋假绝不拿 code 当名建实体**);🔴 **失败不静默**(空名单/过滤归零/无凭据/登录失败一律 failed,detail 失败降级须可见,#64 教训);🔴 **只读**(绝不向同花顺写);$NULL \ne 0$。⚠️ **账密登录未端到端实测** —— cookie 注入为已实测兜底,登录作增量(§7)。**未上生产**。 |
+| [watchlist-sync.md](./watchlist-sync.md) | ✅ **已实现**(dev-only) | 2026-09-22 | issue **#87**(承接「截图导入太麻烦 → 要自动化」)。同花顺「我的自选」改**服务器每日 3 次自动拉取**(09:00/12:55/18:00),替代截图导入。**成员资格真源不变**(仍 `entities.status='watch'`,不迁表);**新增表 `watchlist_entries`**(迁移 `0020`)**只补加入价/日** —— 因 `entities.detail` 每轮被 entity-build **无条件覆盖**(本表存在的唯一理由,已钉集成回归)。**常驻 `watch-sync` 服务**(复用 tools 镜像,仍四镜像)重启去重靠 DB(`task_runs.meta.slot`)。🔴 两端无签名 GET(名单 + `selfstock_detail` 得加入价/日);🔴 **code→name 三链回退**(本地 → 同花顺 realhead → deferred,**宁缺毋假绝不拿 code 当名建实体**);🔴 **失败不静默**(空名单/过滤归零/无凭据/登录失败一律 failed,detail 失败降级须可见,#64 教训);🔴 **只读**(绝不向同花顺写);$NULL \ne 0$。✅ **账密登录端到端实测通过**(2026-09-22 探针:四步全通 / 43 项 / 38 A股 / 带价带日各 43 / 取名 38-38);cookie 注入与账密两路均可用(实现上注入优先)。会话实测寿命 ~31 天 ⇒ 登录稳态 ~1 次/月。**未上生产**。 |
 
 
 

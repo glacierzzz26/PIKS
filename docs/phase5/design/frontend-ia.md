@@ -4,6 +4,13 @@
 > **部署**:2026-09-13 经 master 发布线(`1cde70e` → merge → 空提交 `c81c6d2`)上生产 lab,migrate 0(无 schema 变更),15 页 + 新端点全 200;回滚镜像保留 lab `piks-tools:rollback-pre-ia`。⚠️ 生产 `ai_model_vision` 为空 → 截图导入暂不可用(自选/交易均然),待网关出视觉模型。
 > 契约依据:`frontend/src/components/layout/navItems.ts`(导航单一真源)、`frontend/src/App.tsx`(路由表)、`internal/web/api_v1.go:668`(handleAPIDashboard 聚合先例)、`internal/web/api_write.go:283/368`(截图导入两段式 tradeImportAPI/tradeConfirmAPI)、`internal/web/trades.go:84/108`(importPrompt/buildImportPreview)、`internal/store/{entities,relationships,research_runs,trades,personal_notes,market_snapshots}.go`、`internal/model/model.go`(Entity.Status)、`migrations/0004_entities.sql`。
 
+> ⚠️ **后续变更(issue #87,2026-09-22)**:自选同步**不再只走截图** —— 新增**服务器侧自动同步**
+> `cmd/watch-sync`(每日 3 次拉同花顺「我的自选」),与本文 §2.6/§2.7 的截图镜像**并存**:
+> 两路写**同一套** `EnsureCompanyEntity` + `SetEntityStatus`,成员资格真源仍是 `entities.status='watch'`
+> (**§2.6 结论不变**)。截图路径降级为**兜底**(自动失灵时用)。**新增**:加入价/日入新表
+> `watchlist_entries`(迁移 `0020`)—— 因 `entities.detail` 每轮被 entity-build 覆盖(即 §2.6.1 同一地雷的
+> 另一面);截图路径**不含**价/日。设计见 `docs/phase11/design/watchlist-sync.md`。
+
 ---
 
 ## 1. 背景与现状
@@ -155,9 +162,13 @@ frontend/src/components/stock/StockLimitUps.tsx    (涨停记录小卡)
 
 | status | 含义 | 触发 |
 |---|---|---|
-| `watch` | 在自选 | 截图镜像命中 |
+| `watch` | 在自选 | 自动同步命中(issue #87)或截图镜像命中 |
 | `active` | 库中有、不在自选 | entity-build 默认态 |
-| `archived` | 曾在自选、已移出(**不删**,历史/深研/笔记保留) | 截图镜像缺失 |
+| `archived` | 曾在自选、已移出(**不删**,历史/深研/笔记保留) | 两路任一判定缺失 |
+
+> **issue #87 起的补充**:自动同步(常驻 `watch-sync`)与截图镜像**写同一套状态机**,
+> 二者判定结果一致时互不影响。**加入价/日**另存 `watchlist_entries`(迁移 `0020`),
+> **不进 `entities.detail`**(原因见 §2.6.1 —— 同一地雷)。
 
 **理由**:
 1. **身份唯一**:自选必须是「那只股票」,而非「一份并行列表里的一行」。深研 join(`ListResearchRunsByEntity`,`research_runs.go:153`)已以 `entities.detail->>'code'` 为桥,事件/笔记关联全挂在 entity id 上。新表会立刻产生「自选表 code ↔ entities code」双主键对账问题,违背「单一 Source of Truth」的项目哲学。

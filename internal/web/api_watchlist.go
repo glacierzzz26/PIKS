@@ -36,9 +36,13 @@ type apiWatchItem struct {
 	Position    *apiPosition `json:"position"`
 	// 富化(P6-3)
 	LatestEvent        *apiWatchEvent `json:"latest_event"`
-	PositionDate       string         `json:"position_date"`        // 持仓快照日(空=无持仓)
+	PositionDate       string         `json:"position_date"` // 持仓快照日(空=无持仓)
 	HasResearch        bool           `json:"has_research"`
 	LatestResearchAsOf string         `json:"latest_research_asof"` // YYYY-MM-DD(空=未深研)
+	// 自选元数据(issue #87,表 watchlist_entries):同花顺「我的自选」给的加入价/加入日。
+	// ⚠️ 叫「加入价」不叫「成本价」—— 成本价是 trades.positions.cost_price(持仓口径),两者不同。
+	AddedPrice *float64 `json:"added_price"` // null = 上游未给(不是 0)
+	AddedOn    string   `json:"added_on"`    // YYYY-MM-DD(空=上游未给)
 }
 
 type apiWatchlist struct {
@@ -91,6 +95,23 @@ func (s *Server) handleAPIWatchlist(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// 自选元数据富化(#87):watchlist_entries 按 code 索引(表可能尚未有行 —— 首次同步前为空,
+	// 此时价/日留空,前端显示「—」,不假装 0)。
+	type watchMeta struct {
+		price *float64
+		added string
+	}
+	metaByCode := map[string]watchMeta{}
+	if entries, err := s.store.ListWatchlistEntries(ctx); err == nil {
+		for _, e := range entries {
+			m := watchMeta{price: e.AddedPrice}
+			if e.AddedOn != nil {
+				m.added = e.AddedOn.In(cst).Format("2006-01-02")
+			}
+			metaByCode[e.Code] = m
+		}
+	}
+
 	items := make([]apiWatchItem, 0, len(ents))
 	researched := 0
 	for _, e := range ents {
@@ -116,6 +137,9 @@ func (s *Server) handleAPIWatchlist(w http.ResponseWriter, r *http.Request) {
 			it.HasResearch = true
 			it.LatestResearchAsOf = d
 			researched++
+		}
+		if m, ok := metaByCode[code]; ok && code != "" {
+			it.AddedPrice, it.AddedOn = m.price, m.added
 		}
 		items = append(items, it)
 	}

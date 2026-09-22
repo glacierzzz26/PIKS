@@ -20,10 +20,11 @@ migrate → collector -driver all(6 快讯源) → collector -driver cninfo-anno
 → daily-review(每日复盘) → reconcile(对账)
 ```
 
-10 个管线命令(见 `cmd/`),各自幂等、可单独重跑;失败步骤记录不阻断(下次重试)。
+11 个管线命令(见 `cmd/`),各自幂等、可单独重跑;失败步骤记录不阻断(下次重试)。
 > 迭代 5-2 起:vault / GitHub 下线(SPA 直读 PG API,管线已无发布步骤)。
 > **盘中增量**(issue #68 C 层):另有常驻 `collector` 服务,交易日 09:15–15:05 **每 3 分钟**采快讯 6 源(与日管线幂等共存;见 `docs/数据源总览.md` §3)。
 > **热榜**(issue #68 D 层):常驻 `hot-topic` 服务,交易日**每 30 分钟**采两源,落**独立表** `hot_topic_items`;与事件链路零交集(见 `docs/phase11/design/hot-topic.md`)。
+> **自选同步**(issue #87):常驻 `watch-sync` 服务,**每日 3 次**(09:00/12:55/18:00)拉同花顺「我的自选」;需同花顺凭据,加入价/日落 `watchlist_entries`(见 `docs/phase11/design/watchlist-sync.md`)。
 
 ## 功能模块
 
@@ -36,7 +37,7 @@ migrate → collector -driver all(6 快讯源) → collector -driver cninfo-anno
 | 层 | 选型 |
 |---|---|
 | 语言 | Go 1.26(静态编译,依赖走 go.mod/go.sum + 模块代理,不入库) |
-| 数据源 | PostgreSQL 16(唯一 Source of Truth;**18 个前向迁移**,0001~0018) |
+| 数据源 | PostgreSQL 16(唯一 Source of Truth;**20 个前向迁移**,0001~0020) |
 | 界面 | **React SPA**(Vite 5 + React 18 + TS,React Router v6;Tailwind 只做布局,视觉走 `globals.css` 语义类;ECharts 按需 + 自绘 SVG 力导图谱;nginx 单入口 :8090 服务静态 + 反代 `/api/*`)。Obsidian/GitHub 已下线,`PIKS-Vault/` 仅存档 |
 | AI | OpenCode Zen,OpenAI 兼容;**base URL 必须带 `/go` 路由**(`https://opencode.ai/zen/go/v1`);配置存 `app_config` 表(/settings 可编辑),模型分层 extract/reasoning/vision |
 | 部署 | Docker Compose(dev 单机 + 生产 lab) |
@@ -51,7 +52,7 @@ internal/      13 个业务包(store / web / collector / research / ai / cluster
               / announce(公告分级规则)/ entityextract / marketstate / extract / model / config)
 frontend/      React SPA(Vite;src 145 文件;28 条路由;产物 dist/)
 research/      深研 Python agent(独立运行时见下「深研并入」;不写库、不调 LLM,产物落 PG)
-migrations/    SQL 迁移(前向,无 down;0001~0018)
+migrations/    SQL 迁移(前向,无 down;0001~0020)
 prompts/       AI 抽取提示词(extract.md)
 configs/       docker-compose(dev/prod)+ .env 模板 + nginx.conf
 scripts/       dev 侧 setup.sh/deploy.sh/check-research-isolation.sh/check-image-topology.sh/check-event-type-parity.sh;lab 侧 pipeline.sh/backup.sh/health.sh(setup.sh 装 crontab)
@@ -70,7 +71,7 @@ PIKS-Vault/    Obsidian vault 存档(界面层已下线,不再更新)
 (冻结,`research/README.md` 契约表)交互 —— 由 `scripts/check-research-isolation.sh` 校验。
 
 **部署形态(2026-09-20 起,四镜像)**:单 Dockerfile 多 target,拆成 `piks-gateway`(纯 nginx)
-/ `piks-web`(纯 Go API)/ `piks-tools`(10 个管线命令)/ `piks-research`(Python 运行时 + 队列
+/ `piks-web`(纯 Go API)/ `piks-tools`(11 个管线命令)/ `piks-research`(Python 运行时 + 队列
 worker)。深研**不再由 web 进程内 `os/exec python3` 触发** —— web 只写一条 `pending` 行并
 `NOTIFY`,research 容器的常驻 worker 认领执行(`migrations/0015`、`cmd/research-worker`)。
 这样「改前端只重建 gateway、改 Python 只重建 research」,升级半径与实际改动对齐。

@@ -2,7 +2,8 @@
 // 目的:逐字段对照真实响应 DTO,不凭想象写字段(数据诚实)。
 // 用法:go run ./cmd/probe/dongcai -pages 2 -pageSize 5
 // 发现:np-weblist.eastmoney.com/comm/web/getFastNewsZhibo 返回 7x24 直播流,
-//       sortEnd 作分页游标,字段经本次探针实测。URL 规律 finance.eastmoney.com/a/{code}.html。
+//
+//	sortEnd 作分页游标,字段经本次探针实测。URL 规律 finance.eastmoney.com/a/{code}.html。
 package main
 
 import (
@@ -26,10 +27,10 @@ type zhiboResp struct {
 	Data     *zhiboData `json:"data"`
 }
 type zhiboData struct {
-	SortEnd       string      `json:"sortEnd"`
-	Index         int         `json:"index"`
-	Total         int         `json:"total"`
-	Size          int         `json:"size"`
+	SortEnd      string      `json:"sortEnd"`
+	Index        int         `json:"index"`
+	Total        int         `json:"total"`
+	Size         int         `json:"size"`
 	FastNewsList []zhiboItem `json:"fastNewsList"`
 }
 type zhiboItem struct {
@@ -67,6 +68,8 @@ func main() {
 		probeQuotemarket()
 	case "g8expand":
 		probeG8Expand()
+	case "ths-selfstock":
+		probeTHSSelfstock()
 	default:
 		fmt.Fprintf(os.Stderr, "unknown probe: %s\n", probeName)
 		os.Exit(2)

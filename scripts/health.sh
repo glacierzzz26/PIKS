@@ -15,7 +15,7 @@ mkdir -p "$LOG"
 
 # 与 pipeline.sh 的 STEPS 台账名保持同步(顺序无关,只用于「哪些步骤应当完成」)。
 STEPS=(migrate collector_all collector_announce hot_topic worker cluster \
-       quote_collector entity_build market_state daily_review reconcile)
+       quote_collector entity_build watch_sync market_state daily_review reconcile)
 
 line="ok"
 if [ "$DOW" -lt 6 ] && [ "$HMS" -ge 1610 ]; then

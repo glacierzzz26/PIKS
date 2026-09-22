@@ -3,7 +3,6 @@ import AppShell from "@/components/layout/AppShell";
 import { EventTypesProvider } from "@/lib/eventTypes";
 import Watchlist from "@/pages/home";
 import Dashboard from "@/pages/dashboard";
-import Events from "@/pages/events";
 import EventByID from "@/pages/event/[id]";
 import Entities from "@/pages/entities";
 import Graph from "@/pages/graph";
@@ -39,7 +38,8 @@ function ShellLayout() {
 /**
  * SPA 路由：全部页面（只读分析页 + 交互页）均由 React 提供。
  * 首页 = 今天（自选 + 今天该看什么，/）；市场看板在 /market（个股轴心 IA）。
- * 消息页 = 重要消息(事件) + 快讯双 tab（P6-2），/flashes 旧深链落到快讯 tab。
+ * 消息页 = 重要消息(事件) + 快讯 + 公告三 tab（P6-2 合前两者、#50 加公告），
+ * 容器页为 messages.tsx，挂在 /events；/flashes 旧深链同样落到该页（快讯 tab）。
  * 详情兜底：/events/:id 打开事件抽屉；/entities/:id 重定向到实体库选中；
  * /reviews/:id 由列表页接管（无独立详情）。未知路径回到首页。
  *
@@ -54,7 +54,11 @@ export default function App() {
         <Route element={<ShellLayout />}>
           <Route path="/" element={<Watchlist />} />
           <Route path="/market" element={<Dashboard />} />
-          <Route path="/events" element={<Events />} />
+          {/* /events = 消息页容器（三 tab：重要消息/快讯/公告）。
+              其默认「重要消息」tab 的渲染体是 pages/events.tsx（EventsTab），
+              由 messages.tsx 内部 import，**不经路由** —— 别再把它挂回 /events，
+              否则 tab 条消失、公告 tab 不可达（issue #73）。 */}
+          <Route path="/events" element={<Messages />} />
           <Route path="/events/:id" element={<EventByID />} />
           <Route path="/entities" element={<Entities />} />
           <Route path="/entities/:id" element={<EntityRedirect />} />

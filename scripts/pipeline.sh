@@ -66,6 +66,10 @@ echo "clock: $CLOCK_SRC anchored TODAY=$TODAY DOW=$DOW HMS=$HMS (北京时间)" 
 # 热榜(issue #68 D 层):常驻 `hot-topic`(compose 服务)已覆盖盘中每 30 分钟;此处**再补一
 # 发收盘后快照**(16:10 放行时跑,one-shot),用途有二:① 留一条稳定的「当日收盘态」记录;
 # ② 常驻进程若挂了/未起,日管线仍保证每日至少一批。独立表,不接事件链,失败不阻断其余步骤。
+# 自选同步(issue #87):常驻 `watch-sync`(compose 服务)已覆盖 09:00/12:55/18:00;此处**再补
+# 一发 one-shot**(`-once`,slot 记 manual#HH:MM 不去重)。放在 `entity_build` **之后** ——
+# 让三级取名的第①级(本地 entities 查名,零外呼)能命中当日新建的实体,少走同花顺 realhead。
+# 无凭据时本步会 failed(如实,不静默),首次部署须先在 /settings 填 ths_cookie。
 STEPS=(
   "migrate|migrate"
   "collector_all|collector -driver all"
@@ -75,6 +79,7 @@ STEPS=(
   "cluster|cluster"
   "quote_collector|quote-collector -date $TODAY"
   "entity_build|entity-build"
+  "watch_sync|watch-sync -once"
   "market_state|market-state -date $TODAY"
   "daily_review|daily-review -date $TODAY"
   "reconcile|reconcile -date $TODAY"
@@ -84,6 +89,10 @@ STEPS=(
 #     deterministic / quota → 立即放弃(重试无意义或加重限流);timeout / transient → 退避重试。
 classify() {  # $1 = 步骤输出文件
   if grep -qiE 'SQLSTATE|pq: |constraint|syntax error|does not exist' "$1" 2>/dev/null; then
+    echo deterministic
+  elif grep -qE '配置缺失|未配置同花顺凭据' "$1" 2>/dev/null; then
+    # 缺配置(#87 watch-sync 无凭据):重试 5 次不会变好,而且每次重试都多打一次同花顺
+    # 登录(风控风险)。立即放弃,让它红着等人工补 /settings —— 与 #64「失败不静默」同旨。
     echo deterministic
   elif grep -qiE '(^|[^0-9])429([^0-9]|$)|rate limit|too many requests|insufficient balance|额度' "$1" 2>/dev/null; then
     echo quota

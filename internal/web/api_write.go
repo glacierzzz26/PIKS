@@ -10,6 +10,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -682,7 +683,18 @@ type apiSettingsForm struct {
 	Budget         string   `json:"budget"`
 	ModelOptions   []string `json:"model_options"`
 	ModelNote      string   `json:"model_note,omitempty"`
+	// 同花顺自选同步凭据(issue #87)。⚠️ 一律只回掩码,绝不明文回填。
+	// ThsCredUI = 是否允许从页面写入(由 PIKS_ALLOW_THS_CRED_UI 控制,见 settingsSaveAPI)。
+	ThsAccountMasked string `json:"ths_account_masked"`
+	ThsCookieMasked  string `json:"ths_cookie_masked"`
+	ThsPasswordSet   bool   `json:"ths_password_set"`
+	ThsCredUI        bool   `json:"ths_cred_ui"`
 }
+
+// allowThsCredUI 是否允许从页面写入同花顺凭据。
+// 🔴 默认**关闭**:PIKS 可公网访问且无鉴权(#78),若允许任意人写凭据,攻击者可覆盖
+// 凭据把你自己锁在门外。lab 内网部署时可设 PIKS_ALLOW_THS_CRED_UI=1 打开。
+func allowThsCredUI() bool { return os.Getenv("PIKS_ALLOW_THS_CRED_UI") == "1" }
 
 // GET /api/v1/settings/form —— 设置编辑表单数据。
 func (s *Server) settingsFormAPI(w http.ResponseWriter, r *http.Request) {
@@ -707,6 +719,11 @@ func (s *Server) settingsFormAPI(w http.ResponseWriter, r *http.Request) {
 	if len(f.ModelOptions) <= len(onlyNonEmpty(f.ModelExtract, f.ModelReasoning, f.ModelVision)) {
 		f.ModelNote = "模型列表获取失败(检查服务地址/密钥);下拉仅含已保存模型。"
 	}
+	// 同花顺凭据:只回掩码(加密 cookie/账号走 maskSecret,密码只报「是否已设」)。
+	f.ThsAccountMasked = maskSecret(m["ths_account"])
+	f.ThsCookieMasked = maskSecret(m["ths_cookie"])
+	f.ThsPasswordSet = m["ths_password"] != ""
+	f.ThsCredUI = allowThsCredUI()
 	s.writeJSON(w, f)
 }
 
@@ -719,6 +736,10 @@ func (s *Server) settingsSaveAPI(w http.ResponseWriter, r *http.Request) {
 		ModelReasoning string `json:"ai_model_reasoning"`
 		ModelVision    string `json:"ai_model_vision"`
 		Budget         string `json:"ai_daily_token_budget"`
+		// 同花顺凭据(issue #87):留空不改;仅当 allowThsCredUI() 时才接受。
+		ThsAccount  string `json:"ths_account"`
+		ThsCookie   string `json:"ths_cookie"`
+		ThsPassword string `json:"ths_password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
 		apiErrJSON(w, http.StatusBadRequest, "解析失败: "+err.Error())
@@ -757,6 +778,23 @@ func (s *Server) settingsSaveAPI(w http.ResponseWriter, r *http.Request) {
 		if err := s.store.UpsertAppConfig(ctx, "ai_api_key", p.Key); err != nil {
 			apiErrJSON(w, http.StatusInternalServerError, "保存失败: "+err.Error())
 			return
+		}
+	}
+	// 同花顺凭据写入门控(#78):公网无鉴权期间默认拒绝,防攻击者覆盖凭据锁死你。
+	if acct, ck, pw := strings.TrimSpace(p.ThsAccount), strings.TrimSpace(p.ThsCookie), p.ThsPassword; acct != "" || ck != "" || pw != "" {
+		if !allowThsCredUI() {
+			apiErrJSON(w, http.StatusBadRequest,
+				"公网暴露未鉴权期间,同花顺凭据暂不允许从页面写入(issue #78)。请在 lab 直接写 app_config 表,或设 PIKS_ALLOW_THS_CRED_UI=1 后重试。")
+			return
+		}
+		for k, v := range map[string]string{"ths_account": acct, "ths_cookie": ck, "ths_password": pw} {
+			if v == "" {
+				continue // 留空不改
+			}
+			if err := s.store.UpsertAppConfig(ctx, k, v); err != nil {
+				apiErrJSON(w, http.StatusInternalServerError, "保存失败: "+err.Error())
+				return
+			}
 		}
 	}
 	s.writeJSON(w, map[string]bool{"ok": true})

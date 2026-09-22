@@ -165,6 +165,26 @@ type HotTopicItem struct {
 	CreatedAt  time.Time       `db:"created_at"`
 }
 
+// WatchlistEntry 同花顺「我的自选」的一条元数据(表 watchlist_entries,迁移 0020)。
+//
+// 🔴 成员资格**(在不在自选)**仍以 entities.status='watch' 为真源;本结构**只**承载
+// 加入价/加入日 —— 因为 entities.detail 每轮被 entity-build 无条件覆盖,价/日不能进 detail。
+// 🔴 RemovedAt 非空 = 已移出(不删行)。⚠️ AddedPrice/AddedOn 为 NULL 表示上游未给,**非 0**。
+type WatchlistEntry struct {
+	Code         string          `db:"code"`        // 6 位规范化代码(主键)
+	EntityID     *string         `db:"entity_id"`   // entities.id;NULL = 名称未解析、实体未建
+	Market       string          `db:"market"`      // SH/SZ/KC/CYB/BJ
+	MarketID     string          `db:"market_id"`   // 上游原始 marketid
+	AddedPrice   *float64        `db:"added_price"` // 加入价;NULL = 上游未给
+	AddedOn      *time.Time      `db:"added_on"`    // 加入日;NULL = 上游未给
+	RemovedAt    *time.Time      `db:"removed_at"`  // 移出时刻;NULL = 当前在自选
+	FirstSeenAt  time.Time       `db:"first_seen_at"`
+	LastSyncedAt time.Time       `db:"last_synced_at"`
+	Extra        json.RawMessage `db:"extra"`
+	CreatedAt    time.Time       `db:"created_at"`
+	UpdatedAt    time.Time       `db:"updated_at"`
+}
+
 type TaskRun struct {
 	ID        int64           `db:"id"`
 	Command   string          `db:"command"`

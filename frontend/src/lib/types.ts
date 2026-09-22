@@ -423,6 +423,11 @@ export type SettingsForm = {
   budget: string; // 日 token 预算(0=关闭)
   model_options: string[];
   model_note?: string;
+  // 同花顺自选同步凭据(issue #87)。⚠️ 服务端一律只回掩码,绝不明文回填。
+  ths_account_masked: string;
+  ths_cookie_masked: string;
+  ths_password_set: boolean;
+  ths_cred_ui: boolean; // 服务端是否允许从页面写入(PIKS_ALLOW_THS_CRED_UI,见 issue #78)
 };
 
 // ---- 个股深研（research 并入，对齐 internal/web/api_research.go DTO）----
@@ -729,6 +734,10 @@ export type WatchItem = {
   position_date: string; // 持仓快照日（空 = 无持仓）
   has_research: boolean;
   latest_research_asof: string; // YYYY-MM-DD（空 = 未深研）
+  // 自选元数据（issue #87，同花顺「我的自选」）：加入价/加入日。
+  // ⚠️ 「加入价」≠「成本价」—— 成本价是持仓口径（positions.cost_price）。
+  added_price: number | null; // null = 同花顺未给（不是 0）
+  added_on: string; // YYYY-MM-DD（空 = 未给）
 };
 
 export type Watchlist = {

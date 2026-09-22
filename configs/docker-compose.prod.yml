@@ -168,6 +168,32 @@ services:
     command: ["./bin/hot-topic", "-interval", "30m"]
     networks: [piks]
 
+  # 同花顺「我的自选」自动同步常驻进程(issue #87)。**复用 piks-tools 镜像**(故仍是四镜像)。
+  #
+  # ⚠️ 与 hot-topic 的关键差异:hot-topic 每轮都采;watch-sync 是**每日定点**
+  #   (09:00/12:55/18:00 北京时间,北京时间=Asia/Shanghai 下方 TZ 已设),靠 task_runs
+  #   去重(meta.slot,**只有 success 才算已跑**)—— 容器重启不会把一天 3 次变成 5 次
+  #   (多余登录 = 同花顺风控风险)。
+  # ⚠️ 依赖迁移 0020 的 watchlist_entries 表,故 deploy.sh 把它排在 `migrate` 之后。
+  # ⚠️ 凭据(ths_cookie/ths_account/ths_password)不在此处,存 app_config 表,
+  #   /settings 页写入(见 docs/phase11/design/watchlist-sync.md §凭据)。
+  watch-sync:
+    image: piks-tools:latest
+    container_name: piks-watch-sync
+    env_file: [".env"]
+    environment:
+      - TZ=Asia/Shanghai
+      - PIKS_DATABASE_URL=postgres://piks:${PIKS_DB_PASSWORD:-piks_dev_password}@postgres:5432/piks?sslmode=disable
+      - SSL_CERT_DIR=/etc/ssl/certs:/certs
+    volumes:
+      - ./certs:/certs:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    command: ["./bin/watch-sync", "-interval", "1m", "-slots", "09:00,12:55,18:00"]
+    networks: [piks]
+
 networks:
   piks:
 

@@ -10,7 +10,8 @@ import type { WatchItem } from "@/lib/types";
 /**
  * 「我的自选」：持有中 / 观察中两组（设计 phase6/ux-ia.md §2 区块4）。
  * 盈亏带「截至 {快照日}」——无实时行情源，快照真实但过期（数据诚实硬约束）。
- * 引入/移出只经截图镜像同步，故此处提供「同步自选截图」入口。
+ * 自选由服务器每日自动从同花顺同步（issue #87，无需人工）；持仓仍来自截图。
+ * 截图导入作为备用通路保留（同花顺接口失效时仍可人工兜底）。
  */
 export default function WatchGroups({
   held,
@@ -76,7 +77,8 @@ export default function WatchGroups({
 
       <div className="panel panel-pad flex flex-wrap items-center gap-3">
         <span className="text-[13px] text-muted">
-          自选与持仓都来自同花顺截图。有新股票要加入？到「交易与持仓」同步自选截图。
+          自选每天自动从同花顺同步（早/午/晚间各一次）；持仓仍来自同花顺持仓截图。
+          自动同步失灵时，可用截图兜底。
         </span>
         <Link
           to="/trades"

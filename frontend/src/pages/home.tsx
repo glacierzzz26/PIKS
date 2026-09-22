@@ -67,13 +67,14 @@ export default function Page() {
   );
 }
 
-/** 首次引导：生产新手的实际第一屏（自选只能经同花顺截图镜像同步）。 */
+/** 首次引导：生产新手的实际第一屏（自选由服务器每日自动同步同花顺，无需人工）。 */
 function FirstRun() {
   return (
     <div className="panel panel-pad">
       <h2 className="mb-1 text-[16px] font-bold">还没有自选股</h2>
       <p className="mb-4 text-[13px] leading-relaxed text-muted">
-        PIKS 的自选来自你的同花顺自选截图 —— 不用手动维护第二份列表。
+        PIKS 每天自动从你的同花顺「我的自选」同步 —— 不用手动维护第二份列表，也不用截图。
+        （首次使用需在「设置」填入同花顺凭据。）
       </p>
       <QuickStart />
     </div>

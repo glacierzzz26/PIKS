@@ -72,11 +72,16 @@ func (s *Store) GetCompanyEntityByCode(ctx context.Context, code string) (*model
 // 带空格名 → 两版分叉成同码重复。归一后即可命中既有实体。name 查询再按「去空白相等」
 // 兜底,兼容库里已存的空格脏行(清理脚本落地前也先合并而非新建)。
 func (s *Store) EnsureCompanyEntity(ctx context.Context, code, name string) (string, error) {
+	return EnsureCompanyEntityTx(ctx, s.Pool, code, name)
+}
+
+// EnsureCompanyEntityTx 同上,但在调用方给定的事务/池上执行(自选同步整轮原子)。
+func EnsureCompanyEntityTx(ctx context.Context, q DBTX, code, name string) (string, error) {
 	name = NormalizeStockName(name)
 	var id string
 	// 先按 name(规范名),再按 detail 里的代码(同名不同代码防撞)。
 	// ⚠️ 每条查询各自绑定参数:代码那版必须绑 code(曾误绑 name,查的是 detail->>'code'=名称)。
-	for _, q := range []struct {
+	for _, qq := range []struct {
 		sql string
 		arg string
 	}{
@@ -86,7 +91,7 @@ func (s *Store) EnsureCompanyEntity(ctx context.Context, code, name string) (str
 		{`SELECT id FROM entities WHERE type='company' AND detail->>'code'=$1
 		    ORDER BY created_at LIMIT 1`, code},
 	} {
-		err := s.Pool.QueryRow(ctx, q.sql, q.arg).Scan(&id)
+		err := q.QueryRow(ctx, qq.sql, qq.arg).Scan(&id)
 		if err == nil {
 			return id, nil
 		}
@@ -96,7 +101,7 @@ func (s *Store) EnsureCompanyEntity(ctx context.Context, code, name string) (str
 	}
 	// 缺 → 建(名称/代码来自截图/录入,来源可审计)。
 	detail, _ := json.Marshal(map[string]string{"code": code, "source": "trade-import"})
-	err := s.Pool.QueryRow(ctx, `
+	err := q.QueryRow(ctx, `
 		INSERT INTO entities (type, name, aliases, description, detail, status)
 		VALUES ('company', $1, '[]'::jsonb, NULL, $2, 'active') RETURNING id`,
 		name, detail).Scan(&id)
@@ -292,7 +297,12 @@ func (s *Store) CompanyNamesByCodes(ctx context.Context, codes []string) (map[st
 
 // SetEntityStatus 显式置状态(自选镜像:watch 加入 / archived 移出)。返回是否命中实体。
 func (s *Store) SetEntityStatus(ctx context.Context, id, status string) (bool, error) {
-	tag, err := s.Pool.Exec(ctx,
+	return SetEntityStatusTx(ctx, s.Pool, id, status)
+}
+
+// SetEntityStatusTx 同上,但在调用方给定的事务/池上执行(自选同步整轮原子)。
+func SetEntityStatusTx(ctx context.Context, q DBTX, id, status string) (bool, error) {
+	tag, err := q.Exec(ctx,
 		`UPDATE entities SET status=$2, updated_at=now() WHERE id=$1`, id, status)
 	if err != nil {
 		return false, err

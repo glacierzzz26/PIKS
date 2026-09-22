@@ -3,6 +3,7 @@
 import { Save } from "lucide-react";
 import { LoadingBlock, ErrorState } from "@/components/ui/States";
 import Field from "@/components/settings/Field";
+import ThsCredFields from "@/components/settings/ThsCredFields";
 import { useAiSettingsForm } from "@/components/settings/useAiSettingsForm";
 
 /** AI 分层配置编辑（抽取 / 推理 / 视觉 + 日预算护栏），保存走 POST /api/v1/settings */
@@ -88,6 +89,8 @@ export default function AiServiceForm() {
       </Field>
 
       {form.data.model_note && <p className="text-xs text-amber">{form.data.model_note}</p>}
+
+      <ThsCredFields data={form.data} vals={vals} set={set} />
 
       <button onClick={save} disabled={saving} className="btn-save mt-4">
         <Save size={13} className="mr-1.5 inline" />

@@ -103,6 +103,16 @@ function Badges({ it }: { it: WatchItem }) {
       </span>
     );
   }
+  // 加入价/加入日（同花顺「我的自选」口径，issue #87）。⚠️ 「加入价」不是「成本价」。
+  // 上游未给 → 显示「—」，绝不填 0（宁缺毋假）。
+  if (it.added_on || it.added_price != null) {
+    const price = it.added_price != null ? it.added_price.toFixed(2) : "—";
+    bits.push(
+      <span key="added" className="num txt-faint" title="加入自选的日期与当时价格（来自同花顺自选，非持仓成本价）">
+        加入 {it.added_on || "—"} · {price}
+      </span>
+    );
+  }
   if (bits.length === 0) return <span className="txt-faint">—</span>;
   return <span className="inline-flex flex-wrap items-center gap-2">{bits}</span>;
 }

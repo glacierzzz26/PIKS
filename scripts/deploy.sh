@@ -5,7 +5,7 @@
 # ── 四镜像(2026-09-20 容器拆分,issue #47)────────────────────────────────
 #   gateway  纯 nginx(SPA 静态 + 反代 /api/*)      ← 前端/nginx.conf 变
 #   web      纯 Go JSON API                        ← cmd/web、internal/* 变
-#   tools    10 个管线命令 + migrate                ← 同上 + migrations/prompts
+#   tools    11 个管线命令 + migrate                ← 同上 + migrations/prompts
 #   research Python 深研运行时 + 队列 worker        ← research/*、internal/research 变
 #
 # **按镜像判定「是否要重建/传输」**:每个镜像的版本 = 它自己输入的 git tree hash
@@ -79,12 +79,12 @@ go_deps_hash() {
 short() { printf '%s' "$1" | git hash-object --stdin | cut -c1-7; }
 
 # go_deps_hash_all <cmd>...:多个命令依赖闭包的**并集**树 hash。
-# ⚠️ tools 镜像虽以 `migrate` 触发构建,却**打包全部 10 个管线命令** —— 若只 hash migrate 的闭包
+# ⚠️ tools 镜像虽以 `migrate` 触发构建,却**打包全部 11 个管线命令** —— 若只 hash migrate 的闭包
 #   (仅 config/model/store),则 collector/worker/cluster/... 的改动**不入 tag**:
 #   改了 `internal/collector/` 而 TAG_TOOLS 不动 → build_image 判定「已存在、跳过」→ lab
 #   既不重建也不传输 → **生产跑旧像**(与文件头 issue #55 的 Dockerfile 教训同类)。
 #   实测(issue #68 C 层):新增常驻 `collector` 服务会以**旧 tools 镜像**启动,新代码根本没上。
-#   故取十个命令闭包的并集(方向安全:宁可多重建,不可漏)。
+#   故取十一个命令闭包的并集(方向安全:宁可多重建,不可漏)。
 go_deps_hash_all() {
   local deps args=()
   deps="$(cd "$REPO" && for c in "$@"; do
@@ -106,7 +106,7 @@ go_deps_hash_all() {
 #   方向安全(宁可多重建,不可漏),且 Dockerfile 极少改动。
 TAG_GATEWAY="${VER}-$(short "$(tree_hash frontend configs/nginx.conf)$(tree_hash Dockerfile)")${DIRTY}"
 TAG_WEB="${VER}-$(short "$(tree_hash go.mod go.sum)$(go_deps_hash web)$(tree_hash Dockerfile)")${DIRTY}"
-TAG_TOOLS="${VER}-$(short "$(tree_hash go.mod go.sum migrations prompts)$(go_deps_hash_all migrate collector hot-topic worker cluster quote-collector entity-build market-state daily-review reconcile)$(tree_hash Dockerfile)")${DIRTY}"
+TAG_TOOLS="${VER}-$(short "$(tree_hash go.mod go.sum migrations prompts)$(go_deps_hash_all migrate collector hot-topic watch-sync worker cluster quote-collector entity-build market-state daily-review reconcile)$(tree_hash Dockerfile)")${DIRTY}"
 TAG_RESEARCH="${VER}-$(short "$(tree_hash go.mod research)$(go_deps_hash research-run)$(go_deps_hash research-worker)$(tree_hash Dockerfile)")${DIRTY}"
 STACK_TAG="${VER}-${GS}${DIRTY}"
 
@@ -198,19 +198,20 @@ scp "$REPO/scripts/pipeline.sh" "$REPO/scripts/backup.sh" \
     "$LAB:$C/scripts/"
 ssh "$LAB" "chmod +x $C/scripts/*.sh"
 
-# ── 上线:postgres → migrate → web/research/collector/hot-topic → gateway ──
+# ── 上线:postgres → migrate → web/research/collector/hot-topic/watch-sync → gateway ──
 # ⚠️ 顺序是硬约束:
 #   1. migrate 必须先于 web —— cmd/web/main.go 启动即读 app_config,缺表会 fatal 崩溃循环。
 #   2. gateway 必须最后 —— 否则 nginx 会短暂反代到半启动的 web。
 # 另:compose 的 gateway depends_on web(service_healthy),故 web 起来后才可能起 gateway。
-# collector(C 层)/ hot-topic(D 层)都是常驻进程、复用 tools 镜像,migrate 之后起即可;不碰 gateway。
-# ⚠️ hot-topic 依赖迁移 0018 的 hot_topic_items 表,**必须排在 migrate 之后**(与 web 同理:
-#   缺表会每轮 runOnce 报错,靠 restart 策略空转)。
-echo "== rollout: postgres → migrate → web/research/collector/hot-topic → gateway"
+# collector(C 层)/ hot-topic(D 层)/ watch-sync(#87)都是常驻进程、复用 tools 镜像,
+# migrate 之后起即可;不碰 gateway。
+# ⚠️ hot-topic 依赖迁移 0018 的 hot_topic_items 表、watch-sync 依赖迁移 0020 的
+#   watchlist_entries 表,**必须排在 migrate 之后**(与 web 同理:缺表会报错空转)。
+echo "== rollout: postgres → migrate → web/research/collector/hot-topic/watch-sync → gateway"
 ssh "$LAB" "$DC up -d postgres"
 ssh "$LAB" "until $DC exec -T postgres pg_isready -U piks -d piks >/dev/null 2>&1; do sleep 2; done"
 ssh "$LAB" "$DC run --rm tools ./bin/migrate"
-ssh "$LAB" "$DC up -d web research collector hot-topic"
+ssh "$LAB" "$DC up -d web research collector hot-topic watch-sync"
 ssh "$LAB" "$DC up -d gateway"
 
 # ── 栈清单(「生产在跑什么」的单一答案)───────────────────────────────────

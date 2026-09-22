@@ -12,6 +12,10 @@ export type AiFormVals = {
   model_reasoning: string;
   model_vision: string;
   budget: string;
+  // 同花顺凭据(issue #87):留空 = 保持原值。
+  ths_account: string;
+  ths_cookie: string;
+  ths_password: string;
 };
 
 export type SaveMsg = { ok: boolean; text: string } | null;
@@ -23,6 +27,9 @@ const EMPTY: AiFormVals = {
   model_reasoning: "",
   model_vision: "",
   budget: "0",
+  ths_account: "",
+  ths_cookie: "",
+  ths_password: "",
 };
 
 /** AI 配置表单状态 + 保存逻辑（表单数据加载、字段编辑、POST /settings） */
@@ -41,6 +48,9 @@ export function useAiSettingsForm() {
         model_reasoning: form.data.model_reasoning,
         model_vision: form.data.model_vision,
         budget: form.data.budget || "0",
+        ths_account: "",
+        ths_cookie: "",
+        ths_password: "",
       });
     }
   }, [form.data]);
@@ -61,8 +71,11 @@ export function useAiSettingsForm() {
         ai_model_vision: vals.model_vision,
         ai_daily_token_budget: vals.budget,
         ai_api_key: vals.key,
+        ths_account: vals.ths_account.trim(),
+        ths_cookie: vals.ths_cookie.trim(),
+        ths_password: vals.ths_password,
       });
-      setMsg({ ok: true, text: "已保存（密钥留空则保持原值不变）" });
+      setMsg({ ok: true, text: "已保存（密钥/凭据留空则保持原值不变）" });
       form.refresh();
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });

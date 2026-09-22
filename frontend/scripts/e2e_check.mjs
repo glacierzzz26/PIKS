@@ -117,6 +117,37 @@ for (const { path, kind } of PAGES) {
   await page.close();
 }
 
+// 消息页三 tab（issue #73）：路由正确性只认**渲染后的 DOM** ——
+// SPA 的 try_files 对任何路径都返 index.html，故 HTTP 200 与 bundle grep 均无鉴别力；
+// 必须断言 tab 条存在 + 点「公告」真的发出 /api/v1/announcements 请求。
+// 曾因 /events 误绑纯列表组件(events.tsx)致 tab 条消失、公告 tab 不可达。
+{
+  const page = await browser.newPage();
+  const reqs = [];
+  page.on("request", (r) => reqs.push(r.url()));
+  try {
+    await page.goto(BASE + "/events", { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    await page.waitForSelector(".chip-btn", { timeout: TIMEOUT }).catch(() => {});
+    // ⚠️ 不能按 .chip-btn 总数断言：重要消息 tab 内还有状态筛选 chip(全部状态/已确认/待复核)，
+    // 故取 tab 条(filter-bar)内前 3 个 chip 的标签判定。
+    const tabs = (await page.locator(".filter-bar").first().locator(".chip-btn").allInnerTexts())
+      .slice(0, 3).map((t) => t.trim());
+    const tabBar = tabs.join(",") === "重要消息,快讯,公告";
+    // 公告 tab 可达性：点击后必须触发公告接口（backendUp 时才断言接口，否则只断言 DOM）
+    let annReachable = true;
+    if (backendUp) {
+      await page.locator(".chip-btn", { hasText: "公告" }).first().click();
+      await page.waitForTimeout(1500);
+      annReachable = reqs.some((u) => u.includes("/api/v1/announcements"));
+    }
+    report("/events tab条", tabBar, `tabs=[${tabs.join(", ")}]`);
+    if (backendUp) report("/events 公告tab可达", annReachable, `announcements 请求=${annReachable}`);
+  } catch (e) {
+    report("/events tab条", false, `异常 ${String(e).slice(0, 120)}`);
+  }
+  await page.close();
+}
+
 // 侧栏导航 11 项：逐项点进，确认渲染 SPA 壳(防导航标签/分组重构断链)
 {
   const page = await browser.newPage();

@@ -111,6 +111,38 @@ export type Announcement = {
   url?: string;
 };
 
+/**
+ * 热榜（issue #68 D 层）—— **独立于事件链路**的展示数据源。
+ *
+ * ⚠️ 后端按源**分列**下发（sources[]），而非拍平 —— 结构上杜绝跨源混排。
+ * 两源粒度不同（同花顺=题材/事件，财联社=文章/复盘），实测同题对=0，
+ * 故**不合并、不加权、不排名**（设计 §6 方案 A）。
+ *
+ * ⚠️ hot_value 仅**源内可比**：同花顺 hot_value 与财联社 readNum 量纲不同，
+ * 且各源自身尺度也不同。UI 不得跨源比较，须如实标注。
+ * hot_value 为 null = 上游未给（≠ 0），前端不填 0。
+ */
+export type HotTopicItem = {
+  rank: number;
+  title: string;
+  hot_value: number | null;
+  url?: string;
+};
+
+export type HotTopicSource = {
+  key: string;
+  name: string;
+  /** 口径说明（这是哪家的什么榜）—— 如实告知，防用户误读为「重要性」。 */
+  note: string;
+  items: HotTopicItem[];
+};
+
+export type HotTopics = {
+  sources: HotTopicSource[];
+  /** 本批快照时刻（所有源里最新的一个，仅供展示「数据到几点」）。 */
+  snapshot_at: string;
+};
+
 export type Doc = {
   id: string;
   type: string; // note/belief/case/mistake/daily-review/weekly（周报走 weekly）

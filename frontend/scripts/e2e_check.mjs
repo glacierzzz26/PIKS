@@ -26,6 +26,7 @@ const PAGES = [
   { path: "/", kind: "watch" }, // 今天 = 引导式首页(Phase 3 落，现为自选)
   { path: "/market", kind: "spa" },
   { path: "/ladder", kind: "spa" },
+  { path: "/hot-topics", kind: "spa" }, // issue #68 D 层：热榜（独立数据源 + 独立页）
   { path: "/events", kind: "spa" }, // 消息页主 tab
   { path: "/flashes", kind: "spa" }, // 旧深链 → 消息页快讯 tab
   { path: "/research", kind: "spa" },

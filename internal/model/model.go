@@ -80,16 +80,16 @@ type Evidence struct {
 }
 
 type Observation struct {
-	ID           string     `db:"id"`
-	EventID      *string    `db:"event_id"`
-	Market       string     `db:"market"`
-	Indicator    string     `db:"indicator"`
-	Value        string     `db:"value"`
-	PreviousVal  *string    `db:"previous_value"`
-	Change       *string    `db:"change"`
-	ObservedAt   time.Time  `db:"observed_at"`
-	Source       *string    `db:"source"`
-	CreatedAt    time.Time  `db:"created_at"`
+	ID          string    `db:"id"`
+	EventID     *string   `db:"event_id"`
+	Market      string    `db:"market"`
+	Indicator   string    `db:"indicator"`
+	Value       string    `db:"value"`
+	PreviousVal *string   `db:"previous_value"`
+	Change      *string   `db:"change"`
+	ObservedAt  time.Time `db:"observed_at"`
+	Source      *string   `db:"source"`
+	CreatedAt   time.Time `db:"created_at"`
 }
 
 // MarketSnapshot 每日市场状态快照(迭代 2,设计 §2.1;架构 §9.7 Market + §9.8 Emotion)。
@@ -144,6 +144,25 @@ type Relationship struct {
 	CreatedAt  time.Time       `db:"created_at"`
 	ValidFrom  *time.Time      `db:"valid_from"`
 	ValidTo    *time.Time      `db:"valid_to"`
+}
+
+// HotTopicItem 热榜快照一条(issue #68 D 层,热榜时序表 hot_topic_items,迁移 0018)。
+//
+// 🔴 与 Event/MarketSnapshot 刻意隔离:热度**可被操纵**,只作展示/排序权重,
+//
+//	绝不作为「重要性」判定,也不得与印证度(source_count/cluster_sources)合并计算。
+//	故本结构**不进 raw_documents、不进聚类、不参与 events 任何逻辑**(设计 §6 红线)。
+//	⚠️ Rank 与 HotValue **仅源内可比**,跨源不可比(两源粒度/量纲不同)—— 展示层须分列。
+type HotTopicItem struct {
+	ID         string          `db:"id"`
+	Source     string          `db:"source"`      // ths-topic / cls-hot-article
+	Rank       int             `db:"rank"`        // 榜内名次(1-based)
+	Title      string          `db:"title"`       // 话题标题(原文)
+	HotValue   *int64          `db:"hot_value"`   // 该源口径热度;NULL = 上游未给(非 0)
+	URL        *string         `db:"url"`         // 原文/话题链接;NULL = 上游未给
+	Extra      json.RawMessage `db:"extra"`       // 上游原始字段留档
+	SnapshotAt time.Time       `db:"snapshot_at"` // 本轮采集时刻(同批同值)
+	CreatedAt  time.Time       `db:"created_at"`
 }
 
 type TaskRun struct {

@@ -13,19 +13,22 @@
 ## 一日管线(数据流)
 
 ```
-migrate → collector -driver all(6 快讯源) → worker -limit 800(AI 抽取 events) → cluster(语义去重 + 重审视 Pass)
+migrate → collector -driver all(6 快讯源) → collector -driver cninfo-announce(巨潮公告)
+→ hot-topic(热榜两源;常驻进程之外的收盘态兜底)
+→ worker -limit 800(AI 抽取 events) → cluster(语义去重 + 重审视 Pass)
 → quote-collector(涨停池,仅交易日) → entity-build(实体) → market-state(市场情绪)
 → daily-review(每日复盘) → reconcile(对账)
 ```
 
-9 个管线命令(见 `cmd/`),各自幂等、可单独重跑;失败步骤记录不阻断(下次重试)。
+10 个管线命令(见 `cmd/`),各自幂等、可单独重跑;失败步骤记录不阻断(下次重试)。
 > 迭代 5-2 起:vault / GitHub 下线(SPA 直读 PG API,管线已无发布步骤)。
 > **盘中增量**(issue #68 C 层):另有常驻 `collector` 服务,交易日 09:15–15:05 **每 3 分钟**采快讯 6 源(与日管线幂等共存;见 `docs/数据源总览.md` §3)。
+> **热榜**(issue #68 D 层):常驻 `hot-topic` 服务,交易日**每 30 分钟**采两源,落**独立表** `hot_topic_items`;与事件链路零交集(见 `docs/phase11/design/hot-topic.md`)。
 
 ## 功能模块
 
 - **每日管线**:新闻→事件抽取→语义去重聚类(含重审视 Pass 修跨簇重复)→涨停池→实体构建→市场情绪→每日复盘→对账,全自动幂等。
-- **Web 平台**(`cmd/web` JSON API + React SPA,lab :8090):今天(自选)/ 市场概况 / 消息(重要 + 快讯双 tab)/ 涨停股 / 研报(独立阅读器)/ 个股分析 / 个股中心 `/stock/:code`(含买入前速评)/ 交易与持仓(截图识别录入 + AI 带引用解读 + 持仓 AI 诊断)/ 持仓诊断 / 周报(规则聚合 + AI 综述手动触发)/ 笔记 / 问 AI(问答带引用 + 截图 vision)/ 设置(大模型配置);实体库·图谱·对账移入设置页「数据与运维」。
+- **Web 平台**(`cmd/web` JSON API + React SPA,lab :8090):今天(自选)/ 市场概况 / 消息(重要 + 快讯 + 公告三 tab)/ 涨停股 / **热榜**(两源分列)/ 研报(独立阅读器)/ 个股分析 / 个股中心 `/stock/:code`(含买入前速评)/ 交易与持仓(截图识别录入 + AI 带引用解读 + 持仓 AI 诊断)/ 持仓诊断 / 周报(规则聚合 + AI 综述手动触发)/ 笔记 / 问 AI(问答带引用 + 截图 vision)/ 设置(大模型配置);实体库·图谱·对账移入设置页「数据与运维」。
 - **交易闭环**(2026-08-28):每日自交易截图 → 视觉抽取 → 确认入库;AI 解读带知识库引用、防未来函数;持仓 AI 诊断;本周交易/持仓进周报。后续已上生产(截图识别依赖视觉模型配置;`/settings` 配好后可用)。
 
 ## 技术栈
@@ -33,7 +36,7 @@ migrate → collector -driver all(6 快讯源) → worker -limit 800(AI 抽取 e
 | 层 | 选型 |
 |---|---|
 | 语言 | Go 1.26(静态编译,依赖走 go.mod/go.sum + 模块代理,不入库) |
-| 数据源 | PostgreSQL 16(唯一 Source of Truth;**17 个前向迁移**,0001~0017) |
+| 数据源 | PostgreSQL 16(唯一 Source of Truth;**18 个前向迁移**,0001~0018) |
 | 界面 | **React SPA**(Vite 5 + React 18 + TS,React Router v6;Tailwind 只做布局,视觉走 `globals.css` 语义类;ECharts 按需 + 自绘 SVG 力导图谱;nginx 单入口 :8090 服务静态 + 反代 `/api/*`)。Obsidian/GitHub 已下线,`PIKS-Vault/` 仅存档 |
 | AI | OpenCode Zen,OpenAI 兼容;**base URL 必须带 `/go` 路由**(`https://opencode.ai/zen/go/v1`);配置存 `app_config` 表(/settings 可编辑),模型分层 extract/reasoning/vision |
 | 部署 | Docker Compose(dev 单机 + 生产 lab) |
@@ -41,14 +44,14 @@ migrate → collector -driver all(6 快讯源) → worker -limit 800(AI 抽取 e
 ## 仓库布局
 
 ```
-cmd/           13 个可执行命令(9 个管线:migrate/collector/worker/cluster/quote-collector/
-              entity-build/market-state/daily-review/reconcile + web 常驻 API + research-run
-              深研 CLI + research-worker 深研队列 worker + probe 探针(不进任何镜像))
+cmd/           14 个可执行命令(10 个管线:migrate/collector/hot-topic/worker/cluster/
+              quote-collector/entity-build/market-state/daily-review/reconcile + web 常驻 API
+              + research-run 深研 CLI + research-worker 深研队列 worker + probe 探针(不进任何镜像))
 internal/      13 个业务包(store / web / collector / research / ai / cluster / publish
               / announce(公告分级规则)/ entityextract / marketstate / extract / model / config)
-frontend/      React SPA(Vite;src 142 文件;27 条路由;产物 dist/)
+frontend/      React SPA(Vite;src 145 文件;28 条路由;产物 dist/)
 research/      深研 Python agent(独立运行时见下「深研并入」;不写库、不调 LLM,产物落 PG)
-migrations/    SQL 迁移(前向,无 down;0001~0017)
+migrations/    SQL 迁移(前向,无 down;0001~0018)
 prompts/       AI 抽取提示词(extract.md)
 configs/       docker-compose(dev/prod)+ .env 模板 + nginx.conf
 scripts/       dev 侧 setup.sh/deploy.sh/check-research-isolation.sh/check-image-topology.sh/check-event-type-parity.sh;lab 侧 pipeline.sh/backup.sh/health.sh(setup.sh 装 crontab)
@@ -67,7 +70,7 @@ PIKS-Vault/    Obsidian vault 存档(界面层已下线,不再更新)
 (冻结,`research/README.md` 契约表)交互 —— 由 `scripts/check-research-isolation.sh` 校验。
 
 **部署形态(2026-09-20 起,四镜像)**:单 Dockerfile 多 target,拆成 `piks-gateway`(纯 nginx)
-/ `piks-web`(纯 Go API)/ `piks-tools`(9 个管线命令)/ `piks-research`(Python 运行时 + 队列
+/ `piks-web`(纯 Go API)/ `piks-tools`(10 个管线命令)/ `piks-research`(Python 运行时 + 队列
 worker)。深研**不再由 web 进程内 `os/exec python3` 触发** —— web 只写一条 `pending` 行并
 `NOTIFY`,research 容器的常驻 worker 认领执行(`migrations/0015`、`cmd/research-worker`)。
 这样「改前端只重建 gateway、改 Python 只重建 research」,升级半径与实际改动对齐。
@@ -123,7 +126,7 @@ go build -o bin/ ./cmd/...
 ## 生产部署(lab)
 
 - **模型**:dev 本地**分镜像**构建 → `docker save | ssh lab docker load` 传输;lab 不保留代码仓库,镜像 = 唯一交付物。编排全在 dev 侧。
-- **服务**:`postgres`(常驻)+ `gateway`(常驻,唯一对外 `:8090`)+ `web`(常驻,私网内 `:8090`,不发布宿主端口)+ `research`(常驻,深研队列 worker)+ `collector`(常驻,盘中每 3 分钟采快讯,**复用 tools 镜像**,issue #68 C 层)+ `tools`(profile=run,跑管线命令)。
+- **服务**:`postgres`(常驻)+ `gateway`(常驻,唯一对外 `:8090`)+ `web`(常驻,私网内 `:8090`,不发布宿主端口)+ `research`(常驻,深研队列 worker)+ `collector`(常驻,盘中每 3 分钟采快讯,**复用 tools 镜像**,issue #68 C 层)+ `hot-topic`(常驻,盘中每 30 分钟采热榜,**复用 tools 镜像**,issue #68 D 层)+ `tools`(profile=run,跑管线命令)。
 - **文档**:设计 `docs/phase3/design/prod-deploy.md`(D-P1~P12);实现与验收 `docs/phase3/stages/prod.md`;四镜像拆分设计 `docs/phase10/design/container-split.md`;快讯提频/护栏设计 `docs/phase11/design/flash-cadence.md`。
 - **公网入口**(2026-09-22,issue #78):**https://piks.5home.online** —— 阿里云宿主边缘 Nginx(443,SNI 分流)经 **frp stcp 隧道**回源 lab 的 `piks-gateway:8090`(全栈仍跑 lab,阿里云只做入站;回源口 `127.0.0.1:17010` 只绑 loopback,公网不可达)。⚠️ **当前无鉴权(裸奔)**,见 `docs/架构总览.md` §9.5 与 issue #78。
 - **运维速查**:

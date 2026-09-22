@@ -143,6 +143,31 @@ services:
     command: ["./bin/collector", "-driver", "news", "-interval", "3m"]
     networks: [piks]
 
+  # 热榜采集常驻进程(issue #68 D 层)。**复用 piks-tools 镜像**(故仍是四镜像),
+  # 与 collector 同形,只是频率与去向不同。
+  #
+  # ⚠️ 独立表 + 独立进程,**刻意不进 collector 进程**:热榜与快讯的采集策略/去向/频率
+  #   全不同(热榜不进 raw_documents、不进聚类 —— 设计 §6 红线,热榜可被操纵)。
+  #   合成一个进程会让「把热榜塞进事件链路」在实现上变得太容易。
+  # ⚠️ 盘中每 30 分钟(用户 2026-09-22 定):热榜分钟级变化小,30 分钟足够看出走势;
+  #   每次仅 ~28 条 → 盘中约 11 次/日 ≈ 300 行。同样**必须常驻**(护栏状态靠跨轮累积)。
+  hot-topic:
+    image: piks-tools:latest
+    container_name: piks-hot-topic
+    env_file: [".env"]
+    environment:
+      - TZ=Asia/Shanghai
+      - PIKS_DATABASE_URL=postgres://piks:${PIKS_DB_PASSWORD:-piks_dev_password}@postgres:5432/piks?sslmode=disable
+      - SSL_CERT_DIR=/etc/ssl/certs:/certs
+    volumes:
+      - ./certs:/certs:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    command: ["./bin/hot-topic", "-interval", "30m"]
+    networks: [piks]
+
 networks:
   piks:
 

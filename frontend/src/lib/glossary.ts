@@ -101,6 +101,10 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     label: "量价形态",
     def: "由换手率与股价的逐日关系判定的标签（如地量启动、换手峰值见顶、缩量续跌）。属于规则推断，不是事实 —— 每条都标了依据日期与数值，供你核对。",
   },
+  hot_topic: {
+    label: "热榜",
+    def: "机器采集的「大家在聊什么」—— 同花顺话题榜与财联社热文，各按自己的榜单顺序原样呈现。⚠️ 热榜**可被商业力量操纵**，只是「多少人在看」的代理，**不是重要性判定、也不是推荐**；两个榜口径不同，热度只在各自榜内可比，所以分列、不做合并排名。",
+  },
 };
 
 export const GLOSSARY_LIST: GlossaryEntry[] = Object.values(GLOSSARY);

@@ -294,6 +294,16 @@ touch $LOG/pipeline-$TODAY.done
 - 命令全部幂等 → 即使真重跑也零副作用。
 - 日志按日落盘;stamp 文件即「今日已跑」凭证。
 
+> ⚠️ **issue #76 增补(2026-09-22)—— 上方的 stub 已过时,以现状为准**:
+> ① 上面 `run collector -driver dongcai` / `run publisher` 均为**历史残留**(早已是
+> `collector -driver all` 六机构源 + 公告源;`publisher` 命令已删),此外还有 `hot-topic`;
+> ② 三处新增护栏(实测触发,见 issue #76):**`flock -n` 单实例锁**(消灭并发管线)、
+> **单步超时** `${PIKS_STEP_TIMEOUT:-1800}s`、**步骤台账** `pipeline-$TODAY.done.d/<step>.done`
+> + 失败分型退避(`deterministic`/`quota` 立即放弃,`transient` 计次至 `PIKS_MAX_RETRY`)。
+> ③ 变动动机:实测单日 `pipeline.sh` 被完整重跑 **34 轮**、单步 `cluster` 挂 **2h25m** 堵死串行链
+> ⇒ 原「任一步失败即不落 stamp、下一 tick 重跑全链」放大了 #75 的 token 爆点。
+> 现状以 `docs/架构总览.md` §8.1 与 `docs/数据源总览.md` §3 为准。
+
 ### 9.2 用户 crontab(免 sudo)
 
 ```

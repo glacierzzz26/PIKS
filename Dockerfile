@@ -153,7 +153,13 @@ FROM python:3.12-slim AS research
 # ⚠️ 默认阶段 = 本阶段(最后一个 FROM):不带 --target 时产出 research 镜像。
 # 旧 deploy.sh 不带 --target,而它已改为显式传 --target(P4 起),故这里默认谁并不关键;
 # 显式传参是部署纪律。
-ARG APT_MIRROR=mirrors.aliyun.com
+# ⚠️ apt 源:默认 **USTC**(2026-09-22 实测,取代 aliyun)。
+#   容器内实测 `apt-get update`(装 ca-certificates + tzdata 那一步,三轮稳定复现):
+#     aliyun ~18.6s / 清华 ~6.6s / deb.debian.org 2.2s / **USTC ~1.8s**。
+#   aliyun 慢 10 倍 —— 它是本仓历史的默认值(#57 时代沿用至今),但当时只测了 pip 侧。
+#   USTC 的 debian-security 路径与 deb.debian.org 一致(`/debian-security`),sed 替换无需额外处理。
+#   ⚠️ 属**环境事实非永久结论** —— 换构建机/换线路需重测。可用 --build-arg APT_MIRROR=… 覆盖。
+ARG APT_MIRROR=mirrors.ustc.edu.cn
 RUN sed -i "s|deb.debian.org|${APT_MIRROR}|g; s|security.debian.org|${APT_MIRROR}|g" \
       /etc/apt/sources.list.d/debian.sources \
     && apt-get update && apt-get install -y --no-install-recommends \

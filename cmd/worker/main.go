@@ -54,15 +54,21 @@ func main() {
 
 	budget := cfg.AIDailyTokenBudget
 	tokensToday := int64(0)
-	if budget > 0 {
-		midnight := time.Now().Truncate(24 * time.Hour)
+	guardDisabled := budget <= 0
+	if !guardDisabled {
+		midnight := config.BeijingMidnight(time.Now())
 		tokensToday, _ = s.TokensSince(ctx, midnight)
+	} else {
+		// 0 = 无护栏,不是「不限预算」——显式告警(issue #75)。
+		fmt.Fprintln(os.Stderr, "WARN: ai_daily_token_budget=0 ⇒ 预算护栏**关闭**,本轮不会拦截任何 LLM 调用;请在 /settings 设为非 0(建议 1000000)")
 	}
 
 	processed, events, failed, tokens := 0, 0, 0, int64(0)
+	budgetExhausted := false
 	for _, doc := range docs {
-		if budget > 0 && tokensToday+tokens >= budget {
+		if !guardDisabled && tokensToday+tokens >= budget {
 			fmt.Printf("worker: daily token budget %d reached, stopping\n", budget)
+			budgetExhausted = true
 			break
 		}
 		n, used, err := extractor.Extract(ctx, &doc)
@@ -78,11 +84,15 @@ func main() {
 	}
 
 	meta := map[string]any{
-		"processed":     processed,
-		"events":        events,
-		"failed":        failed,
-		"ai_tokens":     tokens,
-		"budget_checked": budget > 0,
+		"processed":      processed,
+		"events":         events,
+		"failed":         failed,
+		"ai_tokens":      tokens,
+		"budget_checked": !guardDisabled,
+		// issue #75:预算耗尽不得静默降级 —— 旧实现只 fmt.Printf 就继续记 success,
+		// 前端看到绿色「已完成」却不知有一批文档因预算被跳过。
+		"budget_exhausted": budgetExhausted,
+		"guard_disabled":   guardDisabled,
 	}
 	if err := s.FinishTaskRun(ctx, runID, "success", "", meta); err != nil {
 		fatal("finish task run:", err)

@@ -1,6 +1,24 @@
 package config
 
-import "os"
+import (
+	"os"
+	"time"
+)
+
+// cst 北京时间固定偏移(与 cmd/* 各处一致;中国自 1991 年起不再有夏令时,固定 +8 安全)。
+var cst = time.FixedZone("CST", 8*3600)
+
+// BeijingMidnight 返回 now 所在「北京日」的零点(东八区)。
+//
+// ⚠️ 为何不用 time.Now().Truncate(24*time.Hour):Truncate 按 **UTC** 对齐,
+// 结果是 UTC 午夜 = 北京时间 08:00(issue #75)。日管线 16:10 跑,用它会把
+// 当日 08:00 之前的 token 算进「今天」、把 08:00–16:10 的花费记到「昨天」,
+// 与「日预算」的直觉口径不符。三处命令(cluster/worker/entity-build)此前
+// 各写各的 Truncate,口径虽一致但都是错的 —— 统一收敛到本函数。
+func BeijingMidnight(now time.Time) time.Time {
+	l := now.In(cst)
+	return time.Date(l.Year(), l.Month(), l.Day(), 0, 0, 0, 0, cst)
+}
 
 // Config 由环境变量驱动(库/vault),大模型配置例外:AI 字段权威源 = 数据库
 // app_config 表(config.ApplyAppConfig),不再读 PIKS_AI_* 环境变量。

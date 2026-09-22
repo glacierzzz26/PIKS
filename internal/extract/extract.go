@@ -104,11 +104,13 @@ func (e *Extractor) Extract(ctx context.Context, doc *model.RawDocument) (int, i
 	total := int64(0)
 	for attempt := 1; attempt <= 3; attempt++ {
 		r, err := e.Provider.StructuredOutput(ctx, ai.StructuredRequest{System: e.Prompt, User: user, Schema: json.RawMessage(JSONSchema)})
-		total += r.Usage.Total()
 		if err != nil {
+			// ⚠️ issue #75 账本盲区:只在**成功**时累加 token。旧实现对报错的调用也加
+			// `r.Usage.Total()`,而失败时 Usage 恒为 0,等于把失败次数混进花费口径。
 			lastErr = err
 			continue
 		}
+		total += r.Usage.Total()
 		resp = r
 		break
 	}

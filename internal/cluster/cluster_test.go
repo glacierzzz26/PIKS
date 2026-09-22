@@ -115,7 +115,7 @@ func TestCrossClusterCandidate(t *testing.T) {
 	}
 }
 
-// pickSurvivorIndex:survivor 恒为既有簇代表;最早创建,同则高置信;无簇成员返回 -1。
+// pickSurvivorIndex:survivor 恒为既有簇代表;多成员簇优先 > 最早创建 > 高置信;无簇成员返回 -1。
 func TestPickSurvivorIndex(t *testing.T) {
 	now := time.Now()
 	pool := []model.Event{
@@ -126,18 +126,27 @@ func TestPickSurvivorIndex(t *testing.T) {
 		mkEvent("e", "事件戊", "policy", []string{"银行"}, now, 1.0),                   // 簇 W(与 c 同刻,更高置信)
 	}
 	clusterOf := []string{"X", "Y", "Z", "", "W"}
+	// 全部单成员簇:选举退化为「最早创建 / 同刻高置信」,与旧行为一致。
+	single := memberCounts{"X": 1, "Y": 1, "Z": 1, "W": 1}
 
-	if got := pickSurvivorIndex(pool, clusterOf, []int{3}); got != -1 {
+	if got := pickSurvivorIndex(pool, clusterOf, single, []int{3}); got != -1 {
 		t.Fatalf("no cluster member should return -1, got %d", got)
 	}
-	if got := pickSurvivorIndex(pool, clusterOf, []int{3, 1}); got != 1 {
+	if got := pickSurvivorIndex(pool, clusterOf, single, []int{3, 1}); got != 1 {
 		t.Fatalf("single cluster member should win, got %d", got)
 	}
-	if got := pickSurvivorIndex(pool, clusterOf, []int{0, 1, 2}); got != 0 {
+	if got := pickSurvivorIndex(pool, clusterOf, single, []int{0, 1, 2}); got != 0 {
 		t.Fatalf("earliest created should win, got %d", got)
 	}
-	if got := pickSurvivorIndex(pool, clusterOf, []int{2, 4}); got != 4 {
+	if got := pickSurvivorIndex(pool, clusterOf, single, []int{2, 4}); got != 4 {
 		t.Fatalf("tie created_at should go to higher confidence, got %d", got)
+	}
+
+	// 🔴 issue #75 护栏:更早的**单成员簇**不得吃掉**多源簇**(否则 MergeClusters 丢弃
+	// 多源簇的 LLM canonicalTitle,违反设计 D-Q3)。此处 Z 更晚但成员多,应胜出。
+	multi := memberCounts{"X": 1, "Y": 3, "Z": 1, "W": 1}
+	if got := pickSurvivorIndex(pool, clusterOf, multi, []int{0, 1}); got != 1 {
+		t.Fatalf("multi-member cluster must beat an earlier single-member one, got %d", got)
 	}
 }
 

@@ -52,7 +52,7 @@ func (p *OpenAICompat) ListModels(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("models status %d: %s", resp.StatusCode, truncate(string(body), 200))
+		return nil, &APIError{Status: resp.StatusCode, Body: truncate(string(body), 200)}
 	}
 	var out struct {
 		Data []struct {
@@ -86,7 +86,7 @@ func (p *OpenAICompat) HealthCheck(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("health check status %d", resp.StatusCode)
+		return &APIError{Status: resp.StatusCode, Body: "health check"}
 	}
 	return nil
 }
@@ -156,7 +156,7 @@ func (p *OpenAICompat) Chat(ctx context.Context, opts ChatOptions) (ChatResponse
 		return ChatResponse{}, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return ChatResponse{}, fmt.Errorf("api status %d: %s", resp.StatusCode, truncate(string(respBody), 400))
+		return ChatResponse{}, &APIError{Status: resp.StatusCode, Body: truncate(string(respBody), 400)}
 	}
 
 	var out struct {
@@ -230,7 +230,7 @@ func (p *OpenAICompat) StructuredOutput(ctx context.Context, req StructuredReque
 		return StructuredResponse{}, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return StructuredResponse{}, fmt.Errorf("api status %d: %s", resp.StatusCode, truncate(string(respBody), 400))
+		return StructuredResponse{}, &APIError{Status: resp.StatusCode, Body: truncate(string(respBody), 400)}
 	}
 
 	var out struct {

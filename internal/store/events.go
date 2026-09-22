@@ -213,11 +213,15 @@ func (s *Store) MarkEventPublished(ctx context.Context, id string) error {
 // 含已发布但从未聚类的事件:新事件可能与该已发布事件是同一真实事件,需一并参与去重。
 // limit<=0 = 不限(取全部),供 cmd/cluster 默认用 —— 见 UnclusteredEventsTruncated。
 //
+// ⚠️ issue #75:「已扫描但无对端」的事件(cluster_scanned_at IS NOT NULL)不再进池,
+// 否则池永不收敛、每轮重扫全部存量(生产实测 47% 滞留)。这是收敛的关键谓词。
+//
 // ⚠️ issue #53:limit>0 时是**硬截断**(ORDER BY created_at 取最旧 N 条)。调用方必须
 // 用 UnclusteredEventsTruncated 显式检查是否被截断并记录,否则会静默漏聚类。
 func (s *Store) ListUnclusteredEvents(ctx context.Context, limit int) ([]model.Event, error) {
 	q := `SELECT ` + eventCols + ` FROM events
-		 WHERE cluster_id IS NULL AND status IN ('extracted','verified','published')
+		 WHERE cluster_id IS NULL AND cluster_scanned_at IS NULL
+		   AND status IN ('extracted','verified','published')
 		 ORDER BY created_at`
 	var rows pgx.Rows
 	var err error
@@ -235,6 +239,9 @@ func (s *Store) ListUnclusteredEvents(ctx context.Context, limit int) ([]model.E
 // UnclusteredEventsTruncated 报告未聚类事件是否多于 limit(issue #53)。
 // 调用方在 limit>0 时用它把「本次被 limit 截掉了多少」显式记录进 task_runs.meta,
 // 不再让截断静默发生。limit<=0 = 不限,恒 false。
+//
+// ⚠️ 这里的谓词**必须与 ListUnclusteredEvents 逐字一致**(issue #75 加 cluster_scanned_at
+// 时两处成对改)—— 两边漂移会让截断记账失真(报「没截断」而实际截了,或反之)。
 func (s *Store) UnclusteredEventsTruncated(ctx context.Context, limit int) (bool, error) {
 	if limit <= 0 {
 		return false, nil
@@ -243,13 +250,33 @@ func (s *Store) UnclusteredEventsTruncated(ctx context.Context, limit int) (bool
 	err := s.Pool.QueryRow(ctx,
 		`SELECT count(*) FROM (
 		   SELECT 1 FROM events
-		   WHERE cluster_id IS NULL AND status IN ('extracted','verified','published')
+		   WHERE cluster_id IS NULL AND cluster_scanned_at IS NULL
+		     AND status IN ('extracted','verified','published')
 		   LIMIT $1
 		 ) t`, limit+1).Scan(&n)
 	if err != nil {
 		return false, err
 	}
 	return n > limit, nil
+}
+
+// MarkEventsScanned 给「本轮已比对过、最终不属于任何分量」的事件盖扫描水位(issue #75)。
+//
+// ⚠️ `AND cluster_id IS NULL` 是并发护栏:若事件在本轮进行中已被并发合并进某簇,
+// 不能再给它盖水位戳(那会让它看起来像「扫过无对端」,而实际是已归簇)。
+// ⚠️ 调用方只能传**本轮真正比对过**的事件 id。`-limit > 0` 截断时,池外未比对的事件
+// 不得标记 —— 否则它们本轮没被看过却被判「无对端」,永久漏召回。
+func (s *Store) MarkEventsScanned(ctx context.Context, ids []string) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	ct, err := s.Pool.Exec(ctx,
+		`UPDATE events SET cluster_scanned_at=now()
+		 WHERE id = ANY($1) AND cluster_id IS NULL`, ids)
+	if err != nil {
+		return 0, err
+	}
+	return ct.RowsAffected(), nil
 }
 
 // ListEventsByCluster 返回某簇全部成员(按 created_at 升序)。
@@ -273,16 +300,44 @@ type ClusterRepresentative struct {
 // 代表 = 簇内 status IN ('extracted','verified','published') 的最早创建成员(同则更高置信),
 // 即 ApplyClusters 选取的 canonical;event_clusters.status='merged' 的簇不再返回。
 func (s *Store) ListActiveClusterRepresentatives(ctx context.Context) ([]ClusterRepresentative, error) {
+	return s.ListActiveClusterRepresentativesSince(ctx, time.Time{})
+}
+
+// ListActiveClusterRepresentativesSince 同 ListActiveClusterRepresentatives,但只返回
+// 「窗口内仍活跃」的簇:窗口口径 = 簇内成员的 **MAX(created_at)**(since 为零值 = 不限)。
+//
+// ⚠️ 为何是 MAX(member.created_at) 而非代表(最早成员)的 created_at(issue #75):
+// 代表按定义是簇内**最早**成员(`:285` 的 ORDER BY e.created_at),按它开窗会把
+// 「刚并入新成员的老簇」整个排除掉 —— 而那恰恰是最该进重审视池的(新成员可能与别的簇重复)。
+//
+// ⚠️ 为何不用 event_clusters.updated_at:它今日已不一致 —— MergeClusters 会 bump
+// (`event_clusters.go:54`),但 CreateEventCluster(`:16`)、ApplyClusters 的成员并入
+// (`cluster.go:380`)、reexamine.go 的并入(`:105`)都**不 bump**。
+//
+// 本查询让重审视池从「全部活跃簇(生产 3307 个,且每日递增)」收窄到
+// 「窗口内活跃的簇」,与「未聚类窗口」共同把池钉成常数(见 reexamine.go)。
+func (s *Store) ListActiveClusterRepresentativesSince(ctx context.Context, since time.Time) ([]ClusterRepresentative, error) {
 	// eventCols 含 cluster_id 且与 event_clusters 同名列(id/title/status/created_at/updated_at)冲突,
 	// JOIN 场景必须逐列加 e. 前缀。
 	qualified := "e." + strings.ReplaceAll(eventCols, ",", ",e.")
-	rows, err := s.Pool.Query(ctx,
-		`SELECT DISTINCT ON (e.cluster_id) `+qualified+`
+	q := `SELECT DISTINCT ON (e.cluster_id) ` + qualified + `
 		 FROM events e
 		 JOIN event_clusters c ON c.id=e.cluster_id
 		 WHERE c.status='active'
-		   AND e.status IN ('extracted','verified','published')
-		 ORDER BY e.cluster_id, e.created_at, e.confidence DESC`)
+		   AND e.status IN ('extracted','verified','published')`
+	args := []any{}
+	if !since.IsZero() {
+		q += `
+		   AND e.cluster_id IN (
+		     SELECT cluster_id FROM events
+		     WHERE cluster_id IS NOT NULL
+		     GROUP BY cluster_id
+		     HAVING max(created_at) >= $1
+		   )`
+		args = append(args, since)
+	}
+	q += ` ORDER BY e.cluster_id, e.created_at, e.confidence DESC`
+	rows, err := s.Pool.Query(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -298,6 +353,31 @@ func (s *Store) ListActiveClusterRepresentatives(ctx context.Context) ([]Cluster
 		out = append(out, ClusterRepresentative{ClusterID: *ev.ClusterID, Event: ev})
 	}
 	return out, nil
+}
+
+// ScannedEventsSince 返回窗口内「已扫描但无对端」的事件(cluster_scanned_at IS NOT NULL)。
+//
+// 🔴 这是 issue #75 标记列方案的**成对另一半,不可省**:这些事件 cluster_id 仍为 NULL、
+// 不是活跃簇代表,`ListActiveClusterRepresentatives*` 看不见它们。若重审视池只包含
+// 「活跃簇代表 ∪ 未聚类事件(cluster_scanned_at IS NULL)」,它们就**从两处视野同时消失
+// ⇒ 永久漏召回**。显式并入本查询的结果,标记列方案才与「建单例簇」召回等价。
+//
+// since 为零值 = 不限(窗口默认值由 cmd/cluster 的 -window-days 控制)。
+func (s *Store) ScannedEventsSince(ctx context.Context, since time.Time) ([]model.Event, error) {
+	q := `SELECT ` + eventCols + ` FROM events
+		 WHERE cluster_id IS NULL AND cluster_scanned_at IS NOT NULL
+		   AND status IN ('extracted','verified','published')`
+	args := []any{}
+	if !since.IsZero() {
+		q += ` AND cluster_scanned_at >= $1`
+		args = append(args, since)
+	}
+	q += ` ORDER BY created_at`
+	rows, err := s.Pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Event])
 }
 
 // ClusterSource 簇内一个来源:机构名 + 原文链接 + 上游一级源标注(issue #48 T2)。

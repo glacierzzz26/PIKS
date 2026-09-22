@@ -132,6 +132,8 @@ go build -o bin/ ./cmd/...
 - **运维速查**:
   - 更新:`./scripts/deploy.sh`(dev 侧按镜像建/传 → 同步 compose **与 lab 侧 `scripts/`** → migrate → 起 web/research/collector/gateway)
   - 日管线:crontab 每 15min 自判(北京时间非交易日/已过 16:10/今日未跑),stamp 防重跑
+  - 聚类:`./bin/cluster`(候选池收扫水位 + 重审视时间窗;`-window-days` 默认 7、`-dry-run` 只生成候选不调 LLM、`-limit 0` = 不限)
+  - ⚠️ **预算护栏**:`ai_daily_token_budget=0` 的语义是**护栏关闭**(不是「不限预算」)。为 0 时 `cluster`/`worker` 打 WARN 并在 `task_runs.meta` 记 `guard_disabled=true`;须经 `/settings` 设为非 0(建议 `1000000`)才拦得住真实花费
   - 盘中采集:`collector` 常驻服务自判(工作日 + 09:15–15:05 时段闸),每 3 分钟一轮;`per-host` 反封禁护栏(令牌桶/空响应哨兵/熔断)
   - 备份:每晚 `pg_dump` → `/home/rguo/piks/backups/`,14 天留存
   - 日志:`ssh lab 'tail -50 /home/rguo/piks/logs/pipeline-$(date +%F).log'`

@@ -85,8 +85,12 @@ func (s *Server) answerChat(ctx context.Context, cfg map[string]string, question
 	resp, err := c.Chat(ctx, ai.ChatOptions{System: system, User: user, Image: img})
 	if err != nil {
 		// 失败也带回 note(检索模式/降级标注),页面如实显示。
+		s.recordChatTokens(ctx, map[string]any{"question_len": len(question), "image": img != nil, "failed": true})
 		return nil, note, err
 	}
+	// issue #75 账本盲区:问 AI 此前**连 task_runs 行都不写**,花费完全不可见,
+	// 于是 TokensSince 少算、预算护栏拦不住。落一行 task_run 记 ai_tokens(照各 cmd 惯例)。
+	s.recordChatTokens(ctx, map[string]any{"ai_tokens": resp.Usage.Total(), "question_len": len(question), "image": img != nil})
 
 	content, refs := extractRefs(resp.Content, events, entities)
 	refsJSON, _ := json.Marshal(refs)
@@ -104,7 +108,27 @@ func (s *Server) expandQuery(ctx context.Context, cfg map[string]string, q strin
 		return nil, fmt.Errorf("AI 未配置")
 	}
 	c := ai.NewOpenAICompat(base, key, model)
-	return c.ExpandQuery(ctx, q)
+	terms, err := c.ExpandQuery(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	// issue #75 账本盲区:查询扩展也是 LLM 调用,此前不记账。
+	s.recordChatTokens(ctx, map[string]any{"command": "chat:expand"})
+	return terms, nil
+}
+
+// recordChatTokens 把一次 /chat 侧 LLM 调用的花费落进 task_runs(预算护栏唯一账本)。
+//
+// 用「开始即收尾」的单行写法:web 侧问答是短请求,不需要 running/finished 两阶段;
+// 关键是把 ai_tokens 写进 meta —— TokensSince 只汇总 task_runs.meta->>'ai_tokens'
+// (`internal/store/task_runs.go:59`),不落这行就等于这笔钱没花过(issue #75)。
+// 记账失败不影响问答主流程(护栏数据,不阻塞用户请求)。
+func (s *Server) recordChatTokens(ctx context.Context, meta map[string]any) {
+	runID, err := s.store.StartTaskRun(ctx, "chat")
+	if err != nil {
+		return
+	}
+	_ = s.store.FinishTaskRun(ctx, runID, "success", "", meta)
 }
 
 // buildChatContext 把检索结果组装成 LLM 可见的引用块(方括号 id 供答案标注)。

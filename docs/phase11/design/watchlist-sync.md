@@ -75,9 +75,23 @@ marketid 分布:`17`×15(沪)、`33`×23(深)、`65`×1(期货 `RU9999`)、
 **无滑块、无设备指纹**,Go 标准库(`encoding/xml` + `crypto/rsa` + `net/http/cookiejar`)即可。
 cookie 里 `sess_tk` 是 JWT,`exp` ≈ **7 天**。
 
-> ⚠️ **登录路径尚未端到端实测**(见 §7 偏差登记)。**实测可用的是 cookie 注入**;
-> 故实现上**注入 cookie 优先于账密**(`internal/ths/client.go` 的 `CookieSource()` = `inject` / `login`)。
-> 两者可并存:注入的 cookie 过期后仍可用账密自动续。
+> 🔴 **XML 一律声明 `encoding="GB2312"`**(2026-09-22 探针实测原文确认),而 Go 的
+> `encoding/xml` **只认 UTF-8**,不设 `CharsetReader` 即报
+> `xml: encoding "GB2312" declared but Decoder.CharsetReader is nil` ——
+> **verify2 第一步就倒**(Phase A 探针首发即复现)。
+> 实现统一经 `internal/ths/parse.go` 的 `newXMLDecoder()`(挂 GB18030 `CharsetReader`,
+> 向后兼容 GBK/GB2312);**新增任何 XML 解析都必须走它**,直接 `xml.NewDecoder` 会重现同一坑。
+> 回归测试 `TestXMLCharsetReader`(纯 ASCII 的 `do_rsa` + 真 GBK 中文 msg 两种真实形状)。
+> 另注:上游把 **PEM 换行内联在 XML 属性值里** —— 实测 Go 会**原样保留**(不折叠为空格),
+> 故属性取值后可直接 `pem.Decode`(此点已实测,**非**推断)。
+
+> ⚠️ **登录路径验证进度(2026-09-22,Phase A 探针实测)**:
+> **已通** —— 取公钥 → RSA 加密 → `unified_login` 打到服务端 → 服务端校验并回 **GBK 中文错误**
+> (`code=-3 用户名或密码错误`),证明**除最终凭据比对外全链路可用**;
+> **未通** —— 真实密码的**成功登录**(探针签发 cookie / 拉名单)仍未端到端跑过一次。
+> **实测可用的是 cookie 注入**;故实现上**注入 cookie 优先于账密**
+> (`internal/ths/client.go` 的 `CookieSource()` = `inject` / `login`)。
+> 两者可并存:注入的 cookie 过期后仍可用账密自动续。见 §7 偏差登记。
 
 ---
 
@@ -250,10 +264,12 @@ INDEX idx_task_runs_command_started (command, started_at DESC)
 | `TaskRunSlotDone`:success 才去重、failed 必须重试 | ✅ |
 | 守卫 `check-image-topology.sh`(tools **11** 命令) | ✅ |
 | `tsc --noEmit` / `vite build` | ✅ |
+| 🔴 **XML GB2312 声明可解**(`TestXMLCharsetReader`:纯 ASCII `do_rsa` + 真 GBK 中文 msg) | ✅ |
+| 🔴 **账密登录打到服务端**(dummy 凭据 → 回 `code=-3 用户名或密码错误`,证明除凭据比对外全链路通) | ✅ 2026-09-22 实测 |
 
 **未验(须人工/lab)**:
 
-- ⚠️ **账密登录端到端**(§1.4 / §7);
+- ⚠️ **账密登录「成功」路径**(§1.4 / §7)—— 握手已实测打到服务端,**真实凭据签出 cookie + 拉到名单**未跑过一次;
 - **生产端到端**:lab `docker compose logs piks-watch-sync` 确认定点执行;
   `task_runs` 有 `meta.slot` 正确的 success 行;同 slot 重启后不重复;
 - **反向验收**:同花顺侧移出一只 → 下轮 `entities.status='archived'` + `removed_at` 非空 + **行未删**;
@@ -266,7 +282,8 @@ INDEX idx_task_runs_command_started (command, started_at DESC)
 
 | 计划 | 实际 | 理由 |
 |---|---|---|
-| Phase A「账密登录跑通」为硬前置,通过前不写生产代码 | **登录路径未端到端实测**,cookie 注入已实测 | 登录探针须由用户在本地用 `!` 自行运行(凭据不进 AI 上下文)。**兜底已就位**:注入 cookie 优先于账密,功能不依赖登录;登录作为增量。**残余风险**:若账密登录不通,cookie 需人工 ~每周换一次 |
+| Phase A「账密登录跑通」为硬前置,通过前不写生产代码 | **登录「成功」路径未端到端实测**;但握手已实测打到服务端(dummy 凭据 → 回 `code=-3 用户名或密码错误`),cookie 注入已实测 | 登录探针须由用户在本地用 `!` 自行运行(凭据不进 AI 上下文)。**兜底已就位**:注入 cookie 优先于账密,功能不依赖登录;登录作为增量。**残余风险**:若账密登录不通,cookie 需人工 ~每周换一次 |
+| (未预见)上游 XML 声明 `encoding="GB2312"` | **Phase A 探针首跑即失败** —— 裸 `xml.NewDecoder` 报 `CharsetReader is nil`,verify2 **第一步**就倒 | 已修:统一 `newXMLDecoder()` + GB18030 `CharsetReader`(`parse.go`),**两个** XML 解码点(`firstStartElement` / `SelfStockDetails`)一并改,钉 `TestXMLCharsetReader` 回归。此坑**只有真打上游才会暴露**(fixture 当初用 UTF-8 声明,故单测全绿却线上必挂) |
 | 计划用 `TaskRunSlotDone(ctx,command,slot,dayStart)` | 实现签名 `TaskRunSlotDone(ctx, command, slot string, since time.Time)` | 同义(去重窗口用 `since`) |
 | 计划 `Stats{...,Archived,...}` | 实现 `Stats{Upstream,Kept,Dropped,Add,Keep,Remove,Deferred,PriceMissing,DetailFailed}` | `Archived` 与 `Remove` 同义,合并 |
 
@@ -276,7 +293,8 @@ INDEX idx_task_runs_command_started (command, started_at DESC)
 
 | 严重度 | 风险 | 处置 |
 |---|---|---|
-| 🔴 高 | **登录未实测**(§1.4) | cookie 注入兜底;账密作增量;失败**不静默** |
+| 🔴 高 | **登录「成功」路径未实测**(§1.4) | 握手已实测打到服务端;cookie 注入兜底;账密作增量;失败**不静默** |
+| 🟡 中 | **上游 XML 声明 GB2312**,Go 默认 XML 只认 UTF-8 | 统一 `newXMLDecoder()` 挂 GB18030 `CharsetReader`;**新增 XML 解析必须走它**;`TestXMLCharsetReader` 钉死(§1.4 / §7) |
 | 🔴 高 | **#78 公网零鉴权** —— 账密将落在 `piks.5home.online` 背后 | 表单只回掩码;写入加 `PIKS_ALLOW_THS_CRED_UI` 门控(§4.6);**未修 #78 前,公网侧凭据写入保持关闭** |
 | 🟡 中 | 协议非官方,同花顺改版即失效 | 结构漂移一律 failed;被动检测(空名单)优先于主动 exp 判断;失败**不静默** |
 | 🟡 中 | 登录频繁触发风控(锁号) | 常驻复用会话;登录 ≤6 次/日 + 退避;**不做重试风暴**;稳态 ~1 次/周 |

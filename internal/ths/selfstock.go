@@ -4,9 +4,9 @@ package ths
 // 🔴 只读 —— 绝不调 modifySelfStock。
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
-	"encoding/xml"
 	"fmt"
 	"net/url"
 )
@@ -70,7 +70,7 @@ func (c *Client) SelfStockDetails(ctx context.Context) ([]Detail, error) {
 			Blob    string `xml:"selfstock_detail,attr"`
 		} `xml:"item"`
 	}
-	if err := xml.Unmarshal(body, &root); err != nil {
+	if err := newXMLDecoder(bytes.NewReader(body)).Decode(&root); err != nil {
 		return nil, fmt.Errorf("ths 自选元数据: XML 解析失败: %w", err)
 	}
 	if _, _, err := parseRet(body); err != nil {

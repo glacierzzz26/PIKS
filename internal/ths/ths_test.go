@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
 func TestParseRet(t *testing.T) {
@@ -276,3 +278,50 @@ var _ = func() bool {
 	_, off := time.Now().In(beijing).Zone()
 	return off == 8*3600
 }()
+
+// TestXMLCharsetReader 回归:上游 XML 声明 encoding="GB2312"(实测原文),
+// 裸 xml.NewDecoder 会报 `encoding "GB2312" declared but Decoder.CharsetReader is nil`
+// —— Phase A 探针实测复现,verify2 第一步就倒。newXMLDecoder 必须能解。
+//
+// 两个真实场景:① 纯 ASCII 的 do_rsa(公钥 PEM 在属性里);② 真·GBK 中文(错误 msg)。
+func TestXMLCharsetReader(t *testing.T) {
+	// ① do_rsa 原样(声明 GB2312,内容纯 ASCII,属性内 PEM 含换行须原样保留)。
+	const dorsa = "<?xml version=\"1.0\" encoding=\"GB2312\"?>\r\n" +
+		"<do_rsa>\r\n<ret code=\"0\" msg=\"\"/>\r\n" +
+		"<item rsa_version=\"default_5\" pubkey=\"-----BEGIN PUBLIC KEY-----\n" +
+		"AAAABBBBCCCC\n-----END PUBLIC KEY-----\" modulus=\"D90F\"/>\r\n</do_rsa>"
+	se, err := firstStartElement([]byte(dorsa), "item")
+	if err != nil {
+		t.Fatalf("GB2312 声明应能被解: %v", err)
+	}
+	var pub, ver string
+	for _, a := range se.Attr {
+		switch a.Name.Local {
+		case "pubkey":
+			pub = a.Value
+		case "rsa_version":
+			ver = a.Value
+		}
+	}
+	if ver != "default_5" {
+		t.Fatalf("rsa_version=%q", ver)
+	}
+	if !strings.Contains(pub, "-----BEGIN PUBLIC KEY-----\n") {
+		t.Fatalf("属性内 PEM 换行被破坏: %q", pub)
+	}
+
+	// ② 真 GBK 中文 msg(GB2312 家族的常见真实内容)—— 须正确转成 UTF-8。
+	gbkRaw, err := simplifiedchinese.GBK.NewEncoder().Bytes([]byte(
+		"<?xml version=\"1.0\" encoding=\"GB2312\"?><download><ret code=\"-1\" msg=\"账号或密码错误\"/></download>"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gbkBody := string(gbkRaw)
+	code, msg, err := parseRet([]byte(gbkBody))
+	if err == nil {
+		t.Fatal("非零 code 应报错")
+	}
+	if code != "-1" || msg != "账号或密码错误" {
+		t.Fatalf("GBK 解码错误: code=%q msg=%q", code, msg)
+	}
+}

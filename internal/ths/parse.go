@@ -6,11 +6,44 @@ package ths
 import (
 	"encoding/base64"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/transform"
 )
+
+// newXMLDecoder 构造能处理同花顺 XML 的解码器。
+//
+// 🔴 **必须给 CharsetReader**:同花顺的 XML 一律声明 `<?xml version="1.0" encoding="GB2312"?>`
+// (2026-09-22 实测 do_rsa 响应原文),而 Go 的 encoding/xml **只认 UTF-8**,遇非 UTF-8 声明
+// 且 CharsetReader 为 nil 时直接报错:
+//
+//	xml: encoding "GB2312" declared but Decoder.CharsetReader is nil
+//
+// (verify2 四步的**第一步**就会倒在这里 —— Phase A 探针实测复现。)
+//
+// 声明归声明,实测这两个端点的**字节都是纯 ASCII**(公钥 PEM / base64 / code 数字),
+// 故这里按 GB18030 兜底:它向后兼容 GBK/GB2312,且对未来真的出现中文(如错误 msg)
+// 也能正确解码,不会把 UTF-8 当 GBK 二次转码搞坏。
+//
+// ⚠️ 一律**经此函数**构造解码器 —— 直接 xml.NewDecoder 会重现同一坑。
+func newXMLDecoder(r io.Reader) *xml.Decoder {
+	dec := xml.NewDecoder(r)
+	dec.CharsetReader = func(charset string, input io.Reader) (io.Reader, error) {
+		switch strings.ToLower(strings.TrimSpace(charset)) {
+		case "gb2312", "gbk", "gb18030":
+			return transform.NewReader(input, simplifiedchinese.GB18030.NewDecoder()), nil
+		default:
+			return nil, fmt.Errorf("ths: 不支持的 XML 编码声明 %q", charset)
+		}
+	}
+	return dec
+}
 
 // rawDetail 上游 detail 条目。**全用 string 承接**:P 空串 / "0" / 非法值 与「缺失」
 // 语义不同,须由 ParseAddedPrice 统一判 NULL(绝不填 0 —— 项目纪律:宁缺毋假)。

@@ -243,7 +243,8 @@ func parseItemAttrs(body []byte) (map[string]string, error) {
 // firstStartElement 用流式解码找首个指定名的开始元素(根或任意深度后代)。
 // 找不到 → errItemMissing(调用方按需包装);XML 非法 → 解析错误。
 func firstStartElement(body []byte, name string) (xml.StartElement, error) {
-	dec := xml.NewDecoder(bytes.NewReader(body))
+	// ⚠️ 必须经 newXMLDecoder(带 CharsetReader):上游声明 GB2312,裸 NewDecoder 必炸。
+	dec := newXMLDecoder(bytes.NewReader(body))
 	for {
 		tok, err := dec.Token()
 		if err == io.EOF {

@@ -22,6 +22,7 @@ export const ENDPOINTS = {
   marketSnapshot: "/market/snapshot", // GET ?date=YYYY-MM-DD
   flashes: "/flashes", // GET ?q=&source=
   announcements: "/announcements", // GET ?q=&source= 公告（原始事件源，issue #50）
+  hotTopics: "/hot-topics", // GET 热榜（issue #68 D 层；两源分列、不合并）
   notes: "/notes", // GET
   note: "/notes/:id", // GET/PUT/DELETE
   dashboard: "/dashboard", // GET

@@ -45,8 +45,11 @@ run() {
 # 积压 raw 永不清零 → 显式抬高;issue #68 C 层盘中每 3 分钟采集后,单日新增进一步放大
 # (交易日 ~5.5h / 3min ≈ 110 轮),故再抬到 800 覆盖一日量;token 护栏仍是 ai_daily_token_budget。
 # 日期敏感命令显式 -date $TODAY:quote-collector / market-state / daily-review / reconcile。
+# 热榜(issue #68 D 层):常驻 `hot-topic`(compose 服务)已覆盖盘中每 30 分钟;此处**再补一
+# 发收盘后快照**(16:10 放行时跑,one-shot),用途有二:① 留一条稳定的「当日收盘态」记录;
+# ② 常驻进程若挂了/未起,日管线仍保证每日至少一批。独立表,不接事件链,失败不阻断其余步骤。
 ok=1
-for c in migrate "collector -driver all" "collector -driver cninfo-announce" "worker -limit 800" cluster "quote-collector -date $TODAY" entity-build "market-state -date $TODAY" "daily-review -date $TODAY" "reconcile -date $TODAY"; do
+for c in migrate "collector -driver all" "collector -driver cninfo-announce" hot-topic "worker -limit 800" cluster "quote-collector -date $TODAY" entity-build "market-state -date $TODAY" "daily-review -date $TODAY" "reconcile -date $TODAY"; do
   # shellcheck disable=SC2086   # $c 含参数时按空格拆分为独立参数
   if run $c; then echo "== ok $c" >> "$L"; else echo "== FAIL $c" >> "$L"; ok=0; fi
 done

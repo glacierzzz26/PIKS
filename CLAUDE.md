@@ -54,7 +54,7 @@ PIKS 是 A 股投资知识系统：快讯/涨停池 → 结构化事件与实体
 10. 禁止紫粉渐变、禁止 playful 字体、禁止 AI 套话文案
 
 ## 页面模块（2026-08-30 起：全部页面由 React SPA 提供，无 Go HTML；2026-09-14 P6-2 白话导航 + 隐藏管线内部）
-- **导航骨架（`frontend/src/components/layout/navItems.ts`，单一真源）**：**今天**（首页 `/`，Sun，置顶不归组）/ **发现**（市场概况 `/market` · 涨停股 `/ladder` · 消息 `/events`）/ **研究**（研报 `/reports` · 个股分析 `/research` · 问 AI `/chat`）/ **交易**（交易与持仓 `/trades`）/ **复盘**（持仓诊断 `/reviews` · 周报 `/weekly` · 笔记 `/notes`）/ **系统**（设置 `/settings`）。共 **12 项**，标签一律白话、去黑话。分组仅视觉分隔、不可折叠。
+- **导航骨架（`frontend/src/components/layout/navItems.ts`，单一真源）**：**今天**（首页 `/`，Sun，置顶不归组）/ **发现**（市场概况 `/market` · 涨停股 `/ladder` · 消息 `/events` · 热榜 `/hot-topics`）/ **研究**（研报 `/reports` · 个股分析 `/research` · 问 AI `/chat`）/ **交易**（交易与持仓 `/trades`）/ **复盘**（持仓诊断 `/reviews` · 周报 `/weekly` · 笔记 `/notes`）/ **系统**（设置 `/settings`）。共 **13 项**，标签一律白话、去黑话。分组仅视觉分隔、不可折叠。
 - **隐藏管线内部（P6-2）**：`/entities` 实体库 · `/graph` 图谱 · `/recon` 对账 **移出侧栏**（路由保留），并入设置页「数据与运维」卡（`frontend/src/components/settings/OpsCard.tsx`）；⌘K 仍经 `/entities` 做实体名→个股跳转，故不可删路由。**快讯 `/flashes` 并入消息页第二个 tab**（`/events` 渲染 `pages/messages.tsx`，`?tab=important|flash` 写 URL query；`/flashes` 旧深链落快讯 tab）。
 - **新手支持（P6-2）**：`frontend/src/lib/glossary.ts`（术语表单一真源）+ `components/ui/Term.tsx`（行内 tooltip）+ `pages/help.tsx`（`/help` 使用指南 + 词汇表）。新增用户可见文案**禁止**出现 `quote-collector`/`daily-review`/`crontab`/`幂等`/`reconcile`/`research-run:*`/`Fact ≠ Inference` 等实现黑话 —— 用白话，或经 `glossary.ts` 解释。
 - **个股中心 `/stock/:code`**（不进侧栏，⌘K 可直达）：以 `code` 为主键、`entity` 为可选富化，聚合持仓/成交/深研/事件/笔记/行业/涨停；数据源 `GET /api/v1/stock/:code`。所有带 code 的入口（涨停股/交易表/持仓表/实体库/事件 affected/报告头/⌘K）导流至此。首屏含 **「买入前速评」**（P7，见下）与 **「当时在看什么」**（P6-4 决策记录）。
@@ -62,7 +62,8 @@ PIKS 是 A 股投资知识系统：快讯/涨停池 → 结构化事件与实体
 - **研究档案 profile（`research/profiles/*.yaml`）**：`complete-stock`（full，11 节含 `industry`，最重）· `short-term`（express，7 节，仅 2 维评分不含 risk）· **`prebuy`**（express，除 `industry` 外全要，保留完整 6 维评分卡含 risk —— 去掉最重的行业采集以提速，供买入前速评）。⚠️ 行为由 `sections` 驱动，`mode` 字段不参与分支。
 - **决策记录（P6-4，史诗闭环 #1「我为什么买它」）**：零 schema，复用多态 `relationships` —— 边形 `(from_type='trade', from_id=<trades.id UUID>, to_type='research_run'|'event'|'personal_note', to_id=<UUID>, rel_type='based_on')`。**`to_id` 必须是各表主键 UUID（研报用 `research_runs.id`，绝不用 `run_id` TEXT）**——无 FK，接错静默悬空。写入：`POST /api/v1/trades` 收 `based_on:{run_ids,event_ids,note_ids}`；读回：`apiTrade.based_on[]` + `/stock/:code` 顶层 `decisions`；前端 `TradeBasedOnPicker`（`TradeAddForm` 内）/ `TradeTable` 展开行 / `StockDecisions`。⚠️ **图谱隔离**：`ListAllRelationships` 用 `graphRelFilter`（`internal/store/relationships.go`）排除 `decided_by`/`based_on`，否则决策边漏进 `/graph` 成无名节点；新增决策边类型须同步列入该过滤。
 - **自选（`entities.status`）**：`watch` = 在自选 / `active` = 库中有不在自选 / `archived` = 曾自选已移出（保留历史/深研/笔记）。自选首页数据源 `GET /api/v1/watchlist`；引入/移出**只经同花顺自选截图镜像同步**（`/trades` 页截图导入 `kind='watchlist'`，服务端 diff add/keep/remove，无手动星标）。
-- **全部页面（`frontend/src/pages/`，React Router 注册）**：今天（自选）`/` / 市场概况 `/market` / 消息 `/events`（含快讯 tab、`/events/:id` 详情抽屉兜底）/ 实体库 `/entities`（含 `/entities/:id` → `?id=` 重定向）/ 图谱 `/graph` / 涨停股 `/ladder` / 研报 `/reports`（列表，主体为轴；含 `/reports/:runId` 阅读器）/ 个股分析 `/research`（触发入口 + 全库历史表；含 `/research/:runId` 运维仪表盘）/ 使用指南 `/help` / 对账 `/recon` / 持仓诊断 `/reviews` / 笔记（列表 + 新建 `/notes/new` + 阅读 `/notes/:id` + 编辑 `/notes/:id/edit`）/ 周报 `/weekly` / 交易与持仓 `/trades`（手动录入 + 截图导入 + AI 解读 + 组合诊断）/ 问 AI `/chat` / 设置 `/settings` / 个股中心 `/stock/:code`；`/flashes` 亦渲染消息页（保留旧深链）。
+- **热榜（数据分层 D 层，issue #68）**：页 `/hot-topics`（「发现」组），数据源 `GET /api/v1/hot-topics`，**2 源分列**（同花顺话题榜 15 条 / 财联社首页热文 13 条）。🔴 **不进事件链路**：独立表 `hot_topic_items`（迁移 0018）+ 独立接口 `HotTopicSource`（`internal/collector/hottopic.go`，**刻意不复用** `Driver`）+ 独立常驻进程 `cmd/hot-topic`（盘中每 30 分钟）—— 热榜**可被操纵**，与印证度（`source_count`/`cluster_sources`）**正交**，**不得合并计算**，只作展示。⚠️ 两源**不合并/不加权/不排名**（实测 615 对同题 = 0，粒度不同）；`rank` = 上游数组下标 + 1、跳行留空号、**不得重排**（财联社数组顺序 ≠ `readNum` 降序）；`hot_value` **`NULL ≠ 0`**（前端显示 `—`）；SSR 漂移**报错不空成功**（#64 教训）。设计 `docs/phase11/design/hot-topic.md`。
+- **全部页面（`frontend/src/pages/`，React Router 注册）**：今天（自选）`/` / 市场概况 `/market` / 消息 `/events`（含快讯 tab、`/events/:id` 详情抽屉兜底）/ 实体库 `/entities`（含 `/entities/:id` → `?id=` 重定向）/ 图谱 `/graph` / 涨停股 `/ladder` / **热榜 `/hot-topics`** / 研报 `/reports`（列表，主体为轴；含 `/reports/:runId` 阅读器）/ 个股分析 `/research`（触发入口 + 全库历史表；含 `/research/:runId` 运维仪表盘）/ 使用指南 `/help` / 对账 `/recon` / 持仓诊断 `/reviews` / 笔记（列表 + 新建 `/notes/new` + 阅读 `/notes/:id` + 编辑 `/notes/:id/edit`）/ 周报 `/weekly` / 交易与持仓 `/trades`（手动录入 + 截图导入 + AI 解读 + 组合诊断）/ 问 AI `/chat` / 设置 `/settings` / 个股中心 `/stock/:code`；`/flashes` 亦渲染消息页（保留旧深链）。
 - 写操作经 `/api/v1` JSON 写接口（`internal/web/api_write.go`）；nginx 仅反代 `/api/*` + 服务 SPA 静态文件，无交互页反代
 - 分流规则见 `configs/nginx.conf`（生产）与 `frontend/vite.config.ts`（dev proxy 复刻）
 - ⚠️ **`UpsertEntity` 状态语义**：空 `Status` = 保持既有（entity-build 每日 upsert 不带 status，若把空当 `active` 会清空自选）
@@ -86,10 +87,10 @@ PIKS 是 A 股投资知识系统：快讯/涨停池 → 结构化事件与实体
 
 ### 部署
 
-- 编排在 dev 侧：`./scripts/deploy.sh`（**四镜像**分别 build → 按 tag 跳过/传输 → compose 同步 → `up postgres` → `migrate` → `up web research` → `up gateway` → 落 stack 清单）。
-- **四镜像**（2026-09-20 容器拆分，issue #47）：`piks-gateway`（纯 nginx，唯一对外）/ `piks-web`（纯 Go API，无 python3）/ `piks-research`（Python 运行时 + 深研队列 worker，常驻）/ `piks-tools`（9 管线命令，profile=run）。单 Dockerfile 多 `--target`。
-- **各镜像版本 = 自己输入的 git tree hash**（非 HEAD hash）：改前端不动 web/tools/research 的 tag → 它们既不重建也不传输。tag 形如 `v0.0.0-<该镜像短hash>`。
-- **顺序是硬约束**：`migrate` 必须先于 `web`（`cmd/web/main.go` 读 `app_config`，缺表即 fatal 崩溃循环）；`gateway` 必须最后。
+- 编排在 dev 侧：`./scripts/deploy.sh`（**四镜像**分别 build → 按 tag 跳过/传输 → compose 同步 → `up postgres` → `migrate` → `up web research collector hot-topic` → `up gateway` → 落 stack 清单）。
+- **四镜像**（2026-09-20 容器拆分，issue #47）：`piks-gateway`（纯 nginx，唯一对外）/ `piks-web`（纯 Go API，无 python3）/ `piks-research`（Python 运行时 + 深研队列 worker，常驻）/ `piks-tools`（**10** 管线命令，profile=run；常驻的 `collector`/`hot-topic` 服务**复用**它）。单 Dockerfile 多 `--target`。
+- **各镜像版本 = 自己输入的 git tree hash**（非 HEAD hash）：改前端不动 web/tools/research 的 tag → 它们既不重建也不传输。tag 形如 `v0.0.0-<该镜像短hash>`。⚠️ `TAG_TOOLS` 取 **10 个命令依赖闭包的并集**（`go_deps_hash_all`），不是只 hash `migrate` —— 否则改 `internal/collector` 不动 tag，生产跑旧像。
+- **顺序是硬约束**：`migrate` 必须先于 `web`（`cmd/web/main.go` 读 `app_config`，缺表即 fatal 崩溃循环）；`gateway` 必须最后。`hot-topic` 依赖迁移 0018 的 `hot_topic_items` 表，故也排在 `migrate` 之后。
 - **干净树门控**：`deploy.sh` 默认拒绝脏树（镜像从工作树构建却以版本 tag 命名）；调试用 `PIKS_ALLOW_DIRTY=1`（tag 附 `-dirty`）。
 - **发布前必打 tag**；未发版也须在验证记录里写明 `v0.0.0-<hash>`（栈清单记四镜像 tag）。
 - 每次部署**保留回滚镜像** `<name>:rollback-pre-<阶段>`，并在文档登记旧 hash。⚠️ **回滚快照只打一次、存在即跳过**（回滚点是一次性的；无脑 `tag latest` 会在第二次部署时把回滚点静默改写成新镜像，名字不变、内容已换，真回滚时才发现回滚不了）。

@@ -2089,3 +2089,110 @@ select.f-sel {
     grid-template-columns: 1fr;
   }
 }
+
+/* ============================================================
+   热榜（issue #68 D 层）—— 两列**各出各的、不合并**。
+   粒度不同的东西混排必然误导，故用非对称栅格分列；热度仅源内可比。
+   ============================================================ */
+.notice-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--soft);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+.hottopic-cols {
+  display: grid;
+  /* 非对称栅格（规范第 4 条：禁 3 栏等宽）—— 同花顺 15 条、财联社 13 条，主列略宽。 */
+  grid-template-columns: 1.15fr 1fr;
+  gap: 14px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .hottopic-cols {
+    grid-template-columns: 1fr;
+  }
+}
+
+.hottopic-col {
+  overflow: hidden;
+}
+.hottopic-head {
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.hottopic-head h2 {
+  font-size: 14px;
+  font-weight: 700;
+}
+.hottopic-head .note {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--ink-faint);
+  line-height: 1.6;
+}
+.hottopic-col .empty {
+  padding: 28px 14px;
+  text-align: center;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--ink-faint);
+}
+
+.hottopic-list {
+  display: flex;
+  flex-direction: column;
+}
+.hottopic-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px; /* 触摸目标下限（规范） */
+  padding: 8px 14px;
+  border-top: 1px solid var(--line);
+}
+.hottopic-row:first-child {
+  border-top: none;
+}
+.hottopic-row:hover {
+  background: var(--hover);
+}
+.hottopic-row .rank {
+  flex: 0 0 22px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-faint);
+}
+/* 前三名给一点视觉权重（仍是名次，不是「重要」） */
+.hottopic-row:nth-child(-n + 3) .rank {
+  color: var(--accent);
+}
+.hottopic-row .title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink);
+  /* 单行截断：标题保持一行，悬停 title 属性看全文（避免两列高度参差） */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+a.title {
+  text-decoration: none;
+}
+a.title:hover {
+  color: var(--accent);
+}
+.hottopic-row .hot {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--muted);
+}

@@ -222,16 +222,20 @@ func llmPairs(events []model.Event, autoIdx map[int]bool) [][]int {
 // ---------- LLM 批量确认 ----------
 
 // PairVerdict 一对事件的 LLM 判定。
+//
+// ⚠️ **无 `CanonicalTitle` 字段**(issue #83 P-3):旧实现让 LLM 在确认同事件时顺带重写一个
+// 规范标题,再由 `canonicalTitle` 取「第一个命中 pair」。该标题措辞在不同 pair 间可能发散、
+// 且是 Inference 而非 Fact ⇒ P3 改为**无 LLM 规则**选簇标题(成员原文里重合度最高者),
+// 本字段随之成为死字段,一并删除(prompt 少要一个字段,省一点输出 token)。
 type PairVerdict struct {
-	PairIndex      int
-	IsSame         bool
-	CanonicalTitle string
+	PairIndex int
+	IsSame    bool
 }
 
 const batchSystem = `你是事件去重确认助手。判断每一对事件是否描述同一件真实发生的事(同一主体 + 同一行为 + 同一时间范围)。
 严格输出单个 JSON 对象,不要输出任何其他文字、注释或 Markdown 标记:
-{"results":[{"pair_index":0,"is_same":true,"canonical_title":"更规范的事件标题"}, ...]}
-规则:is_same=false 时 canonical_title 填空字符串;canonical_title 取覆盖面最广、最规范的那个标题。`
+{"results":[{"pair_index":0,"is_same":true}, ...]}
+规则:is_same 为 true 表示同一事件,false 表示不同事件。`
 
 // retryBackoff 重试退避基数(issue #75)。包级变量便于测试注入(设为 0 即不等待)。
 // 退避序列:base×1、base×2(base=0 时不等待)。加抖动由 jitter 控制。
@@ -304,9 +308,8 @@ func ConfirmPairs(ctx context.Context, p ai.Provider, events []model.Event, pair
 		}
 		var out struct {
 			Results []struct {
-				PairIndex      int    `json:"pair_index"`
-				IsSame         bool   `json:"is_same"`
-				CanonicalTitle string `json:"canonical_title"`
+				PairIndex int  `json:"pair_index"`
+				IsSame    bool `json:"is_same"`
 			} `json:"results"`
 		}
 		if err := json.Unmarshal(resp.Data, &out); err != nil {
@@ -317,7 +320,6 @@ func ConfirmPairs(ctx context.Context, p ai.Provider, events []model.Event, pair
 				continue
 			}
 			verdicts[r.PairIndex].IsSame = r.IsSame
-			verdicts[r.PairIndex].CanonicalTitle = r.CanonicalTitle
 		}
 	}
 	return verdicts, total, nil
@@ -406,16 +408,38 @@ func UnmatchedIndices(n int, comps [][]int) []int {
 	return out
 }
 
-// ApplyClusters 建簇入库:canonical = 最早创建(同则更高置信),其余 status='merged'。
-// 返回被合并(merged)事件数。
+// memberMeta 分量内成员的**建簇期元数据**(issue #83 P6),与事件下标平行。
+//
+// 为何要单独传:`ApplyClusters` 拿到的 `[]model.Event` 只有 `RawDocumentID` 外键,没有 url/content;
+// 而 P6 代表选取规则「有直接链接 > 无链接 → 来源独立性强(非转载) > 弱 → 首发时间最早」的前两级
+// 依赖这两样。调用方在建簇前一次性从 raw 层取回(`store.ListEventDocMeta` + `ReprintFlags` 派生)。
+type memberMeta struct {
+	hasURL    bool // raw 文档有直接外链(rd.url 非空)—— 无链接源照样列出,但优先选有链接的当代表
+	isReprint bool // 与分量内另一成员正文近逐字(转载,P-1 指纹) —— 独立性弱,不当代表
+}
+
+// ApplyClusters 建簇入库:canonical 按 P6 规则选(有链接 > 非转载 > 最早,同则高置信),
+// 其余 status='merged'。返回被合并(merged)事件数。
 //
 // canonical 的**事件 id**(issue #83 P-2)随簇同一次 INSERT 落 `event_clusters.canonical_event_id`
 // —— 它是簇的详情入口(P8 / /events/:id)。选定后**冻结**:reexamine 把别的簇并入本簇时不重选。
-func ApplyClusters(ctx context.Context, s *store.Store, events []model.Event, comps [][]int, verdicts []PairVerdict, pairs [][]int) (int, error) {
+//
+// ⚠️ **存量与新簇口径分叉**(issue #83 P-3 决定):本函数用 **P6 新规则**选新簇代表;存量簇的
+// `canonical_event_id` **不回填**(保「代表冻结」纪律,避免 `based_on` 决策边随重算漂移)。
+// 故迁移 `0021` 回填 SQL(旧口径「最早非 merged」)与新簇选取**有意不再逐字一致** ——
+// 见 `canonicalIndex` 注释与 `docs/phase11/design/event-pipeline-p3.md`。
+func ApplyClusters(ctx context.Context, s *store.Store, events []model.Event, comps [][]int) (int, error) {
+	// 建簇前一次性取回多成员分量各成员的 (url, content),派生 P6 代表选取所需的 memberMeta。
+	// 单成员分量代表恒为自己,不必取数。
+	meta, err := loadMemberMeta(ctx, s, events, comps)
+	if err != nil {
+		return 0, err
+	}
+
 	merged := 0
 	for _, comp := range comps {
-		title := canonicalTitle(events, verdicts, pairs, comp)
-		canonical := canonicalIndex(events, comp)
+		title := canonicalTitle(events, comp)
+		canonical := canonicalIndex(events, comp, meta)
 		canonicalID := events[canonical].ID
 		cid, err := s.CreateEventCluster(ctx, &model.EventCluster{
 			Title:            title,
@@ -424,7 +448,7 @@ func ApplyClusters(ctx context.Context, s *store.Store, events []model.Event, co
 		if err != nil {
 			return merged, fmt.Errorf("create cluster: %w", err)
 		}
-		// 除 canonical 外的分量成员:按同一比较器排序并入(顺序只影响 merged 的写入次序)。
+		// 除 canonical 外的分量成员:按「最早创建,同则更高置信」排序并入(顺序只影响 merged 的写入次序)。
 		sorted := append([]int(nil), comp...)
 		sort.Slice(sorted, func(a, b int) bool {
 			if events[sorted[a]].CreatedAt.Equal(events[sorted[b]].CreatedAt) {
@@ -452,46 +476,122 @@ func ApplyClusters(ctx context.Context, s *store.Store, events []model.Event, co
 	return merged, nil
 }
 
-// canonicalIndex 返回分量 comp 内代表(canonical)的下标:最早创建,同则更高置信。
+// loadMemberMeta 取分量内各成员的建簇期元数据(P6 代表选取用)。
 //
-// 🔴 **与迁移 `0021_event_pipeline_p2.sql` 的回填 SQL 同比较器**
-// (`ORDER BY cluster_id, created_at ASC, confidence DESC`)—— 改这里必须同步改那段 SQL,
-// 否则存量回填与新簇选取口径分叉。单测 `canonical_test.go` 锁死本函数。
-func canonicalIndex(events []model.Event, comp []int) int {
-	best := comp[0]
-	for _, i := range comp[1:] {
-		a, b := events[i], events[best]
-		if a.CreatedAt.Equal(b.CreatedAt) {
-			if a.Confidence > b.Confidence {
-				best = i
-			}
+// 只对**多成员分量**的成员取数:`hasURL` 来自 raw 文档 url;`isReprint` 由分量内各成员**正文**
+// 经 P-1 指纹分组派生(`ReprintFlags`,原发下标传 -1 ⇒ 组内最小下标为原发,确定性)。
+// 单成员分量不必取(代表恒为自己)。
+func loadMemberMeta(ctx context.Context, s *store.Store, events []model.Event, comps [][]int) ([]memberMeta, error) {
+	meta := make([]memberMeta, len(events))
+	ids := make([]string, 0, len(events))
+	seen := make(map[int]bool, len(events))
+	for _, comp := range comps {
+		if len(comp) < 2 {
 			continue
 		}
-		if a.CreatedAt.Before(b.CreatedAt) {
+		for _, i := range comp {
+			if !seen[i] {
+				seen[i] = true
+				ids = append(ids, events[i].ID)
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return meta, nil
+	}
+	docs, err := s.ListEventDocMeta(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("list event doc meta: %w", err)
+	}
+	for i := range events {
+		if m, ok := docs[events[i].ID]; ok {
+			meta[i].hasURL = m.URL != nil && *m.URL != ""
+		}
+	}
+	// isReprint 按**每个分量**就地判定(转载是分量相对属性,跨分量无意义)。
+	for _, comp := range comps {
+		if len(comp) < 2 {
+			continue
+		}
+		contents := make([]string, len(comp))
+		for k, i := range comp {
+			if m, ok := docs[events[i].ID]; ok && m.Content != nil {
+				contents[k] = *m.Content
+			}
+		}
+		flags := ReprintFlags(contents, -1)
+		for k, i := range comp {
+			meta[i].isReprint = flags[k]
+		}
+	}
+	return meta, nil
+}
+
+// canonicalIndex 返回分量 comp 内代表(canonical)的下标(issue #83 P6 规则):
+//
+//	有直接链接 > 无链接 → 来源独立性强(非转载) > 弱 → 首发时间最早(同则更高置信)
+//
+// ⚠️ **不用「渠道数」选代表** —— 那是**簇级**属性,不是成员级(P6 红线)。
+//
+// ⚠️ **与迁移 `0021_event_pipeline_p2.sql` 回填 SQL 有意分叉**(issue #83 P-3):迁移回填用旧口径
+// 「最早非 merged」,**存量簇冻结不回填**;本函数是**新簇**口径。二者不再逐字一致是**已批准的
+// 设计决定**(见 `ApplyClusters` 注释与 `docs/phase11/design/event-pipeline-p3.md`),不是漂移。
+// 单测 `canonical_test.go` 锁死本函数;`betterCanonical` 的比较次序即规则的实现。
+func canonicalIndex(events []model.Event, comp []int, meta []memberMeta) int {
+	best := comp[0]
+	for _, i := range comp[1:] {
+		if betterCanonical(events, meta, i, best) {
 			best = i
 		}
 	}
 	return best
 }
 
-// canonicalTitle 优先取 LLM 确认的规范标题(对端都在该分量内),否则取最早事件标题。
-func canonicalTitle(events []model.Event, verdicts []PairVerdict, pairs [][]int, comp []int) string {
-	inComp := make(map[int]bool, len(comp))
+// betterCanonical 报告候选 a 是否比当前最优 b 更适合当簇代表(P6 规则次序):
+// ① 有链接胜无链接;② 非转载胜转载;③ 创建更早;④ 置信更高;⑤ 全等则保留 b(不替换 ⇒ 确定性)。
+func betterCanonical(events []model.Event, meta []memberMeta, a, b int) bool {
+	if meta[a].hasURL != meta[b].hasURL {
+		return meta[a].hasURL
+	}
+	if meta[a].isReprint != meta[b].isReprint {
+		return !meta[a].isReprint
+	}
+	if !events[a].CreatedAt.Equal(events[b].CreatedAt) {
+		return events[a].CreatedAt.Before(events[b].CreatedAt)
+	}
+	return events[a].Confidence > events[b].Confidence
+}
+
+// canonicalTitle 取分量内**与其他成员标题重合度最高**的成员**原文标题**(issue #83 P6)。
+//
+// 🔴 **无 LLM**(issue #83 P-3 决定):旧实现取「第一个命中 pair 的 LLM 重写标题」,措辞在不同
+// pair 间可能发散、且标题是 Inference 而非 Fact。P3 改为**确定性规则**:对每个成员算它与其余成员
+// 归一化标题的 Jaccard 之和,取最大者的**原文标题** —— 它是**成员自己的话**(Fact)、可复现、零 token,
+// 契合「系统只做归因」与 #86 减量方向。
+//
+// 平票 → 创建最早;再平 → 分量内先到者(不替换 ⇒ 确定性)。复现 `NormalizeTitle`/`Bigrams`/`Jaccard`
+// (与聚类同一把尺子)。重合度全为 0(措辞毫无共性)时退化为「最早一条」,与旧回退一致。
+func canonicalTitle(events []model.Event, comp []int) string {
+	best := comp[0]
+	bestScore := -1.0
 	for _, i := range comp {
-		inComp[i] = true
-	}
-	for i, v := range verdicts {
-		if v.IsSame && v.CanonicalTitle != "" && inComp[pairs[i][0]] && inComp[pairs[i][1]] {
-			return v.CanonicalTitle
+		ti := Bigrams(NormalizeTitle(events[i].Title))
+		score := 0.0
+		for _, j := range comp {
+			if j == i {
+				continue
+			}
+			score += Jaccard(ti, Bigrams(NormalizeTitle(events[j].Title)))
+		}
+		switch {
+		case score > bestScore:
+			best, bestScore = i, score
+		case score == bestScore && events[i].CreatedAt.Before(events[best].CreatedAt):
+			// 平票取更早创建者;仍平则保留先到者(comp 顺序确定 ⇒ 确定性)。
+			best = i
 		}
 	}
-	earliest := comp[0]
-	for _, i := range comp[1:] {
-		if events[i].CreatedAt.Before(events[earliest].CreatedAt) {
-			earliest = i
-		}
-	}
-	return events[earliest].Title
+	return events[best].Title
 }
 
 func min(a, b int) int {

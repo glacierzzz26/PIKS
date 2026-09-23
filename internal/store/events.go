@@ -598,3 +598,70 @@ func (s *Store) ListEventsRecent(ctx context.Context, limit int) ([]model.Event,
 	defer rows.Close()
 	return pgx.CollectRows(rows, pgx.RowToStructByName[model.Event])
 }
+
+// DocMeta 事件对应 raw 文档的建簇期元数据:是否有直接链接 + 正文(issue #83 P-3)。
+//
+// ⚠️ 与 `ClusterSource` 的分工:后者是**簇后**读路径(按 cluster_id 取,按机构去重),
+// 本类型是**建簇前**用 —— `ApplyClusters` 收到的 `[]model.Event` 只有 `RawDocumentID` 外键,
+// 没有 url/content,而 P6 代表选取规则(有链接 > 非转载 > 最早)在建簇那一刻就要这两样。
+type DocMeta struct {
+	URL     *string `db:"url"`
+	Content *string `db:"content"`
+}
+
+// ListEventDocMeta 按事件 id 集合取各事件 raw 文档的 (url, content),供 P6 代表选取用。
+//
+// 只对**多成员分量**调用(单成员分量代表就是自己,无需判定),控制正文取数面。
+// 未关联 raw 文档(LEFT JOIN 落空)的事件不在返回 map 中 —— 调用方按零值处理(无链接、无正文)。
+func (s *Store) ListEventDocMeta(ctx context.Context, eventIDs []string) (map[string]DocMeta, error) {
+	if len(eventIDs) == 0 {
+		return map[string]DocMeta{}, nil
+	}
+	rows, err := s.Pool.Query(ctx, `
+		SELECT e.id AS event_id, rd.url, rd.content
+		FROM events e
+		LEFT JOIN raw_documents rd ON rd.id = e.raw_document_id
+		WHERE e.id = ANY($1)`, eventIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	type row struct {
+		EventID string `db:"event_id"`
+		DocMeta
+	}
+	rs, err := pgx.CollectRows(rows, pgx.RowToStructByName[row])
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]DocMeta, len(rs))
+	for _, r := range rs {
+		out[r.EventID] = r.DocMeta
+	}
+	return out, nil
+}
+
+// ListEventsInWindow 取 [start, end) 内**入库**(created_at)的非 merged 事件,按入库时间倒序。
+//
+// 窗口锚 **created_at**(入库/抽取时刻),不是 occurred_at(issue #83 P1):早/晚档的理由是
+// **阅读节奏**(早上看隔夜+盘前、晚上看全天),锚「我们何时拿到它」才对得上读者的时间轴。
+// ⚠️ 已知边界:抽取滞后会把事件推入比原始到达更晚的窗口(如实登记,见设计文档)。
+//
+// **不 LIMIT**(issue P1「窗口内全部合并事件,不截断」)—— 日量约百条量级,可控。
+// 返回 `EventForAPI`(带来源名/链接/cluster_id),与事件流同一投影,供 `toEventItem` 复用。
+func (s *Store) ListEventsInWindow(ctx context.Context, start, end time.Time) ([]EventForAPI, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT e.id,e.title,e.event_type,e.summary,e.facts,e.affected,e.occurred_at,e.created_at,
+		       e.confidence,e.status, s.name AS source_name, rd.url AS source_url, e.cluster_id
+		FROM events e
+		JOIN sources s ON s.id=e.source_id
+		LEFT JOIN raw_documents rd ON rd.id=e.raw_document_id
+		WHERE e.status <> 'merged'
+		  AND e.created_at >= $1 AND e.created_at < $2
+		ORDER BY e.created_at DESC`, start, end)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[EventForAPI])
+}

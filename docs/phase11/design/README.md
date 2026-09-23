@@ -57,6 +57,12 @@
 |---|---|---|---|
 | [event-pipeline-p2.md](./event-pipeline-p2.md) | ✅ **已实现**(dev-only) | 2026-09-23 | issue **#83** 分期 **P-2**(数据面地基,与 P-1 读路径**不同层面**)。issue §三 P4 表列「迁移 8 项」,本篇**复核收窄为 4 列**:🔴 **不做** `raw_documents.origin`(可从 `extra->>'source'` 读,建列是**第二真源**)、`is_reprint`、`events.corroboration`(P-1 已读路径派生;**更根本:转载是簇相对属性,列级布尔不良定义**;corroboration 落库会与 `reexamine` 的 `MergeClusters` **并发漂移**⇒ 两处真源)。✅ **新增 4 列**(迁移 **`0021`**,全部**无 FK**,与决策边同纪律):`raw_documents.origin_kind`(`TEXT NOT NULL DEFAULT 'pipeline'`,**worker/reconcile 的全部 raw 层查询加 `='pipeline'`** —— 今日无 realtime 行,过滤是**契约非优化**,给 P-5 实时层立结构性隔离;⚠️ 去重键(0016)**不含本列**,P-5 须补「realtime→pipeline 提升」)/ `event_clusters.canonical_event_id`(`ApplyClusters` 早已算出却丢弃,此处持久化;**回填比较器与 `canonicalIndex` 逐字一致** —— `created_at ASC`,同则 `confidence DESC`;**代表冻结**:reexamine 不重选)/ `raw_documents.canonical_id`(**只建列**,填充属 P-8)/ `events.human_verdict`(**只建列**,取值域本版不定故**故意不加 CHECK**,**引擎永不碰**)。测试:`canonicalIndex` 单测 5 例 + `ApplyClusters` 落列集成测 + `origin_kind` 门控/**回填**/`human_verdict` 存活三集成测,全绿。**不含部署**。 |
 
+## 事件管线 P-3:早/晚档窗口 + 簇内代表选取(issue #83 P-3)✅ 已实现(dev-only)
+
+| 文档 | 状态 | 日期 | 备注 |
+|---|---|---|---|
+| [event-pipeline-p3.md](./event-pipeline-p3.md) | ✅ **已实现**(dev-only) | 2026-09-23 | issue **#83** 分期 **P-3**(依赖 P-2)。**交付面 = 仅后端**(前端「簇合并视图」留 **P-4**)。① **P1 早/晚档窗口**:`late`=当日 09:15→18:30、`early`=前一日 18:30→当日 09:15,**衔接无缝无叠**(单测钉死);🔴 窗口**锚 `events.created_at`(入库/抽取时刻)** 而非 `occurred_at` —— 窗口理由是**阅读节奏**(非热度切口),锚「我们何时拿到它」;已知边界(抽取滞后推后窗口)如实登记。② **榜单接口 `GET /api/v1/board`**(`?stage&date`,`requireAuth`):窗口内**全集不截断**、排除 `status='merged'`、按 `created_at` 倒序(**不排名**);每行 = 内嵌 `apiEventItem` + `score`。③ **打分**:归一化加权 `score=Σwᵢ·normᵢ`,本版 `{CrossChannel:1, Entity:0, Watch:0}`,`score` **照算但不用作排序**(接口先立,响应形状不变)。④ **P6 代表新规则**(`有链接 > 非转载 > 最早 > 高置信`;`memberMeta{hasURL,isReprint}`,新增 `store.ListEventDocMeta` 取 url/正文,**不用渠道数**——那是簇级属性):🔴 **只对新簇生效,存量不回填** —— 与 P-2「代表冻结」纪律一致,`canonicalIndex` 与迁移 `0021` 回填 SQL **有意分叉**(显式记录,不得静默)。⑤ **`canonicalTitle` 改无 LLM 规则**:取「与其他成员标题重合度最高」的**成员原文标题**(平票取最早,零 token、确定性、Fact 非 Inference);删除死字段 `PairVerdict.CanonicalTitle`。**零 schema、零迁移、零 LLM 增量**;`reexamine` 的簇级 survivor 选举**不动**。**不含部署**。 |
+
 
 
 ## 阶段序列(epic #43)
@@ -77,7 +83,8 @@
 |---|---|---|---|
 | **P-1** 剥转载(转载 ≠ 独立源) | 读路径派生 `independent_count`/`reprint`,零 schema | ✅ 已实现并合入 dev | [reprint-stripping.md](./reprint-stripping.md) / PR #92(merge `7ff4da8`) |
 | **P-2** 数据面地基(迁移补列) | 迁移 `0021` 四列 + `origin_kind` 门控 + `canonical_event_id` 回填 | ✅ 已实现(dev-only) | [event-pipeline-p2.md](./event-pipeline-p2.md) |
-| P-3 ~ P-8 | 规范标题投票 / 实时层 / 展示单元等 | ⬜ 未开始 | 见 `event-pipeline-p2.md` §4 |
+| **P-3** 早/晚档窗口(P1)+ 簇内代表选取(P6) | 窗口/打分纯函数 + `GET /api/v1/board` + 新代表规则 + 无 LLM 标题 | ✅ 已实现(dev-only) | [event-pipeline-p3.md](./event-pipeline-p3.md) |
+| P-4 ~ P-8 | 展示单元(簇合并视图)/ 实时层 / 调度 / 成本粗筛 等 | ⬜ 未开始 | 见 `event-pipeline-p3.md` §7 |
 
 ## 前序阶段
 

@@ -71,6 +71,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/notes", s.requireAuth(s.handleAPINotes))
 	mux.HandleFunc("/api/v1/notes/", s.requireAuth(s.handleAPINote))
 	mux.HandleFunc("/api/v1/dashboard", s.requireAuth(s.handleAPIDashboard))
+	// 早/晚档事件榜单(issue #83 P-3):窗口内全集,时间序 + 印证度计数(不排名)。
+	mux.HandleFunc("/api/v1/board", s.requireAuth(s.handleAPIBoard))
 	mux.HandleFunc("/api/v1/recon", s.requireAuth(s.handleAPIRecon))
 	mux.HandleFunc("/api/v1/reviews", s.requireAuth(s.handleAPIReviews))
 	mux.HandleFunc("/api/v1/account", s.requireAuth(s.handleAPIAccount))

@@ -75,9 +75,6 @@ func TestLLMPath(t *testing.T) {
 	if !verds[0].IsSame {
 		t.Fatal("mock should confirm 降准 pair as same event")
 	}
-	if verds[0].CanonicalTitle == "" {
-		t.Fatal("mock should supply canonical title")
-	}
 	comps := BuildComponents(len(events), c.Auto, verds, c.LLM)
 	if len(comps) != 1 || len(comps[0]) != 2 {
 		t.Fatalf("expected 1 component of 2, got %v", comps)

@@ -74,8 +74,16 @@ WHERE c.id = m.cluster_id
 
 `canonical_event_id` 一经选定即**冻结**:`reexamine` 把更老的簇并入 survivor 时**不重选**代表
 (故运行期的 `canonical_event_id` 可能 ≠「最早非 merged 成员」—— 这是**允许的**)。回填只在
-迁移时对**存量**算一次;P-3 若改 P6 选取规则,须**自行补迁移重算**。这与 P-1 的「代表/簇标题
-选定后冻结(防漂移)」是同一纪律。
+迁移时对**存量**算一次。
+
+> 🔄 **P-3 更新(2026-09-23)**:本处原写「P-3 若改 P6 选取规则,**须自行补迁移重算**」。
+> **P-3 的实际决定是:不补迁移、不回填,存量冻结。** 只有**新簇**用 P6 新选取规则(见
+> [event-pipeline-p3.md](./event-pipeline-p3.md) §4.3)。理由:回填会移动既有代表 ⇒ 与「代表冻结」
+> 纪律冲突,且 `based_on` 决策边可能随重算漂移,收益低于风险。
+> **后果(必须显式记录,不得静默)**:`canonicalIndex`(新簇)**不再**与本节回填 SQL(存量)逐字一致
+> —— 这是**批准的设计决定**,非漂移。存量簇的 `canonical_event_id` 保持本迁移冻结时的旧口径。
+
+这与 P-1 的「代表/簇标题选定后冻结(防漂移)」是同一纪律。
 
 ### 1.4 `human_verdict` 的纪律
 
@@ -120,6 +128,10 @@ cid, err := s.CreateEventCluster(ctx, &model.EventCluster{
 代表选择规则**不变**(最早创建、同则更高置信);`canonicalIndex` 与迁移回填 SQL 的比较器
 **逐字一致**(单测 `TestCanonicalIndex` + 集成测 `TestP2CanonicalEventIDBackfill` 双重锁定)。
 
+> 🔄 **P-3 更新**:上述「规则不变 / 逐字一致」**只描述 P-2 当时的形态**。P-3 已把**新簇**的代表
+> 规则改成 `有链接 > 非转载 > 最早 > 高置信`(`canonicalIndex` 现带 `meta` 参数),且**回填 SQL 不动**
+> ⇒ 二者**有意分叉**(存量冻结 vs 新簇新规),详见 §1.3 与 [event-pipeline-p3.md](./event-pipeline-p3.md) §4。
+
 ## 3. 测试
 
 | 测试 | 覆盖 |
@@ -134,7 +146,10 @@ cid, err := s.CreateEventCluster(ctx, &model.EventCluster{
 ## 4. 不做(登记给后续分期)
 
 - **三档调度 + flock**(P-5 纠缠) —— 不在本篇。
-- **簇规范标题投票**(P6) —— 不在本篇。
+- **簇规范标题投票**(P6) —— **P-3 已落地**:改为**无 LLM 规则**(旧实现是 LLM 重写标题、
+  不同 pair 措辞会发散),见 [event-pipeline-p3.md](./event-pipeline-p3.md) §5。
+- **`canonical_event_id` 的存量回填重算**(P-3):**有意不做**,见 §1.3 与
+  [event-pipeline-p3.md](./event-pipeline-p3.md) §4.3。
 - **`canonical_id` 的分组与填充**(P-8):在 P-8 落地前**不得**实现基于本列的读路径
   (会显示 0 个来源,列全为 NULL)。
 - **`human_verdict` 的写入口 / UI**(P-3/P-4):本版**只建列**,无消费端,**不得**写成已上屏。

@@ -62,7 +62,7 @@ func (f *fakeProvider) StructuredOutput(_ context.Context, _ ai.StructuredReques
 		return ai.StructuredResponse{}, f.errs[f.calls-1]
 	}
 	return ai.StructuredResponse{
-		Data:  []byte(`{"results":[{"pair_index":0,"is_same":true,"canonical_title":"合并标题"}]}`),
+		Data:  []byte(`{"results":[{"pair_index":0,"is_same":true}]}`),
 		Usage: f.usage,
 	}, nil
 }
@@ -158,7 +158,7 @@ func TestConfirmPairsRecoversAfterRetry(t *testing.T) {
 	if tokens != 120 {
 		t.Fatalf("only the successful call should be billed, got %d", tokens)
 	}
-	if !verds[0].IsSame || verds[0].CanonicalTitle != "合并标题" {
+	if !verds[0].IsSame {
 		t.Fatalf("verdict not applied: %+v", verds[0])
 	}
 }

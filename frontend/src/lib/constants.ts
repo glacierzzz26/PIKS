@@ -35,6 +35,22 @@ export const SINGLE_SOURCE_HINT =
   "目前只有这一家机构在报。独家报道很常见，不代表消息不实，只是还没有旁证。";
 
 /**
+ * 印证度三级（issue #83 P-1）——判据是**独立来源数**（`independent_count`），**不是**机构数。
+ *
+ * 为什么必须分开：同一篇通稿被 3 家机构**原样转发**，机构数是 3、独立来源数却是 1 ——
+ * 拿机构数当印证度，转载会把「几家在报」刷高，三级分级全废。后端把簇内近逐字的转载
+ * 归成一个独立来源，前端据此给三级标签。
+ *
+ * ⚠️ 与 SINGLE_SOURCE_* 同一条红线：这是**客观计数**的陈述（几家在**各自**报），
+ * 不暗示消息可疑，也不等于「可信」—— 广泛报道同样可能是同一篇通稿被大量转载。
+ */
+export function corroborationLabel(independentCount: number): string {
+  if (independentCount <= 1) return SINGLE_SOURCE_LABEL;
+  if (independentCount === 2) return "多家印证";
+  return "广泛报道";
+}
+
+/**
  * 公告分级（issue #68 A 层）。key 与后端 `internal/announce` 的常量严格一致；
  * 后端经 `GET /api/v1/announcements` 的 `grade` 字段下发。
  *

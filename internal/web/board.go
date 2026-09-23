@@ -162,13 +162,25 @@ func (s *Server) handleAPIBoard(w http.ResponseWriter, r *http.Request) {
 		s.apiErr(w, "cluster members", err)
 		return
 	}
+	// raw 层全集来源 + 簇标题(issue #83 P-4 / P8):榜单行与 /events 单条**同构**(都走这份输入)。
+	rawSrcs, err := s.store.ListClusterRawSources(ctx, clusterIDs)
+	if err != nil {
+		s.apiErr(w, "cluster raw sources", err)
+		return
+	}
+	titles, err := s.store.ListClusterTitles(ctx, clusterIDs)
+	if err != nil {
+		s.apiErr(w, "cluster titles", err)
+		return
+	}
+	in := eventItemInput{idx: idx, clusters: clusters, members: members, raw: rawSrcs, titles: titles}
 
 	// 归一化需要窗口内各信号的**最大值**;本版只有跨渠道独立报道数非 0(实体/自选信号恒 0)。
 	maxSig := Signals{}
 	items := make([]apiEventItem, len(evs))
 	maxIndep := 0
 	for i, ev := range evs {
-		items[i] = toEventItem(ev, idx, clusters, members)
+		items[i] = toEventItem(ev, in)
 		if items[i].IndependentCount > maxIndep {
 			maxIndep = items[i].IndependentCount
 		}

@@ -70,11 +70,15 @@ echo "clock: $CLOCK_SRC anchored TODAY=$TODAY DOW=$DOW HMS=$HMS (北京时间)" 
 # 一发 one-shot**(`-once`,slot 记 manual#HH:MM 不去重)。放在 `entity_build` **之后** ——
 # 让三级取名的第①级(本地 entities 查名,零外呼)能命中当日新建的实体,少走同花顺 realhead。
 # 无凭据时本步会 failed(如实,不静默),首次部署须先在 /settings 填 ths_cookie。
+# raw 层转载组回填(issue #83 P-4):把「同一篇稿被多家各落一行」的 raw 文档聚组、定代表,
+# 供展示层回答「哪些渠道报了 + 各自链接」(取 raw 全集,事件层是子集)。判据 = P-1 正文指纹 @0.85。
+# 排在 `worker` **之前**:先回填来源组,worker 抽取后展示层立即可用;与事件聚类(事件层)解耦。
 STEPS=(
   "migrate|migrate"
   "collector_all|collector -driver all"
   "collector_announce|collector -driver cninfo-announce"
   "hot_topic|hot-topic"
+  "cluster_raw_link|cluster-raw-link"
   "worker|worker -limit 800"
   "cluster|cluster"
   "quote_collector|quote-collector -date $TODAY"

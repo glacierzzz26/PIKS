@@ -17,6 +17,7 @@ export const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api/v1";
 export const ENDPOINTS = {
   events: "/events", // GET ?type=&status=&q=&from=&to=
   eventTypes: "/event-types", // GET 事件类型枚举 key+label（真源=后端，issue #61）
+  board: "/board", // GET ?stage=early|late&date=YYYY-MM-DD 早/晚档榜单（issue #83 P-3）
   entities: "/entities", // GET ?type=&q=&status=
   relationships: "/relationships", // GET
   marketSnapshot: "/market/snapshot", // GET ?date=YYYY-MM-DD

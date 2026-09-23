@@ -57,10 +57,21 @@ func (s *Store) ListRawPending(ctx context.Context, limit int) ([]model.RawDocum
 // ⚠️ origin_kind='pipeline' 是**契约**(issue #83 P-2):worker 只抽取正式管线采集的文档,
 // 实时层(P-5,origin_kind='realtime')结构上无法被抽进 events。今日无 realtime 行,
 // 该过滤是 no-op,但**不得**因「当前无影响」删掉 —— 它是 P-5 落地后唯一的分道闸。
+//
+// ⚠️ P-4 粗筛(issue #83)只改**排序与截断**,不改本方法的**默认取数集合**:
+//   - status='raw' 始终取;`failed` 仅 includeFailed 时取;
+//   - `deferred`(被粗筛挡下的)**默认不取** —— 否则每轮重复取回、重复判、死循环。
+//     显式重试(includeFailed=true,即 `-retry`)才把 deferred 放回池子,**且重加时间窗**兜底
+//     (见下)避免「筛掉→立刻重取→再筛掉」的空转。
 func (s *Store) ListRawPendingStatus(ctx context.Context, limit int, includeFailed bool) ([]model.RawDocument, error) {
 	q := `SELECT ` + rawDocCols + ` FROM raw_documents WHERE status='raw' AND origin_kind='pipeline'`
 	if includeFailed {
-		q = `SELECT ` + rawDocCols + ` FROM raw_documents WHERE status IN ('raw','failed') AND origin_kind='pipeline'`
+		// 重试:`-retry` 隐含把 deferred 也放回(它是「被粗筛挡下」而非真失败),
+		// 但加 `retrieved_at > now() - 1 day` 兜底 —— 只重试**近期**被挡的,
+		// 不给陈年 deferred 行无限重入的机会(默认粗筛仍会把它再挡下,空转)。
+		q = `SELECT ` + rawDocCols + ` FROM raw_documents
+		     WHERE status IN ('raw','failed','deferred') AND origin_kind='pipeline'
+		       AND (status <> 'deferred' OR retrieved_at > now() - interval '1 day')`
 	}
 	q += ` ORDER BY retrieved_at LIMIT $1`
 	rows, err := s.Pool.Query(ctx, q, limit)
@@ -68,6 +79,24 @@ func (s *Store) ListRawPendingStatus(ctx context.Context, limit int, includeFail
 		return nil, err
 	}
 	return pgx.CollectRows(rows, pgx.RowToStructByName[model.RawDocument])
+}
+
+// MarkRawDeferred 把被粗筛挡下的文档落 status='deferred'(issue #83 P-4)。
+//
+// ⚠️ 与 failed 的区别:failed 是**异常**(抽取报错),会进对账(ReconFailedRaw);
+// deferred 是**正常的分流**(这轮先不抽),**不进对账**。reconcile 的 status 白名单不含它。
+// error 列复用为**原因**自由文本(该列无约束),前端/台账据此显示「为何被延迟」。
+func (s *Store) MarkRawDeferred(ctx context.Context, ids []string, reason string) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	ct, err := s.Pool.Exec(ctx,
+		`UPDATE raw_documents SET status='deferred', error=$2, updated_at=now()
+		 WHERE id = ANY($1) AND status IN ('raw','failed')`, ids, reason)
+	if err != nil {
+		return 0, err
+	}
+	return ct.RowsAffected(), nil
 }
 
 func (s *Store) MarkRawProcessed(ctx context.Context, id string, pipelineVersion string) error {

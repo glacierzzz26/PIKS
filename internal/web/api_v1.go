@@ -27,6 +27,13 @@ import (
 
 // ---- 映射类型(对齐前端 types.ts) ----
 
+// apiEventItem 事件流一条。
+//
+// ⚠️ 展示单元(issue #83 P-4 / P8):前端「事件详情」应展示的是**簇**(clusters),而非单个成员事件。
+// 故本结构在簇存在时同时下发:
+//   - `cluster_title`:簇标题(展示单元标题;无则前端退回 `title`);
+//   - `cluster_sources`:来源列表,**取 raw 层全集**(某家报了但没抽成事件也在此列);
+//   - `source_count`(机构数)/`independent_count`(独立来源数)仍是**客观计数**。
 type apiEventItem struct {
 	ID         string        `json:"id"`
 	Title      string        `json:"title"`
@@ -39,6 +46,9 @@ type apiEventItem struct {
 	Status     string        `json:"status"`
 	Source     string        `json:"source"`
 	SourceURL  *string       `json:"source_url,omitempty"`
+	// ClusterTitle 展示单元标题(issue #83 P-4 / P8):簇标题(event_clusters.title)。
+	// 仅在事件属于某簇时下发;前端在簇视图里用它替代成员事件标题。空 = 无簇/簇无标题。
+	ClusterTitle string `json:"cluster_title,omitempty"`
 	// ClusterSources 簇内各源来源(issue #48 T2):同一真实事件被哪些机构报道过。
 	// 仅当事件属于一个**跨源**簇(≥2 个不同机构)时才下发 ——单源簇/未聚类事件省略该字段,
 	// 前端据此判断是否展示「N 源印证」;不给单源事件挂一个只有自己的「多源」假象。
@@ -56,6 +66,11 @@ type apiEventItem struct {
 	// IndependentCount=1。**印证度三级判定(单一来源/多家印证/广泛报道)以本字段为准** ——
 	// 机构数会被转载刷高,只有独立来源数才是「几家在**各自**报」。未聚类事件 = 1。
 	IndependentCount int `json:"independent_count"`
+	// ClusterFacts 簇内**各成员事实句的并集**(issue #83 P-4 / P8):展示单元 = 簇,
+	// 内容应是整个簇的成员事实,而非 canonical 单条。去重、保持成员到达顺序。无簇/无合并时省略。
+	ClusterFacts []string `json:"cluster_facts,omitempty"`
+	// ClusterAffected 簇内**各成员影响实体的并集**(同上):canonical 的 affected 只是子集。
+	ClusterAffected []apiAffected `json:"cluster_affected,omitempty"`
 }
 
 // apiEventConflict 一条跨源数值冲突:什么量、两侧的值、双方原话。
@@ -69,16 +84,31 @@ type apiEventConflict struct {
 	SentenceB string    `json:"sentence_b"`
 }
 
-// apiClusterSource 簇内一个来源:机构名 + 该机构原文链接 + 上游一级源(若有)。
+// apiClusterSource 簇内一个来源:**机构名 + 该机构全部原文链接 + 上游一级源**(issue #83 P-4 / P8)。
+//
+// ⚠️ 与 P-4 之前的变化:
+//   - 来源集**取 raw 层全集**(某家报了但没抽成事件也在列),不再只取事件层可见的机构;
+//   - 同机构可能有多条链接,故新增 `urls` **数组**(全部如实列出、不合并)。
+//
+// ⚠️ `url` 保留 = `urls` 确定性首项(`urls[0]`,无则空串)。**非破坏性变更**:旧消费方读 `url`
+// 语义不变(「该机构的一条原文链接」),新消费方读 `urls` 拿全集。二者同源,不会不一致。
 type apiClusterSource struct {
 	Source string `json:"source"`
-	URL    string `json:"url,omitempty"`
-	// Origin 上游自带的一级源(金十 extra.source,如「新华社」):「这条快讯转述的是谁」,
-	// 与「我们从哪个机构采到」(Source)是两件事,前端分区展示。
+	// URL 该机构的一条原文链接(= urls 首项;兼容旧契约,勿删)。空串 = 该源如实无外链。
+	URL string `json:"url,omitempty"`
+	// URLs 该机构**全部**原文链接;**可空数组** —— 空数组 = 该源如实无外链(绝不拼假链接)。
+	URLs []string `json:"urls"`
+	// Origin 上游自带的一级源名(金十/同花顺 extra.source,如「新华社」):「这条转述的是谁」,
+	// 与「我们从哪个机构采到」(Source)是两件事。⚠️ 金十的 URL **就是**一级源的链接
+	// (collector/jin10.go:金十无逐条原文 URL,不造假链接),故前端须把渠道名与一级源名**分区**展示,
+	// 不得把一级源链接挂在渠道名下(issue #83 事实前提更正 ③)。
 	Origin string `json:"origin,omitempty"`
-	// Reprint 该来源是否为**转载**(issue #83 P-1):与簇内另一来源的正文近逐字(指纹
-	// Jaccard ≥ 0.85)。仅作如实标注「(转载)」,**不隐藏也不合并显示**(红线「不静默」)。
+	// Reprint 该来源是否为**转载**(issue #83 P-1):与同转载组另一机构近逐字(指纹 Jaccard ≥ 0.85)。
+	// 仅作如实标注「(转载)」,**不隐藏也不合并显示**(红线「不静默」)。
 	Reprint bool `json:"reprint,omitempty"`
+	// Canonical 该来源所属转载组代表 id(issue #83 P-4):前端可据此把同组来源归并显示。
+	// 与 reprint 配对 —— 同一代表组内,代表行 Canonical==自身、reprint=false,其余 reprint=true。
+	Canonical string `json:"canonical,omitempty"`
 }
 
 type apiAffected struct {
@@ -249,10 +279,22 @@ func (s *Server) handleAPIEvents(w http.ResponseWriter, r *http.Request) {
 		s.apiErr(w, "cluster members", err)
 		return
 	}
+	// raw 层全集来源 + 簇标题(issue #83 P-4 / P8):展示单元取 raw 层,计数仍走事件层。
+	rawSrcs, err := s.store.ListClusterRawSources(ctx, clusterIDs)
+	if err != nil {
+		s.apiErr(w, "cluster raw sources", err)
+		return
+	}
+	titles, err := s.store.ListClusterTitles(ctx, clusterIDs)
+	if err != nil {
+		s.apiErr(w, "cluster titles", err)
+		return
+	}
+	in := eventItemInput{idx: idx, clusters: clusters, members: members, raw: rawSrcs, titles: titles}
 
 	out := make([]apiEventItem, 0, len(filtered))
 	for _, ev := range filtered {
-		out = append(out, toEventItem(ev, idx, clusters, members))
+		out = append(out, toEventItem(ev, in))
 	}
 	s.writeJSON(w, out)
 }
@@ -549,8 +591,17 @@ func buildNameIndex(ents []model.Entity) map[string]nameRef {
 	return idx
 }
 
-func toEventItem(ev store.EventForAPI, idx map[string]nameRef, clusters map[string][]store.ClusterSource,
-	members map[string][]store.ClusterMember) apiEventItem {
+// eventItemInput toEventItem 的批量取数上下文(一次查询、多事件复用,避免每事件一次往返)。
+// 五个 map 都以 cluster_id 为键;`raw` 是 P-4 新增的 raw 层来源映射(见 ListClusterRawSources)。
+type eventItemInput struct {
+	idx      map[string]nameRef
+	clusters map[string][]store.ClusterSource    // 事件层来源(计数与转载判定的真源)
+	members  map[string][]store.ClusterMember    // 事件层成员事实(冲突检测 + 并集)
+	raw      map[string][]store.ClusterRawSource // raw 层全集来源(展示用)
+	titles   map[string]string                   // 簇标题(展示单元标题)
+}
+
+func toEventItem(ev store.EventForAPI, in eventItemInput) apiEventItem {
 	at := ev.CreatedAt
 	if ev.OccurredAt != nil {
 		at = *ev.OccurredAt
@@ -568,7 +619,7 @@ func toEventItem(ev store.EventForAPI, idx map[string]nameRef, clusters map[stri
 	affected := make([]apiAffected, 0, len(words))
 	for _, w := range words {
 		af := apiAffected{Word: w}
-		if ref, ok := idx[w]; ok {
+		if ref, ok := in.idx[w]; ok {
 			af.EntityID = ref.id
 			af.EntityName = ref.name
 			af.Code = ref.code
@@ -594,7 +645,14 @@ func toEventItem(ev store.EventForAPI, idx map[string]nameRef, clusters map[stri
 	if ev.ClusterID == nil {
 		return out
 	}
-	srcs := clusters[*ev.ClusterID]
+	cid := *ev.ClusterID
+	out.ClusterTitle = in.titles[cid]
+	// 展示单元 = 簇(P8):canonical 单条的 facts/affected 只是子集,补上**成员并集**。
+	// 仅在真有合并(len(members)>1)时才下发,单成员簇的并集恒等于它自己、徒增载荷。
+	if mem := in.members[cid]; len(mem) > 1 {
+		out.ClusterFacts, out.ClusterAffected = clusterContentUnion(mem, in.idx)
+	}
+	srcs := in.clusters[cid]
 	// 机构数是**客观计数**:簇内去重后的机构个数(含 merged 成员贡献的来源)。
 	if len(srcs) > 0 {
 		out.SourceCount = len(srcs)
@@ -614,22 +672,142 @@ func toEventItem(ev store.EventForAPI, idx map[string]nameRef, clusters map[stri
 	}
 	flags := cluster.ReprintFlags(contents, canonicalIdx)
 	out.IndependentCount = cluster.IndependentCount(contents)
-	// 仅在簇内确有 ≥2 家机构时才挂 cluster_sources —— 单源簇不谎报「多源印证」(issue #48)。
-	if len(srcs) >= 2 {
-		out.ClusterSources = make([]apiClusterSource, 0, len(srcs))
-		for i, cs := range srcs {
-			out.ClusterSources = append(out.ClusterSources, apiClusterSource{
-				Source: cs.Source, URL: orStr(cs.URL, ""), Origin: orStr(cs.Origin, ""),
-				Reprint: flags[i],
-			})
-		}
+
+	// 来源列表(P8):**取 raw 层全集** —— 含「报了这篇稿但没被抽成事件」的机构。
+	// 计数与转载标记仍走事件层(上面的 srcs/flags,与 P-1/P-3 口径一致);
+	// raw 层只负责把「哪些渠道报了 + 各自链接」**变全**。无 raw 数据时退回事件层(合法退化)。
+	//
+	// 是否下发:事件层 ≥2 机构(维持 issue #48「单源簇不挂 cluster_sources」) **或** raw 层
+	// 出现了事件层看不见的机构(那正是 P8 要修的漏源)。
+	if len(srcs) >= 2 || len(in.raw[cid]) > 0 {
+		out.ClusterSources = clusterSourceItems(srcs, flags, in.raw[cid])
 	}
 	// 跨源数值冲突(issue #49 T3):簇内成员两两比对。仅有 ≥2 家机构时才有意义
 	// (同机构多次报道不算跨源印证,比对它只会制造噪音)。
 	if out.SourceCount >= 2 {
-		out.EventConflicts = conflictsOf(members[*ev.ClusterID])
+		out.EventConflicts = conflictsOf(in.members[cid])
 	}
 	return out
+}
+
+// clusterSourceItems 组装 P8 来源列表:机构名 → 该机构**全部** raw 层链接。
+//
+// 合并规则:
+//   - 机构集 = 事件层机构 ∪ raw 层机构(并集 —— raw 层是全集,事件层是子集);
+//   - 每机构的 URL 全集来自 raw 层;raw 层没有的机构(理论上不该有)退回事件层那条 `url`;
+//   - `reprint` / `canonical` 取自**事件层**的 P-1 判定(计数真源),raw 层机构沿用同机构的事件层标记;
+//   - `origin`(一级源名)按机构取(raw 层优先,回退事件层)—— 前端据此分区展示「渠道 / 一级源」。
+//
+// ⚠️ 同机构可能对应多个代表组(该机构对同一事件发过两条不同稿):此时 reprint 取「任一为转载即转载」,
+// 宁可多标不漏标(如实,不隐藏)。
+func clusterSourceItems(srcs []store.ClusterSource, flags []bool, raw []store.ClusterRawSource) []apiClusterSource {
+	// 事件层:机构 → 标记 + origin + 回退 url。
+	reprintOf := map[string]bool{}
+	originOf := map[string]string{}
+	fallbackURL := map[string]string{}
+	for i, cs := range srcs {
+		if flags[i] {
+			reprintOf[cs.Source] = true
+		}
+		if o := orStr(cs.Origin, ""); o != "" {
+			originOf[cs.Source] = o
+		}
+		if u := orStr(cs.URL, ""); u != "" && fallbackURL[cs.Source] == "" {
+			fallbackURL[cs.Source] = u
+		}
+	}
+	// raw 层:机构 → 全部 URL(保持库内稳定序)+ origin 回退。
+	urlsOf := map[string][]string{}
+	seen := map[string]map[string]bool{}
+	order := make([]string, 0, len(srcs))
+	addOrg := func(org string) {
+		if _, ok := urlsOf[org]; !ok {
+			urlsOf[org] = []string{}
+			order = append(order, org)
+		}
+	}
+	for _, sr := range srcs {
+		addOrg(sr.Source)
+	}
+	for _, rs := range raw {
+		addOrg(rs.Source)
+		if u := orStr(rs.URL, ""); u != "" {
+			if seen[rs.Source] == nil {
+				seen[rs.Source] = map[string]bool{}
+			}
+			if !seen[rs.Source][u] {
+				seen[rs.Source][u] = true
+				urlsOf[rs.Source] = append(urlsOf[rs.Source], u)
+			}
+		}
+		if o := orStr(rs.Origin, ""); o != "" {
+			if originOf[rs.Source] == "" {
+				originOf[rs.Source] = o
+			}
+		}
+	}
+	sort.Strings(order)
+	out := make([]apiClusterSource, 0, len(order))
+	for _, org := range order {
+		urls := urlsOf[org]
+		first := ""
+		if len(urls) > 0 {
+			first = urls[0]
+		} else {
+			first = fallbackURL[org] // raw 层该机构无行 → 退回事件层那条(不丢链接)
+		}
+		out = append(out, apiClusterSource{
+			Source: org, URL: first, URLs: urls,
+			Origin: originOf[org], Reprint: reprintOf[org],
+		})
+	}
+	return out
+}
+
+// clusterContentUnion 汇总簇内**各成员**的 facts 与 affected 实体(并集,去重,保持到达顺序)。
+//
+// 为什么:展示单元 = 簇(issue #83 P8),但 `apiEventItem.Facts/Affected` 来自事件的
+// **单条** raw(canonical)。合并后 canonical 只是簇内一员,其余成员的事实句/影响实体
+// 若不下发就会「数据层合了多家、展示层回退到一家」—— 正是 P8 要修的问题。
+//
+// ⚠️ 事实句按**字面**去重(不模糊匹配):模糊归并可能把「净利润 3 亿」与「净利润 3.2 亿」
+// 合成一条而**丢掉分歧**,那是 conflictsOf 该暴露的东西,不在这里静默合并。
+func clusterContentUnion(mem []store.ClusterMember, idx map[string]nameRef) ([]string, []apiAffected) {
+	facts := []string{}
+	seenF := map[string]bool{}
+	words := []string{}
+	seenW := map[string]bool{}
+	for _, m := range mem {
+		var fs []string
+		_ = json.Unmarshal(m.Facts, &fs)
+		for _, f := range fs {
+			if f == "" || seenF[f] {
+				continue
+			}
+			seenF[f] = true
+			facts = append(facts, f)
+		}
+		var ws []string
+		_ = json.Unmarshal(m.Affected, &ws)
+		for _, w := range ws {
+			if w == "" || seenW[w] {
+				continue
+			}
+			seenW[w] = true
+			words = append(words, w)
+		}
+	}
+	affected := make([]apiAffected, 0, len(words))
+	for _, w := range words {
+		af := apiAffected{Word: w}
+		if ref, ok := idx[w]; ok {
+			af.EntityID = ref.id
+			af.EntityName = ref.name
+			af.Code = ref.code
+		}
+		affected = append(affected, af)
+	}
+	return facts, affected
 }
 
 // conflictsOf 对簇内成员两两跑数值冲突检测,汇总去重。

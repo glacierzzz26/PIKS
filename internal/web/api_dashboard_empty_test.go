@@ -74,7 +74,7 @@ func TestToEventItemFactsNeverNull(t *testing.T) {
 		"missing": ``,
 		"empty":   `[]`,
 	} {
-		ev := toEventItem(store.EventForAPI{ID: "e1", Facts: json.RawMessage(raw)}, nil, nil, nil)
+		ev := toEventItem(store.EventForAPI{ID: "e1", Facts: json.RawMessage(raw)}, eventItemInput{})
 		out, err := json.Marshal(ev)
 		if err != nil {
 			t.Fatalf("%s: marshal: %v", name, err)

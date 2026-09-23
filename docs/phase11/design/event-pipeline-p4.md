@@ -190,13 +190,20 @@ Go 侧按 `(cluster, source)` 分组:同机构多 URL 全列、只计一票(按 
 
 - 🔴 **「可审计 ≠ 可见」**:`deferred` 落在库里**不等于**用户看见了。本期处置 = `task_runs.meta`
   记账 + 任务台账可见 + 本文档登记;**若**将来要求逐条可见,需给快讯流加「已延迟抽取」分区(待确认 1)。
+- 🔴 **`deferred` 在快讯流的文档-代码不一致**(**P-5 更正**):本文档(及 `进度总表.md`)曾写
+  「`deferred` …**不在快讯流显示**」—— **与代码不符**。真相:`ListRawDocumentsWithSource` **无
+  status 过滤** ⇒ `deferred` 行**仍在快讯流显示**(内容与 raw 同源;抽取后才链上事件)。
+  **P-5 处置 = 修文档向代码靠拢**(**不改代码**),理由:`deferred` 是**抽取层**分流、展示层据此
+  隐藏会违背红线「**不得静默隐藏**」。详见 [event-pipeline-p5.md](./event-pipeline-p5.md) §3.1。
 - 🔴 **raw 层收益当前不可验证**(见 §5.1):**不得**写成「修掉了 N 条」。
 - 🔴 **两处转载判据可能漂移**:事件层实时指纹 vs raw 层回填快照 —— 已登记 + 测试断言一致性。
 - **P7 默认保守**:阈值取到只有极端积压才触发;`ai_daily_token_budget` 仍是主护栏。
-- **不越界**:三档调度 + flock(P-5)、实时层(P-5)、`human_verdict` 写入口/UI、时间衰减、
+- **不越界**:~~三档调度 + flock(P-5)、实时层(P-5)~~(**P-5 已落地**,见
+  [event-pipeline-p5.md](./event-pipeline-p5.md))、`human_verdict` 写入口/UI、时间衰减、
   实体/自选权重(本版 =0)、存量簇 `canonical_event_id` 回填(P-3 已定不回填)。
-- **另发现的潜在缺陷(不在本期范围)**:`ReconProcessedNoEvent` 把 `r.title` 扫进非指针
-  `Detail string`,`NULL` 标题的 raw 行会崩对账 —— 与 P-4 无关,**另开 issue**。
+- ~~**另发现的潜在缺陷(不在本期范围)**:`ReconProcessedNoEvent` 把 `r.title` 扫进非指针
+  `Detail string`,`NULL` 标题的 raw 行会崩对账 —— 与 P-4 无关,**另开 issue**。~~
+  → **P-5 已顺修**(`COALESCE(r.title,'')`),见 [event-pipeline-p5.md](./event-pipeline-p5.md) §3.2。
 
 ## 8. 验证
 

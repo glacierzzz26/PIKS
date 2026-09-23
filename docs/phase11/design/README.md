@@ -71,6 +71,12 @@
 |---|---|---|---|
 | [event-pipeline-p4.md](./event-pipeline-p4.md) | ✅ **已实现**(dev-only) | 2026-09-23 | issue **#83** 分期 **P-4**(收口;依赖 P-1/P-2/P-3)。**整条 epic 第一次变成用户可见的东西**。**P8 展示单元 = 簇**:① 标题取 `event_clusters.title` → `cluster_title`;② 内容 = 簇内**各成员** facts/affected **并集**(`cluster_facts`/`cluster_affected`,字面去重**不做模糊归并**——分歧留给 `event_conflicts`);③ 来源列表**按机构分组** + 每机构**全部** URL(`urls[]`)+ 无 URL 如实写「该源无外链」+ 金十一级源链接**归属一级源**。🔴 **来源走 raw 层全集**(补上「报了这篇稿但**未被抽成事件**」的机构;`raw_documents.canonical_id` 分组回填 = 迁移 **`0022`** 索引 + 新命令 **`cmd/cluster-raw-link`**(第 **12** 个管线命令,判据**复用** P-1 正文指纹 @0.85、代表**冻结**只写 NULL)+ 读路径 `ListClusterRawSources`(**必须** `COALESCE(canonical_id,id)`,合法退化)。🔴 **计数与转载标记仍走事件层**(P-1 实时指纹=真源;raw 层是回填快照,可能漂移)→「宁可多列一个机构,不可多算一票」。**P7 成本粗筛**:`internal/extract/gate.go`(必送→分级→阅读数→时间),落 `status='deferred'`(**≠ failed**:正常分流**不进对账**)+ `task_runs.meta` 记账;🔴 **默认保守**(`-coarse-defer` 默认 false ⇒ 只排序不筛)。前端:新页 `/board`(早/晚档写 URL、**不排名**、显式标注「无热度排序」)+ 抽屉簇视图 + 导航「发现」组 **13→14 项**。**三处 issue 事实前提更正**(raw 层收益今日零实例 / 预算静默降级已关 / 金十无自有 URL)。**一个迁移、零新表、零 LLM 增量**。**未上生产**。 |
 
+## 事件管线 P-5:实时层读接口 + 三档调度 + 保留期(issue #83 P-5)✅ 已实现(dev-only)
+
+| 文档 | 状态 | 日期 | 备注 |
+|---|---|---|---|
+| [event-pipeline-p5.md](./event-pipeline-p5.md) | ✅ **已实现**(dev-only) | 2026-09-23 | issue **#83** 分期 **P-5**(**收口**)—— 含 §五 验收 + 生产部署。**零 schema、零迁移、零新服务、零 LLM 增量**。① **实时层 = raw 层滚动读**(复用 C 层,**不新增写入方**):`GET /api/v1/flashes?hours=N`(ADDITIVE,缺省逐字不变)按 `COALESCE(published_at,retrieved_at,created_at)` 取近 N 小时;**不做合并/不排名/不做榜**(P3 红线)。`origin_kind='realtime'` **保持 inert**。② 🔴 **榜单窗口锚改「原始到达时刻」**(`COALESCE(rd.published_at, rd.retrieved_at, e.created_at)`,取代 P-3 的 `e.created_at`)—— P-3 §1.2 已预先授权;理由:全链收盘后一次跑 ⇒ 锚 `created_at` 使**早榜结构性恒空**;后果:早/晚榜成员集合与 P-3 验收不同(**批准的设计变更**)。③ **保留期清理**:新命令 **`cmd/cleanup`**(第 **13** 个管线命令,`-days 28`/`-dry-run`)+ `scripts/cleanup.sh`(周日 + 距上次成功 ≥28d + flock);🔴 **只清「无事件引用 + 非转载组代表」的行**(判据单趟 ⇒ 不留悬空 `canonical_id`);**已抽取行永久保留**(事件溯源 + FK)⇒ **「28 天」不是「全体 raw 的 28 天」**。④ **三档调度**:`pipeline.sh` 加 `STAGE=early|late`(未知档 exit 2),**按档**闸门/记账/`flock` 锁;步骤分 `COMMON`(两档)+`EOD`(**仅 late**:收盘产物);crontab 2→**4 条**(early/late/cleanup/backup);**realtime 档不在 cron**(常驻 collector 已覆盖)。⑤ **两处修正**:`deferred` 在快讯流的**文档-代码不一致**(修文档向代码靠拢,**不隐藏**)、`ReconProcessedNoEvent` 的 NULL 标题崩溃(`COALESCE(r.title,'')`)。⑥ **三处 issue 事实前提按代码更正**(实时层字面已被 C 层取代 / 窗口锚使早榜恒空 / realtime 档不在 cron)。**未上生产**。 |
+
 ## 阶段序列(epic #43)
 
 | 任务卡 | 内容 | 状态 | 落地 |
@@ -83,7 +89,7 @@
 ## 阶段序列(epic #83:事件管线与展示)
 
 > issue **#83** 是**分期 epic**,按「采集 → 预去重 → 剥转载 → 同事件合并 → 印证分级 → 窗口 → 展示」
-> 顺序推进。**P-1 ~ P-4 均 dev-only、未上生产**;epic **保持 OPEN**。
+> 顺序推进。**P-1 ~ P-5 均 dev-only、未上生产**;epic **保持 OPEN**。
 
 | 分期 | 内容 | 状态 | 落地 |
 |---|---|---|---|
@@ -91,7 +97,7 @@
 | **P-2** 数据面地基(迁移补列) | 迁移 `0021` 四列 + `origin_kind` 门控 + `canonical_event_id` 回填 | ✅ 已实现(dev-only) | [event-pipeline-p2.md](./event-pipeline-p2.md) |
 | **P-3** 早/晚档窗口(P1)+ 簇内代表选取(P6) | 窗口/打分纯函数 + `GET /api/v1/board` + 新代表规则 + 无 LLM 标题 | ✅ 已实现(dev-only) | [event-pipeline-p3.md](./event-pipeline-p3.md) |
 | **P-4** 展示单元(P8)+ 成本粗筛(P7) | raw 层全集来源(迁移 `0022` + `cmd/cluster-raw-link`)+ 簇合并视图 + 榜单页 + 粗筛 | ✅ 已实现(dev-only) | [event-pipeline-p4.md](./event-pipeline-p4.md) |
-| P-5 ~ P-8 | 实时层 / 调度(三档 + flock) / 其余收口 | ⬜ 未开始 | 见 `event-pipeline-p3.md` §7 / `event-pipeline-p4.md` §7 |
+| **P-5** 实时层 + 三档调度 + 保留期(收口) | raw 滚动读接口 + 窗口锚改原始到达 + `cmd/cleanup`(第 13 命令)+ `pipeline.sh STAGE` + crontab 4 条 | ✅ 已实现(dev-only) | [event-pipeline-p5.md](./event-pipeline-p5.md) |
 
 ## 前序阶段
 

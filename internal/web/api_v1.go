@@ -14,6 +14,7 @@ import (
 	"math"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -387,10 +388,20 @@ func (s *Server) handleAPIMarketSnapshot(w http.ResponseWriter, r *http.Request)
 	s.writeJSON(w, toSnapshot(snap))
 }
 
-// GET /api/v1/flashes?q&source&sort —— 快讯流(raw_documents 投影)。
+// GET /api/v1/flashes?q&source&sort&hours —— 快讯流(raw_documents 投影)。
 // sort=time(默认,时间倒序)/important(已被抽取成事件的优先)。
+//
+// hours=N(issue #83 分期 P-5 实时层):只取**原始到达时刻**近 N 小时的行 —— 实时档
+// 「滚动近 3h」(前端传 hours=3)。缺省/非法/≤0 = 不限(全量,与旧行为逐字一致,**ADDITIVE**).
+// ⚠️ 实时是**raw 层滚动读**,不新建采集进程(盘中采集由常驻 collector 承担)、不合并、不排名。
 func (s *Server) handleAPIFlashes(w http.ResponseWriter, r *http.Request) {
-	flashes, err := s.store.ListRawDocumentsWithSource(r.Context(), r.URL.Query().Get("sort"))
+	var since time.Time
+	if h := r.URL.Query().Get("hours"); h != "" {
+		if n, err := strconv.Atoi(h); err == nil && n > 0 {
+			since = time.Now().Add(-time.Duration(n) * time.Hour)
+		}
+	}
+	flashes, err := s.store.ListRawDocumentsWithSource(r.Context(), r.URL.Query().Get("sort"), since)
 	if err != nil {
 		s.apiErr(w, "flashes", err)
 		return

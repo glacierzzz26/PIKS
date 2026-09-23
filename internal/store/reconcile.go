@@ -32,8 +32,11 @@ func (s *Store) ReconFailedRaw(ctx context.Context) ([]ReconIssue, error) {
 }
 
 // ReconProcessedNoEvent 已处理但未抽取到任何事件。
+//
+// ⚠️ `COALESCE(r.title,'')`:title 可空(金十等源无独立标题字段,由正文派生,派生失败即 NULL),
+// NULL 扫进非指针 `Detail string` 会报错 → 对账接口 500(issue #83 P-5 顺修)。
 func (s *Store) ReconProcessedNoEvent(ctx context.Context) ([]ReconIssue, error) {
-	return s.recon(ctx, `SELECT 'processed_no_event' AS category, r.id::text AS entity_id, r.title AS detail
+	return s.recon(ctx, `SELECT 'processed_no_event' AS category, r.id::text AS entity_id, COALESCE(r.title,'') AS detail
 		FROM raw_documents r
 		LEFT JOIN events e ON e.raw_document_id = r.id
 		WHERE r.status='processed' AND r.origin_kind='pipeline' AND e.id IS NULL`)

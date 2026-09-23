@@ -13,16 +13,22 @@
 ## 一日管线(数据流)
 
 ```
-migrate → collector -driver all(6 快讯源) → collector -driver cninfo-announce(巨潮公告)
-→ hot-topic(热榜两源;常驻进程之外的收盘态兜底)
+[COMMON:早/晚两档都跑]
+migrate → collector -driver all(6 快讯源) → cluster-raw-link(raw 层转载组回填)
 → worker -limit 800(AI 抽取 events) → cluster(语义去重 + 重审视 Pass)
-→ quote-collector(涨停池,仅交易日) → entity-build(实体) → market-state(市场情绪)
-→ daily-review(每日复盘) → reconcile(对账)
+
+[EOD:仅 late 档,收盘收口]
+collector -driver cninfo-announce(巨潮公告) → hot-topic(热榜两源;常驻进程之外的收盘态兜底)
+→ quote-collector(涨停池,仅交易日) → entity-build(实体) → watch-sync -once(自选)
+→ market-state(市场情绪) → daily-review(每日复盘) → reconcile(对账)
+
+[独立:周日 02:00] cleanup(保留期,≥28 天才真清;只清「到期 + 无事件引用 + 非转载组代表」的 raw 行)
 ```
 
-11 个管线命令(见 `cmd/`),各自幂等、可单独重跑;失败步骤记录不阻断(下次重试)。
+13 个管线命令(见 `cmd/`),各自幂等、可单独重跑;失败步骤记录不阻断(下次重试)。
 > 迭代 5-2 起:vault / GitHub 下线(SPA 直读 PG API,管线已无发布步骤)。
-> **盘中增量**(issue #68 C 层):另有常驻 `collector` 服务,交易日 09:15–15:05 **每 3 分钟**采快讯 6 源(与日管线幂等共存;见 `docs/数据源总览.md` §3)。
+> **三档调度**(issue #83 P-5):crontab 4 条 —— `pipeline.sh early`(`*/10 9-11 * * 1-5`,重试窗)/ `pipeline.sh late`(`*/10 18-22 * * 1-5`)/ `cleanup.sh`(`0 2 * * 7`)/ `backup.sh`(`59 23 * * 1-5`)。
+> **盘中增量**(issue #68 C 层):另有常驻 `collector` 服务,交易日 09:15–15:05 **每 3 分钟**采快讯 6 源(即 P-5 的「realtime 档」,**不在 cron**;与日管线幂等共存;见 `docs/数据源总览.md` §3)。
 > **热榜**(issue #68 D 层):常驻 `hot-topic` 服务,交易日**每 30 分钟**采两源,落**独立表** `hot_topic_items`;与事件链路零交集(见 `docs/phase11/design/hot-topic.md`)。
 > **自选同步**(issue #87):常驻 `watch-sync` 服务,**每日 3 次**(09:00/12:55/18:00)拉同花顺「我的自选」;需同花顺凭据,加入价/日落 `watchlist_entries`(见 `docs/phase11/design/watchlist-sync.md`)。
 
@@ -71,7 +77,7 @@ PIKS-Vault/    Obsidian vault 存档(界面层已下线,不再更新)
 (冻结,`research/README.md` 契约表)交互 —— 由 `scripts/check-research-isolation.sh` 校验。
 
 **部署形态(2026-09-20 起,四镜像)**:单 Dockerfile 多 target,拆成 `piks-gateway`(纯 nginx)
-/ `piks-web`(纯 Go API)/ `piks-tools`(11 个管线命令)/ `piks-research`(Python 运行时 + 队列
+/ `piks-web`(纯 Go API)/ `piks-tools`(13 个管线命令)/ `piks-research`(Python 运行时 + 队列
 worker)。深研**不再由 web 进程内 `os/exec python3` 触发** —— web 只写一条 `pending` 行并
 `NOTIFY`,research 容器的常驻 worker 认领执行(`migrations/0015`、`cmd/research-worker`)。
 这样「改前端只重建 gateway、改 Python 只重建 research」,升级半径与实际改动对齐。
@@ -133,12 +139,13 @@ go build -o bin/ ./cmd/...
 - **访问控制**(P12 / issue #78):单密码登录 → HMAC 签名会话 cookie(60 分钟滑动续期)。lab `piks/.env` 需设 **必填**的 `PIKS_AUTH_PASSWORD_HASH`(用 `go run ./cmd/hashpw '口令'` 生成)+ `PIKS_AUTH_SECRET`(`openssl rand -base64 48`)—— 缺失则 web **拒绝启动**。改 `PIKS_AUTH_SECRET` 即全量登出。
 - **运维速查**:
   - 更新:`./scripts/deploy.sh`(dev 侧按镜像建/传 → 同步 compose **与 lab 侧 `scripts/`** → migrate → 起 web/research/collector/gateway)
-  - 日管线:crontab 每 15min 自判(北京时间非交易日/已过 16:10/今日未跑),stamp 防重跑
+  - 日管线:crontab 4 条(issue #83 P-5)—— `pipeline.sh early`(`*/10 9-11 * * 1-5`)/ `pipeline.sh late`(`*/10 18-22 * * 1-5`)/ `cleanup.sh`(`0 2 * * 7`)/ `backup.sh`(`59 23 * * 1-5`);脚本内自判档闸 + 按档记账(`-$STAGE` 后缀)+ `flock`,已完成的步骤不重跑
+  - 保留期:`./bin/cleanup`(默认 `-days 28` / `-dry-run`)—— **只清「到期 + 无事件引用 + 非转载组代表」的 raw 行**,已抽取行**永久保留**(事件溯源);「28 天」**不是**「全体 raw 的 28 天」
   - 聚类:`./bin/cluster`(候选池收扫水位 + 重审视时间窗;`-window-days` 默认 7、`-dry-run` 只生成候选不调 LLM、`-limit 0` = 不限)
   - ⚠️ **预算护栏**:`ai_daily_token_budget=0` 的语义是**护栏关闭**(不是「不限预算」)。为 0 时 `cluster`/`worker` 打 WARN 并在 `task_runs.meta` 记 `guard_disabled=true`;须经 `/settings` 设为非 0(建议 `1000000`)才拦得住真实花费
   - 盘中采集:`collector` 常驻服务自判(工作日 + 09:15–15:05 时段闸),每 3 分钟一轮;`per-host` 反封禁护栏(令牌桶/空响应哨兵/熔断)
   - 备份:每晚 `pg_dump` → `/home/rguo/piks/backups/`,14 天留存
-  - 日志:`ssh lab 'tail -50 /home/rguo/piks/logs/pipeline-$(date +%F).log'`
+  - 日志:`ssh lab 'tail -50 /home/rguo/piks/logs/pipeline-$(date +%F)-late.log'`(档名 `early`/`late`);`cleanup`/`backup` 见 `cron.log`
 
 ## 文档索引
 
@@ -152,7 +159,7 @@ go build -o bin/ ./cmd/...
 | `docs/phase3/` | 生产化(设计定稿 + 实现验收归档) |
 | `docs/phase4/`~`phase9/` | 能力并入(research)/ 前端 IA / 决绝重构 / 买入前速评 / 手机投递 / 研报体裁 |
 | `docs/phase10/` | 容器拆分(单镜像 → 四镜像,issue #47)设计定稿 |
-| `docs/phase11/` | 事件类多源交叉验证(epic #43 T2/T3/T4)+ 数据源分层(issue #68:S1 公告分级 / C 层快讯提频)设计;快讯提频 dev-only |
+| `docs/phase11/` | 事件类多源交叉验证(epic #43 T2/T3/T4)+ 数据源分层(issue #68:S1 公告分级 / C 层快讯提频)+ 事件管线展示(epic #83:P-1~P-5 剥转载/数据面/窗口榜单/展示单元/实时读取+调度+保留期)设计;P-1~P-5 与 #78 鉴权均已合 dev,待部署 |
 | `docs/phase12/` | 安全加固:应用层访问控制(单密码登录 + 签名会话 + 预算护栏,issue #78) |
 | `PIKS架构设计文档.md` | v1.0 权威架构蓝图(冻结不改正文;顶部含现状偏差注记) |
 

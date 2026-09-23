@@ -13,7 +13,7 @@
 # ⚠️ 不要引入 `# syntax=` 指令(需 BuildKit,本机 legacy builder 会硬失败)。
 #
 # ── 拆分动机(取代 2026-09-12 单镜像 D-2)──────────────────────────────────
-# 单镜像 piks-tools(934MB)同时背四职责:nginx 网关 + Go web + 12 个批处理 CLI +
+# 单镜像 piks-tools(934MB)同时背四职责:nginx 网关 + Go web + 13 个批处理 CLI +
 # Python 深研运行时。后果是升级半径不可分:改前端 → 整镜像重建;改 Python → 整镜像
 # 重建 + 重启 web。且 Dockerfile 曾用 `COPY . .` 把整个仓库灌进 Go 阶段,改一行前端就
 # 击穿 Go 层、13 个二进制全量重编(实测 27s,P1 已修)。
@@ -108,7 +108,7 @@ EXPOSE 8090
 CMD ["/app/bin/web", "-listen", "0.0.0.0:8090"]
 
 # ============================================================================
-# tools:12 个批处理管线命令 + 运行时文件资源。compose run --rm 跑一次即退,非常驻。
+# tools:13 个批处理管线命令 + 运行时文件资源。compose run --rm 跑一次即退,非常驻。
 # (watch-sync 常驻但复用本镜像 —— 常驻只体现在 compose 的 command/restart。)
 # ============================================================================
 FROM alpine:3.20 AS tools
@@ -128,8 +128,8 @@ WORKDIR /app
 # 运行时文件资源(migrate 读 migrations/、worker 读 prompts/extract.md),均相对 /app。
 COPY migrations/ /app/migrations
 COPY prompts/ /app/prompts
-# ⚠️ 逐条列出 12 个管线命令,**不用 `COPY --from=build /out/bin/ /app/bin/`**:
-# /out/bin/ 含全部 15 个二进制(每个 ~10MB,静态链接各自带一份公共库),整目录复制会把
+# ⚠️ 逐条列出 13 个管线命令,**不用 `COPY --from=build /out/bin/ /app/bin/`**:
+# /out/bin/ 含全部 18 个二进制(每个 ~10MB,静态链接各自带一份公共库),整目录复制会把
 # web / research-run / research-worker / probe 也塞进 tools —— 既白占体积,又让
 # `run --rm tools ./bin/web` 这类误用成为可能。逐条列 = 内容显式可审计,拓扑检查可断言。
 # 新增管线命令时须同步此处与 scripts/check-image-topology.sh。
@@ -140,6 +140,7 @@ COPY --from=build /out/bin/watch-sync     /app/bin/watch-sync
 COPY --from=build /out/bin/worker         /app/bin/worker
 COPY --from=build /out/bin/cluster        /app/bin/cluster
 COPY --from=build /out/bin/cluster-raw-link /app/bin/cluster-raw-link
+COPY --from=build /out/bin/cleanup        /app/bin/cleanup
 COPY --from=build /out/bin/quote-collector /app/bin/quote-collector
 COPY --from=build /out/bin/entity-build   /app/bin/entity-build
 COPY --from=build /out/bin/market-state   /app/bin/market-state

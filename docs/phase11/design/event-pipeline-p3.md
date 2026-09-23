@@ -35,11 +35,13 @@ issue §四:`| **P-3** | 早/晚档窗口(P1)+ 簇内代表选取(P6)| P-2 | 产
 - **窗口理由 = 阅读节奏**(早上看隔夜+盘前 / 晚上看全天),issue 明确「**非热度切口**」。
 - 默认档:请求未给 `stage` 时按**当前北京时刻**选 —— `>=18:30` → `late`,否则 `early`。
 
-### 1.2 🔴 窗口锚 `events.created_at`(入库/抽取时刻),不是 `occurred_at`
+### 1.2 窗口锚 `events.created_at`(入库/抽取时刻),不是 `occurred_at`
 
 窗口理由是阅读节奏,锚「**我们何时拿到它**」才对得上读者的时间轴。`occurred_at` 是事件**声称**发生的时间(常缺失、且跨源口径不一),不适合当阅读窗口边界。
 
 > ⚠️ **已知边界(如实登记)**:抽取滞后会把事件推进比原始到达更晚的窗口。因管线按 `pipeline.sh` 收盘后批量跑,**当日采集的事件在 `created_at` 上落在晚间窗口** —— 对早/晚档是合理的(读者次日晨读),但若将来改实时落库需重新评估锚点。
+>
+> 🔴 **P-5 修订(2026-09-23,已落地)**:上条「重新评估」已发生 —— 实践证明锚 `created_at` 让**早榜结构性恒空**(全链收盘后一次跑 ⇒ `created_at` 全落晚窗;09:15 早档跑出的 `created_at` 又在晚窗内)。P-5 依本条授权**改锚「原始到达时刻」** `COALESCE(rd.published_at, rd.retrieved_at, e.created_at)`,`e.created_at` 仅作 `raw_document_id IS NULL` 兜底。**后果**:早/晚榜成员集合与本文档验收时**不同**。详见 [event-pipeline-p5.md](./event-pipeline-p5.md) §2。
 
 ### 1.3 窗口查询:`store.ListEventsInWindow`
 
@@ -138,8 +140,10 @@ score = Σ wᵢ · normᵢ(信号ᵢ),   normᵢ = sigᵢ / maxᵢ(窗口内最�
 
 ## 7. 不做(登记给后续分期)
 
-- **三档调度 + flock + crontab**(P-5):`scripts/pipeline.sh` 仍是单日锁。
-- **实时层 `origin_kind='realtime'` + 提升**(P-5)。
+- ~~**三档调度 + flock + crontab**(P-5)~~:**P-5 已落地** —— `pipeline.sh` 加 `STAGE=early|late`
+  (按档闸门/记账/`flock`)+ crontab 4 条,见 [event-pipeline-p5.md](./event-pipeline-p5.md) §4。
+- ~~**实时层 `origin_kind='realtime'` + 提升**(P-5)~~:**P-5 已定形** —— **只做 raw 层滚动读**
+  (`/api/v1/flashes?hours=N`),**不启用** realtime 写入方,见 [event-pipeline-p5.md](./event-pipeline-p5.md) §1。
 - **展示单元 / 簇合并视图 UI**(P-4):**P-4 已落地** —— 新榜单页 `/board` + 详情抽屉簇视图
   (`cluster_title` / `cluster_facts` / `cluster_affected`)+ 来源按机构分组,见
   [event-pipeline-p4.md](./event-pipeline-p4.md) §1/§4。
@@ -150,6 +154,7 @@ score = Σ wᵢ · normᵢ(信号ᵢ),   normᵢ = sigᵢ / maxᵢ(窗口内最�
 - **实体 / 自选信号权重**:本版 `w=0`,接口先立。
 - **存量簇回填重算**:见 §4.3,有意不做。
 - **簇级 LLM 标题调用(phase 2)**:改用无 LLM 规则后不再需要(除非将来要求「更规范的标题」)。
+- 🔴 **窗口锚「原始到达时刻」**(P-5 改,P-3 已授权):见 §1.2 修订注;**早/晚榜成员集合因此变化**。
 
 ## 8. 验证
 

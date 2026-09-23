@@ -98,10 +98,12 @@ C 层两件事(设计 §5):
   (故仍是**四镜像**),`command: ["./bin/collector","-driver","news","-interval","3m"]`,
   `restart: unless-stopped`;`deploy.sh` rollout 段纳入(`up -d web research collector`)。
 - **只跑快讯源**(`-driver news`,6 家):公告(巨潮)单日 ~1200 条/40 页翻页重,留日管线
-  16:10 采一次,**不进盘中高频循环**(否则每 3 分钟重复翻 40 页)。
+  **晚档 EOD** 采一次,**不进盘中高频循环**(否则每 3 分钟重复翻 40 页)。
 
-**日管线保留不变**:`pipeline.sh` 的 `collector -driver all`(收盘后补齐)+
-`collector -driver cninfo-announce`(公告)**不动**。二者幂等 + 迁移 `0016` 去重,重复无害。
+**日管线保留不变**:`pipeline.sh` 的 `collector -driver all`(早/晚两档 COMMON,收盘后补齐)+
+`collector -driver cninfo-announce`(公告,晚档 EOD)**不动**。二者幂等 + 迁移 `0016` 去重,重复无害。
+> ⚠️ **P-5 更正**:上文「16:10 采一次」的旧口径已随三档调度改为「**晚档 EOD**」;日管线不再有 16:10 硬闸
+> (改为档内 10min-tick 重试窗),见 [event-pipeline-p5.md](./event-pipeline-p5.md) §4。
 
 ### 5.1 连带必改(否则提频会积压/误停源)
 
@@ -113,6 +115,14 @@ C 层两件事(设计 §5):
 > **与 #45 P5 的口径协同**:#45 P5 已定稿三档(early 09:15 / late 18:30 / realtime 盘中每 10min)。
 > 本 PR 取 **3 分钟**,**一次定死**并在此登记 —— 不再让两套调度并存;P5 的 early/late 两档
 > (窗口 + 落库策略)不在本 PR 范围。
+>
+> 🔴 **P-5 修订(2026-09-23)**:P5 已落地,但**「realtime 档」不在 cron** —— 盘中轮询**就是本条
+> 的常驻 `collector -interval 3m`**(compose 服务 `piks-collector`,已上生产),cron 只加
+> `early`/`late` 两条(见 [event-pipeline-p5.md](./event-pipeline-p5.md) §4)。且 **realtime 的
+> 「展示」不新增采集/落库路径** —— `origin_kind='realtime'` **保留未启用**(过滤是**契约**),
+> 实时视图 = **raw 层滚动读** `GET /api/v1/flashes?hours=N`(C 层采的行照旧落 `'pipeline'`
+> 并被抽取+合并;同一批行既供事件链路、也供实时滚动读,**不合并/不排名**)。见
+> [event-pipeline-p5.md](./event-pipeline-p5.md) §1。
 
 **不做**:交易日历(`DOW>=6` + 时段闸兜底,与 #45 P5「交易日历暂不做」一致)。**非交易日会空转**
 (工作日闸放行但无新数据),如实登记。

@@ -101,7 +101,7 @@ func main() {
 			}
 		}
 		comps = cluster.BuildComponents(len(events), cand.Auto, verdicts, cand.LLM)
-		merged, err = cluster.ApplyClusters(ctx, s, events, comps, verdicts, cand.LLM)
+		merged, err = cluster.ApplyClusters(ctx, s, events, comps)
 		if err != nil {
 			finishFail(ctx, s, runID, err)
 		}

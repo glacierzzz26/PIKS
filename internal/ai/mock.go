@@ -60,16 +60,15 @@ func (m *Mock) StructuredOutput(ctx context.Context, req StructuredRequest) (Str
 			ta := strings.TrimSpace(strings.SplitN(parts[0], "事件A:", 2)[1])
 			tb := strings.TrimSpace(strings.SplitN(parts[1], "事件B:", 2)[1])
 			jj := func(s string) bool { return strings.Contains(s, "降准") || strings.Contains(s, "存款准备金率") }
-			same, title := false, ""
+			same := false
 			if jj(ta) && jj(tb) {
-				same, title = true, "央行宣布下调存款准备金率"
+				same = true
 			} else if strings.Contains(ta, "固态电池") && strings.Contains(tb, "固态电池") {
-				same, title = true, "星河新能源发布新一代固态电池技术路线图"
+				same = true
 			}
 			results = append(results, map[string]any{
-				"pair_index":      idx,
-				"is_same":         same,
-				"canonical_title": title,
+				"pair_index": idx,
+				"is_same":    same,
 			})
 		}
 		data, _ := json.Marshal(map[string]any{"results": results})

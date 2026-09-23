@@ -89,6 +89,8 @@ HTML 标签剥离(`<b>…</b>`)同理:剥后 J 由 0.87 抬到 1.0。
 
 与 `cluster_sources` / `source_count` / `event_conflicts` **同一既有范式** ——
 `is_reprint`/`canonical_id` 列按 issue 原文归 **P-2 迁移 8 项**,不在本次。
+（P-2 已落地:经复核 `is_reprint` **不落**(本读路径即真源),只新增 `origin_kind` /
+`event_clusters.canonical_event_id` / `canonical_id` / `human_verdict` 四列,见 `event-pipeline-p2.md`。）
 
 | 文件 | 改动 |
 |---|---|
@@ -132,3 +134,9 @@ HTML 标签剥离(`<b>…</b>`)同理:剥后 J 由 0.87 抬到 1.0。
 `is_reprint` / `canonical_id` 等六个列、三档调度、簇规范标题投票、成本粗筛(P7)、
 实时层(P5)、`event_clusters` 作展示单元(P8);**不动 cluster 阈值 0.7**
 (红线「扩候选池不降门槛」)。
+
+> **P-2 进展(2026-09-23,`event-pipeline-p2.md`)**:上述「六个列」经复核**收窄为 4 列** ——
+> `is_reprint` 与 `events.corroboration` **不落**(P-1 的读路径已是真源,落库会与 `reexamine`
+> 的簇合并**并发漂移**);`raw_documents.origin` **不落**(可从 `extra->>'source'` 读)。
+> 实际新增 `origin_kind` / `canonical_event_id` / `canonical_id` / `human_verdict`。
+> 三档调度、规范标题投票、成本粗筛、实时层、P8 展示单元**仍不做**。

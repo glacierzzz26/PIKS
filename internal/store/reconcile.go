@@ -14,16 +14,21 @@ type ReconIssue struct {
 	Detail   string `db:"detail"`
 }
 
+// ⚠️ 全部 raw 层查询加 `origin_kind='pipeline'`(issue #83 P-2):实时层(P-5)的行不属正式
+// 管线的健康口径 —— 否则实时行会① 永远「滞留」(永不进 worker)、② 失败计入正式异常、
+// ③ 掩盖某源正式采集的静默。今日无 realtime 行,过滤是 no-op(契约先立)。
+// events 层的完整性检查(orphan/missing_evidence)不在此列 —— 事件只可能来自 pipeline。
+
 // ReconStaleRaw raw 滞留超过 7 天未处理。
 func (s *Store) ReconStaleRaw(ctx context.Context) ([]ReconIssue, error) {
 	return s.recon(ctx, `SELECT 'stale_raw' AS category, id::text AS entity_id, '滞留未处理' AS detail
-		FROM raw_documents WHERE status='raw' AND retrieved_at < now() - interval '7 days'`)
+		FROM raw_documents WHERE status='raw' AND origin_kind='pipeline' AND retrieved_at < now() - interval '7 days'`)
 }
 
 // ReconFailedRaw 抽取失败。
 func (s *Store) ReconFailedRaw(ctx context.Context) ([]ReconIssue, error) {
 	return s.recon(ctx, `SELECT 'failed_raw' AS category, id::text AS entity_id, COALESCE(error,'') AS detail
-		FROM raw_documents WHERE status='failed'`)
+		FROM raw_documents WHERE status='failed' AND origin_kind='pipeline'`)
 }
 
 // ReconProcessedNoEvent 已处理但未抽取到任何事件。
@@ -31,7 +36,7 @@ func (s *Store) ReconProcessedNoEvent(ctx context.Context) ([]ReconIssue, error)
 	return s.recon(ctx, `SELECT 'processed_no_event' AS category, r.id::text AS entity_id, r.title AS detail
 		FROM raw_documents r
 		LEFT JOIN events e ON e.raw_document_id = r.id
-		WHERE r.status='processed' AND e.id IS NULL`)
+		WHERE r.status='processed' AND r.origin_kind='pipeline' AND e.id IS NULL`)
 }
 
 // ReconOrphanEvent 事件指向不存在/被删的 raw_document。
@@ -49,11 +54,12 @@ func (s *Store) ReconMissingEvidence(ctx context.Context) ([]ReconIssue, error) 
 }
 
 // ReconSilentSources active 源近 24h 无采集记录(静默失败)。
+// ⚠️ r.origin_kind='pipeline':若实时行也算「有采集」,会掩盖某源**正式**采集的静默(P-5 后)。
 func (s *Store) ReconSilentSources(ctx context.Context) ([]ReconIssue, error) {
 	return s.recon(ctx, `SELECT 'silent_source' AS category, s.id::text AS entity_id, s.name AS detail
 		FROM sources s
 		WHERE s.status='active'
-		  AND NOT EXISTS (SELECT 1 FROM raw_documents r WHERE r.source_id = s.id AND r.retrieved_at > now() - interval '24 hours')`)
+		  AND NOT EXISTS (SELECT 1 FROM raw_documents r WHERE r.source_id = s.id AND r.origin_kind='pipeline' AND r.retrieved_at > now() - interval '24 hours')`)
 }
 
 func (s *Store) recon(ctx context.Context, query string) ([]ReconIssue, error) {
@@ -74,10 +80,13 @@ type ReconDaily struct {
 
 // ListReconDaily 活跃数据日期范围的每日对账,按日倒序。
 // anomalies = 当日抽取失败的快讯数(failed_raw);范围取 raw_documents/events/snapshots 的交并。
+// ⚠️ raw 层一律 origin_kind='pipeline'(issue #83 P-2):/recon 是**正式管线**的健康投影,
+// 实时层(P-5)的行既不算「快讯量」也不进日期范围 —— 否则实时行会把 /recon 的日线撑坏。
 func (s *Store) ListReconDaily(ctx context.Context) ([]ReconDaily, error) {
 	rows, err := s.Pool.Query(ctx, `
 		WITH ds AS (
 			SELECT date_trunc('day', COALESCE(published_at, retrieved_at))::date AS d FROM raw_documents
+			 WHERE origin_kind='pipeline'
 			UNION
 			SELECT date_trunc('day', COALESCE(occurred_at, created_at))::date AS d FROM events
 			UNION
@@ -88,12 +97,12 @@ func (s *Store) ListReconDaily(ctx context.Context) ([]ReconDaily, error) {
 		)
 		SELECT d AS date,
 			(SELECT count(*) FROM raw_documents r
-			 WHERE COALESCE(r.published_at, r.retrieved_at)::date = d) AS flashes,
+			 WHERE r.origin_kind='pipeline' AND COALESCE(r.published_at, r.retrieved_at)::date = d) AS flashes,
 			(SELECT count(*) FROM events e
 			 WHERE e.status <> 'merged'
 			   AND COALESCE(e.occurred_at, e.created_at)::date = d) AS events,
 			(SELECT count(*) FROM raw_documents r
-			 WHERE r.status = 'failed' AND COALESCE(r.published_at, r.retrieved_at)::date = d) AS anomalies
+			 WHERE r.status = 'failed' AND r.origin_kind='pipeline' AND COALESCE(r.published_at, r.retrieved_at)::date = d) AS anomalies
 		FROM days ORDER BY d DESC`)
 	if err != nil {
 		return nil, err

@@ -51,6 +51,12 @@
 |---|---|---|---|
 | [reprint-stripping.md](./reprint-stripping.md) | ✅ **已实现**(dev-only) | 2026-09-23 | issue **#83** 分期 **P-1**(根因层:转载 ≠ 独立源)。`raw_documents` 去重键含 `source_id`,同一篇通稿被两家近逐字转载会落两行 → 按机构名去重的 `source_count` 被刷高 → 印证度三级(单一来源/多家印证/广泛报道)**全废**。落地:**读路径派生**(与 `cluster_sources`/`source_count`/`event_conflicts` 同一范式),新增 `independent_count`(独立来源数)+ 逐来源 `reprint` 标记,**不改 `source_count`(机构数)语义**。🔴 **两条实测反例定死实现形态**:① 不得用**标题**指纹判转载(同事件标题天然收敛,会把独立报道误判成转载);② **不得复用 `NormalizeTitle`**(内含 `stripBracketWrap` 会抽掉【】内正文 → 裸标题与【同标题】正文 J=1.000,实测 **156 对**误判)→ 指纹取 **content 原文**(去电头/HTML)。校准(lab 库 398 多机构簇 / 2735 跨机构对):正文指纹**强双峰**,门控 **0.85**(下沿 0.80 全真转载,0.75~0.80 全改写);电头剥离覆盖 18.3% 成员行、只把真转载抬过门控;@0.85 **50.0%** 簇独立来源 < 机构数、**39.9%** 由「≥2 家」跌到「恰好 1 个独立来源」。残余上限(改写型转载漏判)**如实登记**。**零 schema / 零迁移 / 零管线步骤**。 |
 
+## 事件管线 P-2:数据面地基(issue #83 P-2)✅ 已实现(dev-only)
+
+| 文档 | 状态 | 日期 | 备注 |
+|---|---|---|---|
+| [event-pipeline-p2.md](./event-pipeline-p2.md) | ✅ **已实现**(dev-only) | 2026-09-23 | issue **#83** 分期 **P-2**(数据面地基,与 P-1 读路径**不同层面**)。issue §三 P4 表列「迁移 8 项」,本篇**复核收窄为 4 列**:🔴 **不做** `raw_documents.origin`(可从 `extra->>'source'` 读,建列是**第二真源**)、`is_reprint`、`events.corroboration`(P-1 已读路径派生;**更根本:转载是簇相对属性,列级布尔不良定义**;corroboration 落库会与 `reexamine` 的 `MergeClusters` **并发漂移**⇒ 两处真源)。✅ **新增 4 列**(迁移 **`0021`**,全部**无 FK**,与决策边同纪律):`raw_documents.origin_kind`(`TEXT NOT NULL DEFAULT 'pipeline'`,**worker/reconcile 的全部 raw 层查询加 `='pipeline'`** —— 今日无 realtime 行,过滤是**契约非优化**,给 P-5 实时层立结构性隔离;⚠️ 去重键(0016)**不含本列**,P-5 须补「realtime→pipeline 提升」)/ `event_clusters.canonical_event_id`(`ApplyClusters` 早已算出却丢弃,此处持久化;**回填比较器与 `canonicalIndex` 逐字一致** —— `created_at ASC`,同则 `confidence DESC`;**代表冻结**:reexamine 不重选)/ `raw_documents.canonical_id`(**只建列**,填充属 P-8)/ `events.human_verdict`(**只建列**,取值域本版不定故**故意不加 CHECK**,**引擎永不碰**)。测试:`canonicalIndex` 单测 5 例 + `ApplyClusters` 落列集成测 + `origin_kind` 门控/**回填**/`human_verdict` 存活三集成测,全绿。**不含部署**。 |
+
 
 
 ## 阶段序列(epic #43)
@@ -61,6 +67,17 @@
 | **T2** 同事件判定(复用 cluster) | 本篇 §1~§7 | ✅ 已实现(dev-only) | issue #48 |
 | **T3** 漏报 / 冲突检测 | 单源标注(机构级)+ 数值冲突双源留原文 | ✅ 已实现(dev-only) | issue #49(本篇 §8~§12) |
 | **T4** 公告独立源(巨潮) | 公告链路补独立机构 | ✅ **已实现并合并**(PR #63;**未上生产**) | issue #50([announcement-source.md](./announcement-source.md)) |
+
+## 阶段序列(epic #83:事件管线与展示)
+
+> issue **#83** 是**分期 epic**,按「采集 → 预去重 → 剥转载 → 同事件合并 → 印证分级 → 窗口 → 展示」
+> 顺序推进。**P-1 与 P-2 均 dev-only、未上生产**;epic **保持 OPEN**。
+
+| 分期 | 内容 | 状态 | 落地 |
+|---|---|---|---|
+| **P-1** 剥转载(转载 ≠ 独立源) | 读路径派生 `independent_count`/`reprint`,零 schema | ✅ 已实现并合入 dev | [reprint-stripping.md](./reprint-stripping.md) / PR #92(merge `7ff4da8`) |
+| **P-2** 数据面地基(迁移补列) | 迁移 `0021` 四列 + `origin_kind` 门控 + `canonical_event_id` 回填 | ✅ 已实现(dev-only) | [event-pipeline-p2.md](./event-pipeline-p2.md) |
+| P-3 ~ P-8 | 规范标题投票 / 实时层 / 展示单元等 | ⬜ 未开始 | 见 `event-pipeline-p2.md` §4 |
 
 ## 前序阶段
 

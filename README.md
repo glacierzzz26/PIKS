@@ -37,7 +37,7 @@ migrate → collector -driver all(6 快讯源) → collector -driver cninfo-anno
 | 层 | 选型 |
 |---|---|
 | 语言 | Go 1.26(静态编译,依赖走 go.mod/go.sum + 模块代理,不入库) |
-| 数据源 | PostgreSQL 16(唯一 Source of Truth;**20 个前向迁移**,0001~0020) |
+| 数据源 | PostgreSQL 16(唯一 Source of Truth;**21 个前向迁移**,0001~0021) |
 | 界面 | **React SPA**(Vite 5 + React 18 + TS,React Router v6;Tailwind 只做布局,视觉走 `globals.css` 语义类;ECharts 按需 + 自绘 SVG 力导图谱;nginx 单入口 :8090 服务静态 + 反代 `/api/*`)。Obsidian/GitHub 已下线,`PIKS-Vault/` 仅存档 |
 | AI | OpenCode Zen,OpenAI 兼容;**base URL 必须带 `/go` 路由**(`https://opencode.ai/zen/go/v1`);配置存 `app_config` 表(/settings 可编辑),模型分层 extract/reasoning/vision |
 | 部署 | Docker Compose(dev 单机 + 生产 lab) |
@@ -52,7 +52,7 @@ internal/      13 个业务包(store / web / collector / research / ai / cluster
               / announce(公告分级规则)/ entityextract / marketstate / extract / model / config)
 frontend/      React SPA(Vite;src 145 文件;28 条路由;产物 dist/)
 research/      深研 Python agent(独立运行时见下「深研并入」;不写库、不调 LLM,产物落 PG)
-migrations/    SQL 迁移(前向,无 down;0001~0020)
+migrations/    SQL 迁移(前向,无 down;0001~0021)
 prompts/       AI 抽取提示词(extract.md)
 configs/       docker-compose(dev/prod)+ .env 模板 + nginx.conf
 scripts/       dev 侧 setup.sh/deploy.sh/check-research-isolation.sh/check-image-topology.sh/check-event-type-parity.sh;lab 侧 pipeline.sh/backup.sh/health.sh(setup.sh 装 crontab)

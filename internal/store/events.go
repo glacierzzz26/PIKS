@@ -750,11 +750,17 @@ func (s *Store) ListEventDocMeta(ctx context.Context, eventIDs []string) (map[st
 	return out, nil
 }
 
-// ListEventsInWindow 取 [start, end) 内**入库**(created_at)的非 merged 事件,按入库时间倒序。
+// ListEventsInWindow 取 [start, end) 内的非 merged 事件,按**原始到达时刻**倒序。
 //
-// 窗口锚 **created_at**(入库/抽取时刻),不是 occurred_at(issue #83 P1):早/晚档的理由是
-// **阅读节奏**(早上看隔夜+盘前、晚上看全天),锚「我们何时拿到它」才对得上读者的时间轴。
-// ⚠️ 已知边界:抽取滞后会把事件推入比原始到达更晚的窗口(如实登记,见设计文档)。
+// 窗口锚 = **原始到达时刻** `COALESCE(rd.published_at, rd.retrieved_at, e.created_at)`
+// (issue #83 分期 P-5 修订,P-3 §1.2 已预先授权重评)。早/晚档的理由是**阅读节奏**
+// (早上看隔夜+盘前、晚上看全天),锚「我们何时**拿到**这条」才对得上读者的时间轴。
+//
+// 🔴 为什么不用 `e.created_at`(入库/抽取时刻):整条管线在收盘后一次跑,`created_at` 全落
+// **晚**窗,早档(前一日 18:30 → 当日 09:15)恒空 —— 早/晚切分名存实亡。改锚原始到达后,
+// 隔夜消息(前一日 18:30 → 当日 09:15 **发布/采集**)才真正落早榜。
+// 兜底 `e.created_at` 仅用于 `raw_document_id IS NULL` 的极少数行(dev 实测 1 行)。
+// ⚠️ `occurred_at` 仍**不**作窗口锚:它是事件**声称**发生的时间,常缺失、跨源口径不一。
 //
 // **不 LIMIT**(issue P1「窗口内全部合并事件,不截断」)—— 日量约百条量级,可控。
 // 返回 `EventForAPI`(带来源名/链接/cluster_id),与事件流同一投影,供 `toEventItem` 复用。
@@ -766,8 +772,9 @@ func (s *Store) ListEventsInWindow(ctx context.Context, start, end time.Time) ([
 		JOIN sources s ON s.id=e.source_id
 		LEFT JOIN raw_documents rd ON rd.id=e.raw_document_id
 		WHERE e.status <> 'merged'
-		  AND e.created_at >= $1 AND e.created_at < $2
-		ORDER BY e.created_at DESC`, start, end)
+		  AND COALESCE(rd.published_at, rd.retrieved_at, e.created_at) >= $1
+		  AND COALESCE(rd.published_at, rd.retrieved_at, e.created_at) <  $2
+		ORDER BY COALESCE(rd.published_at, rd.retrieved_at, e.created_at) DESC`, start, end)
 	if err != nil {
 		return nil, err
 	}

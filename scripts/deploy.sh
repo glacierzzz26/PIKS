@@ -79,12 +79,14 @@ go_deps_hash() {
 short() { printf '%s' "$1" | git hash-object --stdin | cut -c1-7; }
 
 # go_deps_hash_all <cmd>...:多个命令依赖闭包的**并集**树 hash。
-# ⚠️ tools 镜像虽以 `migrate` 触发构建,却**打包全部 11 个管线命令** —— 若只 hash migrate 的闭包
+# ⚠️ tools 镜像虽以 `migrate` 触发构建,却**打包全部 13 个管线命令** —— 若只 hash migrate 的闭包
 #   (仅 config/model/store),则 collector/worker/cluster/... 的改动**不入 tag**:
 #   改了 `internal/collector/` 而 TAG_TOOLS 不动 → build_image 判定「已存在、跳过」→ lab
 #   既不重建也不传输 → **生产跑旧像**(与文件头 issue #55 的 Dockerfile 教训同类)。
 #   实测(issue #68 C 层):新增常驻 `collector` 服务会以**旧 tools 镜像**启动,新代码根本没上。
-#   故取十一个命令闭包的并集(方向安全:宁可多重建,不可漏)。
+#   故取十三个命令闭包的并集(方向安全:宁可多重建,不可漏)。
+#   ⚠️ 新增管线命令时必须把命令名补进下方实参(issue #83 P-5 实测:此前漏了 `cluster-raw-link`,
+#     改 `cmd/cluster-raw-link/` 不动 tag;同批补上 `cleanup`)。
 go_deps_hash_all() {
   local deps args=()
   deps="$(cd "$REPO" && for c in "$@"; do
@@ -106,7 +108,7 @@ go_deps_hash_all() {
 #   方向安全(宁可多重建,不可漏),且 Dockerfile 极少改动。
 TAG_GATEWAY="${VER}-$(short "$(tree_hash frontend configs/nginx.conf)$(tree_hash Dockerfile)")${DIRTY}"
 TAG_WEB="${VER}-$(short "$(tree_hash go.mod go.sum)$(go_deps_hash web)$(tree_hash Dockerfile)")${DIRTY}"
-TAG_TOOLS="${VER}-$(short "$(tree_hash go.mod go.sum migrations prompts)$(go_deps_hash_all migrate collector hot-topic watch-sync worker cluster quote-collector entity-build market-state daily-review reconcile)$(tree_hash Dockerfile)")${DIRTY}"
+TAG_TOOLS="${VER}-$(short "$(tree_hash go.mod go.sum migrations prompts)$(go_deps_hash_all migrate collector hot-topic watch-sync worker cluster cluster-raw-link cleanup quote-collector entity-build market-state daily-review reconcile)$(tree_hash Dockerfile)")${DIRTY}"
 TAG_RESEARCH="${VER}-$(short "$(tree_hash go.mod research)$(go_deps_hash research-run)$(go_deps_hash research-worker)$(tree_hash Dockerfile)")${DIRTY}"
 STACK_TAG="${VER}-${GS}${DIRTY}"
 
@@ -194,7 +196,7 @@ DC="docker compose -f $C/docker-compose.yml"
 # 只同步**在 lab 上运行**的脚本(管线/备份/自检/安装);check-* 与 fix-* 是 dev 侧工具,不上 lab。
 ssh "$LAB" "mkdir -p $C/scripts"
 scp "$REPO/scripts/pipeline.sh" "$REPO/scripts/backup.sh" \
-    "$REPO/scripts/health.sh" "$REPO/scripts/setup.sh" \
+    "$REPO/scripts/cleanup.sh" "$REPO/scripts/health.sh" "$REPO/scripts/setup.sh" \
     "$LAB:$C/scripts/"
 ssh "$LAB" "chmod +x $C/scripts/*.sh"
 

@@ -19,7 +19,9 @@ import (
 // ⚠️ **排序信号 = 跨渠道独立报道数,作印证度标签,不排名**(issue P1 红线):本版榜单**按时间序**,
 // 归一化加权 `boardScore` 照算并带出,但**不用于排序**(留给后续权重与实体/自选信号)。
 //
-// ⚠️ **窗口锚事件 `created_at`(入库/抽取时刻)**,不是 `occurred_at` —— 见 store.ListEventsInWindow。
+// ⚠️ **窗口锚事件「原始到达时刻」`COALESCE(rd.published_at, rd.retrieved_at, e.created_at)`**
+// (issue #83 分期 P-5 修订),不是抽取时刻 `created_at`,也不是 `occurred_at` —— 见
+// store.ListEventsInWindow。理由:整条管线收盘后一次跑,锚 `created_at` 会让早档恒空。
 
 // 窗口边界(北京时区,同日)。
 const (

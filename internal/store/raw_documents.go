@@ -112,6 +112,54 @@ func (s *Store) MarkRawFailed(ctx context.Context, id string, errMsg string) err
 	return err
 }
 
+// RawCleanupSelector 保留期清理的候选行(供 -dry-run 预览与删除共用同一判据)。
+// 只取「到期 + 无事件引用 + 非转载组代表」三类条件的交集 —— 见 PurgeRawDocuments。
+type RawCleanupRow struct {
+	ID      string    `db:"id"`
+	Title   string    `db:"title"`
+	Source  string    `db:"source"`
+	OccurAt time.Time `db:"occur_at"`
+}
+
+// cleanupWhere 保留期清理的**唯一判据**(SELECT 与 DELETE 共用,防两处漂移):
+//   - `retrieved_at < now() - $1`(到期);
+//   - **无任何事件引用**(`NOT EXISTS events.raw_document_id` —— FK 安全;事件溯源靠这行,
+//     删了会破坏 `source_url`/抽屉来源/cluster_sources,故**已抽取行永久保留**);
+//   - **不是任何行的转载组代表**(`NOT EXISTS r2.canonical_id = rd.id` —— 防删掉代表后
+//     组内其余行的 `canonical_id` 悬空,读路径 join 不到)。
+//
+// 🔴 因此「28 天」不是「全体 raw 的 28 天」:只清**从未被抽取成事件**的行(历史 raw/deferred/
+// failed 等)。文档须逐字写清,勿承诺「清所有过期 raw」。
+const cleanupWhere = `
+	FROM raw_documents rd
+	JOIN sources s ON s.id = rd.source_id
+	WHERE rd.retrieved_at < now() - $1::interval
+	  AND NOT EXISTS (SELECT 1 FROM events e WHERE e.raw_document_id = rd.id)
+	  AND NOT EXISTS (SELECT 1 FROM raw_documents r2 WHERE r2.canonical_id = rd.id)`
+
+// ListRawCleanupCandidates 预览到期可清的行(按到达时间升序,便于核对最老的先删)。
+func (s *Store) ListRawCleanupCandidates(ctx context.Context, olderThan time.Duration) ([]RawCleanupRow, error) {
+	rows, err := s.Pool.Query(ctx,
+		`SELECT rd.id, COALESCE(rd.title, rd.content) AS title, s.name AS source,
+		        rd.retrieved_at AS occur_at`+cleanupWhere+` ORDER BY rd.retrieved_at`, olderThan.String())
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByName[RawCleanupRow])
+}
+
+// PurgeRawDocuments 删除到期、无事件引用、非转载组代表的 raw 行,返回删除行数。判据与
+// ListRawCleanupCandidates **共用 cleanupWhere**,故 dry-run 预览数 == 实删数。
+func (s *Store) PurgeRawDocuments(ctx context.Context, olderThan time.Duration) (int64, error) {
+	ct, err := s.Pool.Exec(ctx,
+		`DELETE FROM raw_documents rd WHERE rd.id IN (SELECT rd.id`+cleanupWhere+`)`,
+		olderThan.String())
+	if err != nil {
+		return 0, err
+	}
+	return ct.RowsAffected(), nil
+}
+
 func (s *Store) GetRawDocumentByID(ctx context.Context, id string) (model.RawDocument, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT `+rawDocCols+` FROM raw_documents WHERE id=$1`, id)
 	if err != nil {
@@ -152,14 +200,24 @@ type RawDocWithSource struct {
 
 // ListRawDocumentsWithSource 全部快讯;被抽取成事件的行链上 event_id。
 // sort 见 FlashSort*(空 = 时间倒序)。
+// since 非零时只取**原始到达时刻**(`COALESCE(published_at, retrieved_at, created_at)`)
+// 不早于它的行 —— 供实时层「滚动近 3h」读(issue #83 分期 P-5):零值 = 不限(全量快讯流,缺省行为不变)。
 // 一文档多事件时取最早事件;published_at 缺失时回退 retrieved_at/created_at。
 // title 可空:多源后部分源(金十)无独立标题字段,标题由正文前段派生,派生失败即 NULL
 // → COALESCE 到正文,保证快讯行始终可读(issue #43)。
 //
+// ⚠️ **不加 status 过滤**(issue #83 P-5 更正):`deferred`(被成本粗筛挡下、尚未抽取)的行
+// **仍会出现在快讯流** —— 粗筛是**抽取层**分流,展示层不据此隐藏(红线「不得静默隐藏」;
+// 其内容与 raw 同源,抽取成功后才链上 event_id)。P-4 文档曾误写「不在快讯流显示」,已更正。
+//
 // ⚠️ **排除 source_type='announcement'**(issue #50):公告是官方披露、非「快讯」语义,
 // 且有独立的 /api/v1/announcements 投影。不加此过滤,公告会混进快讯 tab
 // (编译期无强制,只有这条 SQL 把关)。
-func (s *Store) ListRawDocumentsWithSource(ctx context.Context, sort string) ([]RawDocWithSource, error) {
+func (s *Store) ListRawDocumentsWithSource(ctx context.Context, sort string, since time.Time) ([]RawDocWithSource, error) {
+	sinceArg := any(nil)
+	if !since.IsZero() {
+		sinceArg = since
+	}
 	rows, err := s.Pool.Query(ctx, `
 		SELECT id, flash_at, title, source, event_id, url, source_important FROM (
 			SELECT DISTINCT ON (rd.id)
@@ -175,8 +233,10 @@ func (s *Store) ListRawDocumentsWithSource(ctx context.Context, sort string) ([]
 			JOIN sources s ON s.id=rd.source_id
 			LEFT JOIN events ev ON ev.raw_document_id=rd.id
 			WHERE s.source_type <> 'announcement'
+			  AND ($1::timestamptz IS NULL
+			       OR COALESCE(rd.published_at, rd.retrieved_at, rd.created_at) >= $1)
 			ORDER BY rd.id, ev.created_at
-		) t `+flashOrderBy(sort))
+		) t `+flashOrderBy(sort), sinceArg)
 	if err != nil {
 		return nil, err
 	}

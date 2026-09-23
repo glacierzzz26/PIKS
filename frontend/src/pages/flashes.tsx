@@ -16,13 +16,22 @@ import type { Flash } from "@/lib/types";
  * 排序（issue #37）：默认按时间倒序 → 按天分组（组内即时间倒序，符合直觉）；
  * 「重要优先」= 全部重要项排在前面，跨天交错，**此时不做按天分组**——
  * 否则 Map 会按「首次出现」定组序，日期标题出现 20→19→10→18 的错乱。
+ *
+ * 时间窗（issue #83 分期 P-5 实时层）：切「近 3 小时」= 只到**原始到达时刻**近 3h 的
+ * 原始流（`?hours=3`，实时档口径）；「全部」= 不限（缺省，行为不变）。**不合并、不排名**。
  */
 export default function FlashesTab() {
   const { query, setFilter, page, size, setPage, setSize, paginate } =
     usePagedQuery();
+  const recent = query.hours === "3";
   const flashes = useData<Flash[]>({
     path: ENDPOINTS.flashes,
-    params: { q: query.q, source: query.source, sort: query.sort },
+    params: {
+      q: query.q,
+      source: query.source,
+      sort: query.sort,
+      hours: recent ? "3" : "",
+    },
   });
   const data = flashes.data ?? [];
   const paged = paginate(data);
@@ -40,6 +49,13 @@ export default function FlashesTab() {
             {s.label}
           </button>
         ))}
+        <button
+          onClick={() => setFilter("hours", recent ? "" : "3")}
+          className={`chip-btn ${recent ? "on" : ""}`}
+          title="只看到达时间在最近 3 小时内的原始快讯"
+        >
+          近 3 小时
+        </button>
         <select
           className="f-sel"
           value={query.sort ?? ""}

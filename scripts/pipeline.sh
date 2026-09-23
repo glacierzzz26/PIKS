@@ -1,17 +1,42 @@
 #!/usr/bin/env bash
-# PIKS 日管线(lab,生产化 D-P8):交易日收盘后自动跑完整数据链,一日一次。
+# PIKS 日管线(lab,生产化 D-P8 / 三档调度 issue #83 P-5):按**档**跑数据链。
+#
+# 三档(issue #83 P-5):
+#   · early —— 早档:09:15 起,10min-tick 重试窗(上界 11:59)。跑 **COMMON**(采集+抽取+合并),
+#              让「早上看隔夜」有当日的早榜。**不含**当日收盘产物(见下)。
+#   · late  —— 晚档:18:30 起,10min-tick 重试窗(上界 22:59)。跑 **COMMON + EOD**,
+#              收口当日全链(快讯/公告/行情/实体/复盘/对账)。
+#   · realtime —— **不在本脚本**:盘中轮询已由常驻 `collector`(compose 服务,每 3min)承担;
+#              `origin_kind='realtime'` 契约保留未启用(issue #83 P-5)。故本脚本只认 early|late。
+# 档由 $1 指定(默认 late)。未知档 exit 2(cron 配错要立刻暴露,不静默跑错档)。
+#
+# 🔴 为什么 early **不能**含 EOD 步骤:`quote-collector`/`market-state`/`daily-review` 是
+#    **当日收盘**产物,09:15 跑会为「尚未发生的当日」出报告(数据空/错)。故只有 late 收口。
 #
 # 幂等:所有命令去重/upsert/md5 跳写,重跑零副作用。三层防线(issue #76):
-#   ① flock 单实例锁   —— 上一轮未结束时下一 tick 直接退出,消灭并发管线;
+#   ① flock 单实例锁   —— 上一轮未结束时下一 tick 直接退出,消灭并发管线(**按档独立**:
+#                         early 与 late 各持自己的锁,互不阻塞);
 #   ② 步骤台账         —— 每完成一步 touch 一个文件,下一 tick 只跑**未完成**的步骤,
-#                         不再「任一失败 → 全部重跑」(原先 34 轮/日 的放大器);
-#   ③ 失败退避 + 分型  —— 每个 (日期,步骤) 记失败次数,达 PIKS_MAX_RETRY 当日放弃;
+#                         不再「任一失败 → 全部重跑」(原先 34 轮/日 的放大器);**按档分账**。
+#   ③ 失败退避 + 分型  —— 每个 (档,日期,步骤) 记失败次数,达 PIKS_MAX_RETRY 当日放弃;
 #                         确定性错误(SQLSTATE)与额度类(429)立即放弃,不参与高频重试。
 # 日期锚:优先取 HTTP 服务器时间(GitHub Date 头,免疫宿主时钟漂移),失败回退系统时钟并告警。
 # 全链命令显式传 -date $TODAY,把日期钉在门控交易日(运行中途宿主时钟再漂移也不乱)。
+#
+# ⚠️ 已知边界(issue #83 P-5,如实登记):
+#   · 周末(实测 DOW>=6)两档均跳过;周一早档覆盖不了「周日 18:30→」的窗(collector 周末不跑,
+#     `inSession` 周日恒 false)。issue 已定**不做交易日历**,故周一早榜缺此窗。
+#   · 「盘中轮询不被今日已跑锁阻断」今日已成立:collector 是**独立常驻进程**,pipeline 的
+#     `-$STAGE.done` 只锁 pipeline 自身,二者不同进程。故无需为 realtime 单独开档。
 set -uo pipefail
 C=/home/rguo/piks; LOG=$C/logs
 mkdir -p "$LOG"
+
+STAGE="${1:-late}"
+case "$STAGE" in
+  early|late) ;;
+  *) echo "用法:$0 [early|late](默认 late);未知档 '$STAGE'" >&2; exit 2 ;;
+esac
 
 # 步骤级覆盖参数(可选环境变量;见 configs/.env.prod.example)
 STEP_TIMEOUT="${PIKS_STEP_TIMEOUT:-1800}"   # 单步 wall-clock 上限(秒),默认 30 分钟
@@ -20,9 +45,10 @@ export TZ=Asia/Shanghai
 
 # ── ① 单实例锁:上一轮未结束则本 tick 直接退出,消灭并发管线 ─────────────────────
 # 锁放 $LOG(非 /var/lock):rguo 可写、与日志同处、免 sudo。fd 9 随进程退出自动释放。
-exec 9>"$LOG/pipeline.lock"
+# **按档独立**:early 与 late 各持 pipeline-<stage>.lock,互不阻塞(否则早档慢会吞掉晚档)。
+exec 9>"$LOG/pipeline-$STAGE.lock"
 if ! flock -n 9; then
-  echo "$(date '+%F %T %Z') 另一管线实例仍在运行(锁被占),本 tick 跳过" >> "$LOG/cron.log"
+  echo "$(date '+%F %T %Z') 另一 $STAGE 档管线实例仍在运行(锁被占),本 tick 跳过" >> "$LOG/cron.log"
   exit 0
 fi
 
@@ -38,14 +64,18 @@ fi
 
 TODAY=$(date -d "@$EPOCH" +%F); DOW=$(date -d "@$EPOCH" +%u); HMS=$(date -d "@$EPOCH" +%H%M)
 
-[ -f "$LOG/pipeline-$TODAY.done" ] && exit 0      # 今日全链已完成(快速路径)
-[ "$DOW" -ge 6 ] && exit 0                        # 周末
-[ "$HMS" -lt 1610 ] && exit 0                     # 未过收盘后(16:10 放行)
+[ -f "$LOG/pipeline-$TODAY-$STAGE.done" ] && exit 0   # 本档今日已完成(快速路径)
+[ "$DOW" -ge 6 ] && exit 0                            # 周末
+# 档闸门:早/晚各一个重试窗上界,防早档拖到下午、晚档拖到深夜。
+case "$STAGE" in
+  early) { [ "$HMS" -ge 0915 ] && [ "$HMS" -le 1159 ]; } || exit 0 ;;
+  late)  { [ "$HMS" -ge 1830 ] && [ "$HMS" -le 2259 ]; } || exit 0 ;;
+esac
 
-L="$LOG/pipeline-$TODAY.log"
-LEDGER="$LOG/pipeline-$TODAY.done.d"              # 步骤台账目录(每完成一步一个文件)
+L="$LOG/pipeline-$TODAY-$STAGE.log"
+LEDGER="$LOG/pipeline-$TODAY-$STAGE.done.d"           # 步骤台账目录(每完成一步一个文件)
 mkdir -p "$LEDGER"
-echo "clock: $CLOCK_SRC anchored TODAY=$TODAY DOW=$DOW HMS=$HMS (北京时间)" >> "$L"
+echo "clock: $CLOCK_SRC anchored TODAY=$TODAY DOW=$DOW HMS=$HMS stage=$STAGE (北京时间)" >> "$L"
 
 # 步骤清单:name|command。name 只用于台账文件名/日志;顺序即执行顺序 ——
 # 台账跳过已完成的步骤,但**保序**遍历(故 migrate 仍先于其余步骤)。
@@ -54,33 +84,37 @@ echo "clock: $CLOCK_SRC anchored TODAY=$TODAY DOW=$DOW HMS=$HMS (北京时间)" 
 # (原 publisher 命令已删除;渲染逻辑 trace 在 internal/publish,由 daily-review/reconcile/web 复用。)
 # 事件类多源(issue #43 T1):`collector -driver all` 依次跑 6 个独立机构源
 # (东财/金十/财联社/新浪/同花顺/富途),每源落各自机构名 sources 行;单源失败不阻断其余源。
-# 公告(issue #50 T4):`collector -driver cninfo-announce` 单独跑巨潮全市场个股公告
-# (~1200 条/日),落 source_type='announcement' / status='collected' ——
-# **不进 LLM 抽取**(worker 只取 status='raw'),也不报对账异常。放在 worker 之前无妨:
-# 公告永不入 raw 队列,顺序不敏感;显式列在与快讯相邻处便于阅读。
-# file 驱动仅迭代0 保底,生产不用。
 # ⚠️ 多源后单日入库量升至 ~180 条(原东财单源 ~50),worker 默认 -limit 50 会恒追不上、
 # 积压 raw 永不清零 → 显式抬高;issue #68 C 层盘中每 3 分钟采集后,单日新增进一步放大
 # (交易日 ~5.5h / 3min ≈ 110 轮),故再抬到 800 覆盖一日量;token 护栏仍是 ai_daily_token_budget。
-# 日期敏感命令显式 -date $TODAY:quote-collector / market-state / daily-review / reconcile。
+# raw 层转载组回填(issue #83 P-4):把「同一篇稿被多家各落一行」的 raw 文档聚组、定代表,
+# 供展示层回答「哪些渠道报了 + 各自链接」(取 raw 全集,事件层是子集)。判据 = P-1 正文指纹 @0.85。
+# 排在 `worker` **之前**:先回填来源组,worker 抽取后展示层立即可用;与事件聚类(事件层)解耦。
+#
+# ── COMMON(两档都跑:采集 + 抽取 + 合并,让当日早榜/晚榜都有内容)──────────────────
+COMMON_STEPS=(
+  "migrate|migrate"
+  "collector_all|collector -driver all"
+  "cluster_raw_link|cluster-raw-link"
+  "worker|worker -limit 800"
+  "cluster|cluster"
+)
+# ── EOD(仅晚档:当日收盘产物 + 需要 worker 产出的下游)─────────────────────────
+# 公告(issue #50 T4):`collector -driver cninfo-announce` 单独跑巨潮全市场个股公告
+# (~1200 条/日),落 source_type='announcement' / status='collected' ——
+# **不进 LLM 抽取**(worker 只取 status='raw'),也不报对账异常。公告永不入 raw 队列,
+# 顺序不敏感;放 EOD 最前便于阅读。
 # 热榜(issue #68 D 层):常驻 `hot-topic`(compose 服务)已覆盖盘中每 30 分钟;此处**再补一
-# 发收盘后快照**(16:10 放行时跑,one-shot),用途有二:① 留一条稳定的「当日收盘态」记录;
+# 发收盘后快照**(one-shot),用途有二:① 留一条稳定的「当日收盘态」记录;
 # ② 常驻进程若挂了/未起,日管线仍保证每日至少一批。独立表,不接事件链,失败不阻断其余步骤。
+# 日期敏感命令显式 -date $TODAY:quote-collector / market-state / daily-review / reconcile。
 # 自选同步(issue #87):常驻 `watch-sync`(compose 服务)已覆盖 09:00/12:55/18:00;此处**再补
 # 一发 one-shot**(`-once`,slot 记 manual#HH:MM 不去重)。放在 `entity_build` **之后** ——
 # 让三级取名的第①级(本地 entities 查名,零外呼)能命中当日新建的实体,少走同花顺 realhead。
 # 无凭据时本步会 failed(如实,不静默),首次部署须先在 /settings 填 ths_cookie。
-# raw 层转载组回填(issue #83 P-4):把「同一篇稿被多家各落一行」的 raw 文档聚组、定代表,
-# 供展示层回答「哪些渠道报了 + 各自链接」(取 raw 全集,事件层是子集)。判据 = P-1 正文指纹 @0.85。
-# 排在 `worker` **之前**:先回填来源组,worker 抽取后展示层立即可用;与事件聚类(事件层)解耦。
-STEPS=(
-  "migrate|migrate"
-  "collector_all|collector -driver all"
+EOD_STEPS=(
   "collector_announce|collector -driver cninfo-announce"
   "hot_topic|hot-topic"
-  "cluster_raw_link|cluster-raw-link"
-  "worker|worker -limit 800"
-  "cluster|cluster"
   "quote_collector|quote-collector -date $TODAY"
   "entity_build|entity-build"
   "watch_sync|watch-sync -once"
@@ -88,6 +122,8 @@ STEPS=(
   "daily_review|daily-review -date $TODAY"
   "reconcile|reconcile -date $TODAY"
 )
+STEPS=("${COMMON_STEPS[@]}")
+if [ "$STAGE" = late ]; then STEPS+=("${EOD_STEPS[@]}"); fi
 
 # ── ③ 失败分型:按步骤日志尾部粗分,纯 shell 判定,不引 daemon ──────────────────
 #     deterministic / quota → 立即放弃(重试无意义或加重限流);timeout / transient → 退避重试。
@@ -135,7 +171,7 @@ for entry in "${STEPS[@]}"; do
   name="${entry%%|*}"; cmd="${entry#*|}"
   mark="$LEDGER/$name.done"
   if [ -f "$mark" ]; then continue; fi                    # 本步今日已完成 → 跳过
-  failfile="$LOG/pipeline-$TODAY.fail.$name"
+  failfile="$LOG/pipeline-$TODAY-$STAGE.fail.$name"
   fails=$(cat "$failfile" 2>/dev/null || echo 0)
   if [ "$fails" -ge "$MAX_RETRY" ]; then
     echo "== ABANDON $cmd(已放弃:$fails 次失败 ≥ $MAX_RETRY)" >> "$L"
@@ -157,12 +193,12 @@ for entry in "${STEPS[@]}"; do
   rm -f "$OUT_FILE"
 done
 
-# 全链都完成(无失败、无放弃)才落 .done —— 语义与旧版一致:stamp = 「今日已跑完」凭证。
+# 全链都完成(无失败、无放弃)才落 .done —— 语义与旧版一致:stamp = 「本档今日已跑完」凭证。
 if [ "$failed" -eq 0 ] && [ "$abandoned_any" -eq 0 ]; then
-  touch "$LOG/pipeline-$TODAY.done"
-  echo "pipeline done $(date '+%F %T %Z')(本轮跑 $ran 步)" >> "$L"
+  touch "$LOG/pipeline-$TODAY-$STAGE.done"
+  echo "pipeline $STAGE done $(date '+%F %T %Z')(本轮跑 $ran 步)" >> "$L"
 elif [ "$ran" -eq 0 ]; then
   echo "无待跑步骤(已完成/已放弃),等待人工处置" >> "$L"
 else
-  echo "pipeline FAILED/ABANDONED above; will retry pending steps next tick" >> "$L"
+  echo "pipeline $STAGE FAILED/ABANDONED above; will retry pending steps next tick" >> "$L"
 fi

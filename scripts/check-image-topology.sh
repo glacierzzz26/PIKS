@@ -5,7 +5,7 @@
 #   1. 四个 target 都存在,且各自的底座不互相污染:
 #      gateway 无 Go 无 Python;web 无 nginx 无 Python;tools 无 Python;
 #      只有 research 含 Python 运行时与 pip 依赖。
-#   2. tools 只含 12 个管线命令 —— 不该出现 web/research-*/probe
+#   2. tools 只含 13 个管线命令 —— 不该出现 web/research-*/probe
 #      (逐条 COPY 的意义就是让这一点可断言;整目录 COPY 会混入 14 个二进制)。
 #   3. gateway 不含 Go 二进制;web 不含前端 dist 与 nginx(静态文件归 gateway)。
 #   4. 「web 里没有 python3」是本拆分的**存在理由**:2026-09-12 单镜像时期
@@ -65,18 +65,18 @@ if ! section research | grep -q 'pip install'; then
   die "research target 未见 pip install(深研运行时缺依赖)"
 fi
 
-# ── 4. tools 只含 12 个管线命令,不含 web/research-*/probe ────────────────
+# ── 4. tools 只含 13 个管线命令,不含 web/research-*/probe ────────────────
 tools_body="$(section tools)"
 if echo "$tools_body" | grep -qE 'COPY --from=build /out/bin/? /app/bin/?$'; then
-  die "tools 用整目录 COPY /out/bin/ —— 会把 web/research-*/probe 一并塞入(应逐条列 12 个管线命令)"
+  die "tools 用整目录 COPY /out/bin/ —— 会把 web/research-*/probe 一并塞入(应逐条列 13 个管线命令)"
 fi
 for c in web research-run research-worker probe; do
   if echo "$tools_body" | grep -qE "COPY --from=build /out/bin/${c}\b"; then
     die "tools 段混入非管线命令: $c"
   fi
 done
-# 正向:12 个管线命令应一个不少。
-for c in migrate collector hot-topic watch-sync worker cluster cluster-raw-link quote-collector entity-build market-state daily-review reconcile; do
+# 正向:13 个管线命令应一个不少。
+for c in migrate collector hot-topic watch-sync worker cluster cluster-raw-link cleanup quote-collector entity-build market-state daily-review reconcile; do
   if ! echo "$tools_body" | grep -qE "COPY --from=build /out/bin/${c}\b"; then
     die "tools 段缺管线命令: $c"
   fi
@@ -108,6 +108,6 @@ if ! echo "$web_body" | grep -q 'COPY --from=build /out/bin/web'; then
 fi
 
 if [ "$fail" -eq 0 ]; then
-  echo "✓ 镜像拓扑检查通过:gateway(nginx)/ web(纯 Go)/ tools(12 管线命令)/ research(Python)"
+  echo "✓ 镜像拓扑检查通过:gateway(nginx)/ web(纯 Go)/ tools(13 管线命令)/ research(Python)"
 fi
 exit "$fail"

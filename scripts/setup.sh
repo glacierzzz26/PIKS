@@ -14,7 +14,8 @@ C=/home/rguo/piks
 echo "== 1/7 目录 + 传输 compose/脚本"
 ssh "$LAB" "mkdir -p $C/backups $C/logs $C/scripts"
 scp "$REPO/configs/docker-compose.prod.yml" "$LAB:$C/docker-compose.yml"
-scp "$REPO/scripts/pipeline.sh" "$REPO/scripts/backup.sh" "$REPO/scripts/health.sh" "$LAB:$C/scripts/"
+scp "$REPO/scripts/pipeline.sh" "$REPO/scripts/backup.sh" "$REPO/scripts/cleanup.sh" \
+    "$REPO/scripts/health.sh" "$LAB:$C/scripts/"
 ssh "$LAB" "chmod +x $C/scripts/*.sh"
 
 echo "== 2/7 .env(必须已填真实值,无 CHANGE_ME 占位)"
@@ -27,10 +28,19 @@ ssh "$LAB" "mkdir -p ~/.docker/cli-plugins && mv /tmp/docker-compose ~/.docker/c
 echo "== 4/7 四镜像构建 + 按需传输 + 上线(postgres → migrate → web/research → gateway)"
 "$REPO/scripts/deploy.sh"
 
-echo "== 5/7 crontab(幂等追加)"
-CRON_LINE="*/15 * * * * /home/rguo/piks/scripts/pipeline.sh >> /home/rguo/piks/logs/cron.log 2>&1"
-BACKUP_LINE="59 23 * * * /home/rguo/piks/scripts/backup.sh >> /home/rguo/piks/logs/cron.log 2>&1"
-ssh "$LAB" "{ crontab -l 2>/dev/null | grep -v -F '$CRON_LINE' | grep -v -F '$BACKUP_LINE'; echo '$CRON_LINE'; echo '$BACKUP_LINE'; } | crontab -"
+echo "== 5/7 crontab(幂等追加,4 条:early/late/cleanup/backup)"
+# 三档调度(issue #83 P-5):early/late 各给一个 10min-tick 重试窗(脚本内另有档闸门兜底);
+# cleanup 周日 02:00(脚本内再按「距上次成功 ≥28 天」门控,故每周 tick 不等于每周真清)。
+# realtime 档**不在 cron** —— 盘中轮询由常驻 collector 承担(见 pipeline.sh 文件头)。
+CRON_EARLY="*/10 9-11 * * 1-5 /home/rguo/piks/scripts/pipeline.sh early >> /home/rguo/piks/logs/cron.log 2>&1"
+CRON_LATE="*/10 18-22 * * 1-5 /home/rguo/piks/scripts/pipeline.sh late >> /home/rguo/piks/logs/cron.log 2>&1"
+CRON_CLEAN="0 2 * * 7 /home/rguo/piks/scripts/cleanup.sh >> /home/rguo/piks/logs/cron.log 2>&1"
+BACKUP_LINE="59 23 * * 1-5 /home/rguo/piks/scripts/backup.sh >> /home/rguo/piks/logs/cron.log 2>&1"
+# 逐条去重后追加(四条各自 grep -v -F),可反复跑而不堆叠。
+ssh "$LAB" "{ crontab -l 2>/dev/null \
+  | grep -v -F '$CRON_EARLY' | grep -v -F '$CRON_LATE' \
+  | grep -v -F '$CRON_CLEAN' | grep -v -F '$BACKUP_LINE'; \
+  echo '$CRON_EARLY'; echo '$CRON_LATE'; echo '$CRON_CLEAN'; echo '$BACKUP_LINE'; } | crontab -"
 
 echo "== 6/7 时间核对(容器内应为北京时间)"
 ssh "$LAB" "docker compose -f $C/docker-compose.yml run --rm tools date"

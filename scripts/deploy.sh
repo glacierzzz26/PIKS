@@ -225,4 +225,4 @@ echo
 echo "deploy done."
 echo "生产跑栈 ${STACK_TAG}(dev 提交 ${GS}):"
 echo "  gateway ${TAG_GATEWAY} / web ${TAG_WEB} / tools ${TAG_TOOLS} / research ${TAG_RESEARCH}"
-echo "核对:curl -fsS http://${LAB#*@}:8090/api/v1/dashboard"
+echo "核对:curl -fsS http://${LAB#*@}:8090/api/v1/healthz   # 免鉴权存活探针(P12;dashboard 已需登录)"

@@ -43,10 +43,25 @@ export const ENDPOINTS = {
   researchRuns: "/research-runs", // GET ?code=&entity=&limit= | POST {code,profile?,days?}
   researchRun: "/research-runs/:runId", // GET
   stock: "/stock/:code", // GET 个股中心聚合（设计 frontend-ia §2.4）
+  authLogin: "/auth/login", // POST 登录（P12 / issue #78）
+  authLogout: "/auth/logout", // POST 登出
+  authMe: "/auth/me", // GET 登录探活
+  healthz: "/healthz", // GET 存活探针（免鉴权）
 } as const;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(API_BASE + path, init);
+  // credentials: "include" —— 带上会话 cookie(P12 / issue #78)。同源单入口下
+  // cookie 本就随请求走,这里显式声明以防将来跨子域部署时静默丢 cookie。
+  const res = await fetch(API_BASE + path, { credentials: "include", ...init });
+  if (res.status === 401) {
+    // 会话缺失/过期 → 跳登录页并记住来路。用整页跳转(hard navigate)而非 SPA 内
+    // navigate:api 层不持有 router,且登录后回跳最稳。
+    const next = window.location.pathname + window.location.search;
+    if (!next.startsWith("/login")) {
+      window.location.href = `/login?next=${encodeURIComponent(next)}`;
+    }
+    throw new Error("未登录");
+  }
   if (!res.ok) {
     let msg = `API ${res.status}: ${res.statusText}`;
     try {
@@ -105,4 +120,31 @@ export function apiDelete<T>(path: string): Promise<T> {
 /** multipart 上传（截图导入 / AI 对话图片）。FormData 由调用方构造。 */
 export function apiUpload<T>(path: string, form: FormData): Promise<T> {
   return request<T>(path, { method: "POST", body: form });
+}
+
+// ==================== 访问控制（P12 / issue #78）====================
+
+/**
+ * 登录探活：返回是否已登录。**不抛错**（未登录返回 false）—— 供鉴权门首屏调用，
+ * 401 不该被当成异常，也不该触发跳转（门自己决定跳不跳）。
+ */
+export async function fetchAuthed(): Promise<boolean> {
+  try {
+    const res = await fetch(API_BASE + "/auth/me", { credentials: "include" });
+    if (!res.ok) return false;
+    const body = await res.json();
+    return body?.authed === true;
+  } catch {
+    return false;
+  }
+}
+
+/** 登录：成功即落会话 cookie。失败抛「密码错误」等后端文案。 */
+export function apiLogin(password: string): Promise<{ ok: boolean }> {
+  return apiPost("/auth/login", { password });
+}
+
+/** 登出：清会话 cookie（幂等）。 */
+export function apiLogout(): Promise<{ ok: boolean }> {
+  return apiPost("/auth/logout");
 }

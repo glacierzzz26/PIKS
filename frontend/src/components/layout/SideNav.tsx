@@ -1,6 +1,6 @@
 "use client";
 
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState, useCallback } from "react";
 import {
   Sun,
@@ -8,17 +8,29 @@ import {
   Search,
   PanelLeftClose,
   PanelLeftOpen,
+  LogOut,
 } from "lucide-react";
 import { PRIMARY_NAV, NAV_GROUPS, type NavItem } from "./navItems";
+import { apiLogout } from "@/lib/api";
 
 const COLLAPSE_KEY = "piks-nav-collapsed";
 
 /** 侧边导航：今天置顶 + 分组平铺 10 页 + 搜索/主题/折叠，可折叠给宽表格/图谱让宽 */
 export default function SideNav({ onOpenPalette }: { onOpenPalette: () => void }) {
   const { pathname } = useLocation();
+  const nav = useNavigate();
   const [dark, setDark] = useState(false);
   const [today, setToday] = useState("");
   const [collapsed, setCollapsed] = useState(false);
+
+  const onLogout = useCallback(async () => {
+    try {
+      await apiLogout();
+    } catch {
+      /* 登出失败也照样跳登录页:会话已无意义的处理交给 401 门 */
+    }
+    nav("/login", { replace: true });
+  }, [nav]);
 
   useEffect(() => {
     setDark(document.documentElement.getAttribute("data-theme") === "dark");
@@ -114,14 +126,24 @@ export default function SideNav({ onOpenPalette }: { onOpenPalette: () => void }
 
       <div className="side-foot">
         {!collapsed && <span className="side-date num">{today}</span>}
-        <button
-          onClick={toggleCollapse}
-          aria-label={collapsed ? "展开导航" : "折叠导航"}
-          title={collapsed ? "展开导航" : "折叠导航"}
-          className="side-icon-btn"
-        >
-          {collapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={onLogout}
+            aria-label="退出登录"
+            title="退出登录"
+            className="side-icon-btn"
+          >
+            <LogOut size={14} />
+          </button>
+          <button
+            onClick={toggleCollapse}
+            aria-label={collapsed ? "展开导航" : "折叠导航"}
+            title={collapsed ? "展开导航" : "折叠导航"}
+            className="side-icon-btn"
+          >
+            {collapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
+          </button>
+        </div>
       </div>
     </aside>
   );

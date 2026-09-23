@@ -862,6 +862,10 @@ func (s *Server) chatPostAPI(w http.ResponseWriter, r *http.Request) {
 		apiErrJSON(w, http.StatusBadRequest, "AI 未配置:请先到设置页填写服务地址与密钥。")
 		return
 	}
+	// LLM 计费护栏(P12 / issue #78):限流 + 预算。此前 /chat 无任何闸,公网可被无限刷。
+	if !s.llmGuard(w, r) {
+		return
+	}
 
 	attIDs := []string{}
 	var img *ai.ImagePart

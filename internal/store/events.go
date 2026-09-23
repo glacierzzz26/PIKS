@@ -12,8 +12,10 @@ import (
 	"piks/internal/model"
 )
 
+// ⚠️ 逗号后**不得留空格**:events.go 的限定列名靠 strings.ReplaceAll(eventCols, ",", ",e.") 派生。
+// human_verdict 为**人工标记**(issue #83 P-2):只读不写,引擎永不触碰。
 const eventCols = `id,raw_document_id,title,event_type,summary,facts,affected,occurred_at,` +
-	`confidence,status,pipeline_version,source_id,cluster_id,published_at,created_at,updated_at,valid_from,valid_to`
+	`confidence,status,human_verdict,pipeline_version,source_id,cluster_id,published_at,created_at,updated_at,valid_from,valid_to`
 
 func (s *Store) CreateEvent(ctx context.Context, ev *model.Event) (string, error) {
 	facts := emptyToArrayIfScalar(ev.Facts)

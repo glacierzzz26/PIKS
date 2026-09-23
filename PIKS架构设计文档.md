@@ -24,7 +24,7 @@
 > - **`AI → 结构化输出 → 校验` 之外的第二道闸门**:深研引入 Python 独立运行时(`research/`),确定性计算 + Number Lint + Quality Gate 机检,LLM **从不触碰数值**。
 > - **新增个人交易闭环**(2026-08-28):每日自交易截图识别录入 + AI 带引用解读 + 持仓 AI 诊断 + 交易/持仓进周报。
 > - **主体轴泛化(P9)**:研报主体从「个股」扩到 **行业(`sw801010`)/ 宏观(`macro:cn_cpi`)**,三类共用一套版面。
-> - **数据层 schema 已演进至 20 个前向迁移**(`migrations/0001~0020`,增补 `research_runs` / `account_snapshots` / `raw_documents` 多源字段与去重键 / 公告分级 / 热榜 / 聚类扫描水位 / 自选加入价日等),共 23 张表 + 运行时 `schema_migrations` 记账表。
+> - **数据层 schema 已演进至 21 个前向迁移**(`migrations/0001~0021`,增补 `research_runs` / `account_snapshots` / `raw_documents` 多源字段与去重键 / 公告分级 / 热榜 / 聚类扫描水位 / 自选加入价日 / 事件管线 P-2 的 `origin_kind`·`canonical_event_id`·`canonical_id`·`human_verdict` 等),共 23 张表 + 运行时 `schema_migrations` 记账表。
 > - **数据源扩展(epic #43)**:事件类接 **6 个独立机构源**(东财/金十/财联社/新浪/同花顺/富途,`raw_documents.extra` 留上游原字段)+ **公告独立源**(巨潮,`status='collected'` 不进 LLM);公告按**标题规则分级**(issue #68)供前端折叠。
 > - **自选自动同步(issue #87)**:服务器每日 3 次拉同花顺「我的自选」(常驻 `watch-sync` 服务),加入价/日落独立表 `watchlist_entries`;成员资格真源仍为 `entities.status='watch'`。
 

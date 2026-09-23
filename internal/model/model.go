@@ -17,17 +17,23 @@ type Source struct {
 }
 
 type RawDocument struct {
-	ID              string          `db:"id"`
-	SourceID        string          `db:"source_id"`
-	ExternalID      *string         `db:"external_id"`
-	URL             *string         `db:"url"`
-	Title           *string         `db:"title"`
-	Content         string          `db:"content"`
-	ContentHash     string          `db:"content_hash"`
-	PublishedAt     *time.Time      `db:"published_at"`
-	RetrievedAt     time.Time       `db:"retrieved_at"`
-	Status          string          `db:"status"`
-	Grade           *string         `db:"grade"` // 公告分级(issue #68);快讯源为 NULL
+	ID          string     `db:"id"`
+	SourceID    string     `db:"source_id"`
+	ExternalID  *string    `db:"external_id"`
+	URL         *string    `db:"url"`
+	Title       *string    `db:"title"`
+	Content     string     `db:"content"`
+	ContentHash string     `db:"content_hash"`
+	PublishedAt *time.Time `db:"published_at"`
+	RetrievedAt time.Time  `db:"retrieved_at"`
+	Status      string     `db:"status"`
+	Grade       *string    `db:"grade"` // 公告分级(issue #68);快讯源为 NULL
+	// OriginKind 实时/正式分道闸(issue #83 P-2,迁移 0021):pipeline/realtime。
+	// 空值由 store 落 'pipeline'(defaultStr)。worker 与 reconcile 只处理 'pipeline'。
+	OriginKind string `db:"origin_kind"`
+	// CanonicalID raw 层转载组代表行(P-8 用);NULL = 自己是代表。
+	// ⚠️ 本版**全为 NULL**(只建列),P-8 落地前不得基于它实现读路径。
+	CanonicalID     *string         `db:"canonical_id"`
 	PipelineVersion *string         `db:"pipeline_version"`
 	Error           *string         `db:"error"`
 	Extra           json.RawMessage `db:"extra"` // 上游原始字段原样留存(issue #43);缺省 {}
@@ -35,33 +41,39 @@ type RawDocument struct {
 }
 
 type Event struct {
-	ID              string          `db:"id"`
-	RawDocumentID   *string         `db:"raw_document_id"`
-	Title           string          `db:"title"`
-	EventType       string          `db:"event_type"`
-	Summary         *string         `db:"summary"`
-	Facts           json.RawMessage `db:"facts"`
-	Affected        json.RawMessage `db:"affected"`
-	OccurredAt      *time.Time      `db:"occurred_at"`
-	Confidence      float64         `db:"confidence"`
-	Status          string          `db:"status"`
-	PipelineVersion *string         `db:"pipeline_version"`
-	SourceID        *string         `db:"source_id"`
-	ClusterID       *string         `db:"cluster_id"`
-	PublishedAt     *time.Time      `db:"published_at"`
-	CreatedAt       time.Time       `db:"created_at"`
-	UpdatedAt       time.Time       `db:"updated_at"`
-	ValidFrom       *time.Time      `db:"valid_from"`
-	ValidTo         *time.Time      `db:"valid_to"`
+	ID            string          `db:"id"`
+	RawDocumentID *string         `db:"raw_document_id"`
+	Title         string          `db:"title"`
+	EventType     string          `db:"event_type"`
+	Summary       *string         `db:"summary"`
+	Facts         json.RawMessage `db:"facts"`
+	Affected      json.RawMessage `db:"affected"`
+	OccurredAt    *time.Time      `db:"occurred_at"`
+	Confidence    float64         `db:"confidence"`
+	Status        string          `db:"status"`
+	// HumanVerdict 人工标记(issue P4 #7,迁移 0021):**引擎永不触碰**,防幂等重跑冲掉。
+	// NULL = 无人工意见(≠ 否定)。本版只建列,无写入口/无 UI。
+	HumanVerdict    *string    `db:"human_verdict"`
+	PipelineVersion *string    `db:"pipeline_version"`
+	SourceID        *string    `db:"source_id"`
+	ClusterID       *string    `db:"cluster_id"`
+	PublishedAt     *time.Time `db:"published_at"`
+	CreatedAt       time.Time  `db:"created_at"`
+	UpdatedAt       time.Time  `db:"updated_at"`
+	ValidFrom       *time.Time `db:"valid_from"`
+	ValidTo         *time.Time `db:"valid_to"`
 }
 
 // EventCluster 事件簇:同一真实事件的报道集合(迭代 1,设计 D8)。
 type EventCluster struct {
-	ID        string    `db:"id"`
-	Title     string    `db:"title"`
-	Status    string    `db:"status"`
-	CreatedAt time.Time `db:"created_at"`
-	UpdatedAt time.Time `db:"updated_at"`
+	ID     string `db:"id"`
+	Title  string `db:"title"`
+	Status string `db:"status"`
+	// CanonicalEventID 簇的详情入口事件(issue P4 #8,迁移 0021):ApplyClusters 建簇时写入,
+	// reexamine 不重选(冻结)。NULL = 无在产成员。无 FK,消费方须处理缺失。
+	CanonicalEventID *string   `db:"canonical_event_id"`
+	CreatedAt        time.Time `db:"created_at"`
+	UpdatedAt        time.Time `db:"updated_at"`
 }
 
 type Evidence struct {

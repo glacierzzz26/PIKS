@@ -10,17 +10,20 @@ import (
 )
 
 // CreateEventCluster 新建事件簇,返回 id。
+//
+// canonical_event_id(issue #83 P-2)与簇**同一次 INSERT** 落库 —— 不留「建了簇但代表为空」的
+// 中间态。代表选定后**冻结**(issue P4 纪律):reexamine 把别的簇并入本簇时**不重选**。
 func (s *Store) CreateEventCluster(ctx context.Context, c *model.EventCluster) (string, error) {
 	var id string
 	err := s.Pool.QueryRow(ctx,
-		`INSERT INTO event_clusters(title, status) VALUES($1,$2) RETURNING id`,
-		c.Title, defaultStr(c.Status, "active")).Scan(&id)
+		`INSERT INTO event_clusters(title, status, canonical_event_id) VALUES($1,$2,$3) RETURNING id`,
+		c.Title, defaultStr(c.Status, "active"), c.CanonicalEventID).Scan(&id)
 	return id, err
 }
 
 func (s *Store) GetEventClusterByID(ctx context.Context, id string) (model.EventCluster, error) {
 	rows, err := s.Pool.Query(ctx,
-		`SELECT id,title,status,created_at,updated_at FROM event_clusters WHERE id=$1`, id)
+		`SELECT id,title,status,canonical_event_id,created_at,updated_at FROM event_clusters WHERE id=$1`, id)
 	if err != nil {
 		return model.EventCluster{}, err
 	}

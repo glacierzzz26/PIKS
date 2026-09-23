@@ -408,14 +408,23 @@ func UnmatchedIndices(n int, comps [][]int) []int {
 
 // ApplyClusters 建簇入库:canonical = 最早创建(同则更高置信),其余 status='merged'。
 // 返回被合并(merged)事件数。
+//
+// canonical 的**事件 id**(issue #83 P-2)随簇同一次 INSERT 落 `event_clusters.canonical_event_id`
+// —— 它是簇的详情入口(P8 / /events/:id)。选定后**冻结**:reexamine 把别的簇并入本簇时不重选。
 func ApplyClusters(ctx context.Context, s *store.Store, events []model.Event, comps [][]int, verdicts []PairVerdict, pairs [][]int) (int, error) {
 	merged := 0
 	for _, comp := range comps {
 		title := canonicalTitle(events, verdicts, pairs, comp)
-		cid, err := s.CreateEventCluster(ctx, &model.EventCluster{Title: title})
+		canonical := canonicalIndex(events, comp)
+		canonicalID := events[canonical].ID
+		cid, err := s.CreateEventCluster(ctx, &model.EventCluster{
+			Title:            title,
+			CanonicalEventID: &canonicalID,
+		})
 		if err != nil {
 			return merged, fmt.Errorf("create cluster: %w", err)
 		}
+		// 除 canonical 外的分量成员:按同一比较器排序并入(顺序只影响 merged 的写入次序)。
 		sorted := append([]int(nil), comp...)
 		sort.Slice(sorted, func(a, b int) bool {
 			if events[sorted[a]].CreatedAt.Equal(events[sorted[b]].CreatedAt) {
@@ -423,8 +432,10 @@ func ApplyClusters(ctx context.Context, s *store.Store, events []model.Event, co
 			}
 			return events[sorted[a]].CreatedAt.Before(events[sorted[b]].CreatedAt)
 		})
-		canonical := sorted[0]
-		for _, idx := range sorted[1:] {
+		for _, idx := range sorted {
+			if idx == canonical {
+				continue
+			}
 			if err := s.SetEventCluster(ctx, events[idx].ID, cid, "merged"); err != nil {
 				return merged, fmt.Errorf("merge member: %w", err)
 			}
@@ -439,6 +450,28 @@ func ApplyClusters(ctx context.Context, s *store.Store, events []model.Event, co
 		}
 	}
 	return merged, nil
+}
+
+// canonicalIndex 返回分量 comp 内代表(canonical)的下标:最早创建,同则更高置信。
+//
+// 🔴 **与迁移 `0021_event_pipeline_p2.sql` 的回填 SQL 同比较器**
+// (`ORDER BY cluster_id, created_at ASC, confidence DESC`)—— 改这里必须同步改那段 SQL,
+// 否则存量回填与新簇选取口径分叉。单测 `canonical_test.go` 锁死本函数。
+func canonicalIndex(events []model.Event, comp []int) int {
+	best := comp[0]
+	for _, i := range comp[1:] {
+		a, b := events[i], events[best]
+		if a.CreatedAt.Equal(b.CreatedAt) {
+			if a.Confidence > b.Confidence {
+				best = i
+			}
+			continue
+		}
+		if a.CreatedAt.Before(b.CreatedAt) {
+			best = i
+		}
+	}
+	return best
 }
 
 // canonicalTitle 优先取 LLM 确认的规范标题(对端都在该分量内),否则取最早事件标题。

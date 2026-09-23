@@ -12,8 +12,9 @@ import (
 	"piks/internal/model"
 )
 
+// ⚠️ 逗号后**不得留空格**:events.go 的限定列名靠 `strings.ReplaceAll(cols, ",", ",e.")` 派生。
 const rawDocCols = `id,source_id,external_id,url,title,content,content_hash,` +
-	`published_at,retrieved_at,status,grade,pipeline_version,error,extra,created_at`
+	`published_at,retrieved_at,status,grade,origin_kind,canonical_id,pipeline_version,error,extra,created_at`
 
 // InsertRawDocument 幂等插入;命中去重索引时返回 (false, nil)。
 // 注意:ON CONFLICT DO NOTHING 冲突时无错误,须用 RowsAffected()==1 判断是否真插入。
@@ -31,11 +32,12 @@ func (s *Store) InsertRawDocument(ctx context.Context, doc *model.RawDocument) (
 		extra = json.RawMessage(`{}`)
 	}
 	ct, err := s.Pool.Exec(ctx,
-		`INSERT INTO raw_documents(source_id,external_id,url,title,content,content_hash,published_at,status,grade,extra)
-		 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		`INSERT INTO raw_documents(source_id,external_id,url,title,content,content_hash,published_at,status,grade,origin_kind,canonical_id,extra)
+		 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
 		 ON CONFLICT DO NOTHING`,
 		doc.SourceID, doc.ExternalID, doc.URL, doc.Title, doc.Content,
-		doc.ContentHash, doc.PublishedAt, defaultStr(doc.Status, "raw"), doc.Grade, extra)
+		doc.ContentHash, doc.PublishedAt, defaultStr(doc.Status, "raw"), doc.Grade,
+		defaultStr(doc.OriginKind, "pipeline"), doc.CanonicalID, extra)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -51,10 +53,14 @@ func (s *Store) ListRawPending(ctx context.Context, limit int) ([]model.RawDocum
 }
 
 // ListRawPendingStatus 取待处理文档;includeFailed=true 时含 failed(重试场景)。
+//
+// ⚠️ origin_kind='pipeline' 是**契约**(issue #83 P-2):worker 只抽取正式管线采集的文档,
+// 实时层(P-5,origin_kind='realtime')结构上无法被抽进 events。今日无 realtime 行,
+// 该过滤是 no-op,但**不得**因「当前无影响」删掉 —— 它是 P-5 落地后唯一的分道闸。
 func (s *Store) ListRawPendingStatus(ctx context.Context, limit int, includeFailed bool) ([]model.RawDocument, error) {
-	q := `SELECT ` + rawDocCols + ` FROM raw_documents WHERE status='raw'`
+	q := `SELECT ` + rawDocCols + ` FROM raw_documents WHERE status='raw' AND origin_kind='pipeline'`
 	if includeFailed {
-		q = `SELECT ` + rawDocCols + ` FROM raw_documents WHERE status IN ('raw','failed')`
+		q = `SELECT ` + rawDocCols + ` FROM raw_documents WHERE status IN ('raw','failed') AND origin_kind='pipeline'`
 	}
 	q += ` ORDER BY retrieved_at LIMIT $1`
 	rows, err := s.Pool.Query(ctx, q, limit)

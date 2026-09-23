@@ -1,6 +1,8 @@
 package web
 
 import (
+	"bytes"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -57,8 +59,19 @@ func TestTokenSignVerify(t *testing.T) {
 		t.Fatal("有效 token 应通过")
 	}
 
-	// 篡改签名末位 → 验签失败。
-	if st := s.verifyToken(tok[:len(tok)-1] + "X"); st.ok {
+	// 篡改签名 → 验签失败。
+	//
+	// 只改末位字符是不可靠的:签名 32 字节经 RawURLEncoding 编码为 43 字符,末位
+	// 只承载低 4 bit,其余 2 bit 是丢弃的填充位;两个在该 4 bit 上相同的字符解码
+	// 出同一串字节 ⇒ 篡改在字节层面成了 no-op(末位 64 字符中有 4 个与 'X' 同值)。
+	// 故改非末位字符(首字符承载 6 个有效 bit,必然改变解码字节),并先断言
+	// 「解码字节确实变了」,再要求验签失败。
+	sig := tok[strings.IndexByte(tok, '.')+1:]
+	tamperedSig := flipChar(sig, 0)
+	if bytes.Equal(mustB64(sig), mustB64(tamperedSig)) {
+		t.Fatal("篡改未改变签名字节(测试自身失效)")
+	}
+	if st := s.verifyToken(tok[:len(tok)-len(sig)] + tamperedSig); st.ok {
 		t.Error("篡改签名仍通过")
 	}
 	// 换一把密钥 → 验签失败。
@@ -228,4 +241,26 @@ func TestLogoutClearsCookie(t *testing.T) {
 	if !found {
 		t.Error("登出未清会话 cookie")
 	}
+}
+
+// flipChar 把字符串第 i 个字符换成同字母表中的另一个(保持 base64 字母表内、
+// 且非法字符不会混入)。仅测试用。
+func flipChar(s string, i int) string {
+	const alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+	idx := strings.IndexByte(alpha, s[i])
+	if idx < 0 {
+		panic("测试构造非法:待篡改字符不在 base64 字母表内")
+	}
+	b := []byte(s)
+	b[i] = alpha[(idx+1)%64]
+	return string(b)
+}
+
+// mustB64 解码 RawURLEncoding 串;解不开说明测试构造有问题,直接失败。
+func mustB64(s string) []byte {
+	b, err := base64.RawURLEncoding.DecodeString(s)
+	if err != nil {
+		panic("测试构造非法:签名字段不是合法 RawURLEncoding")
+	}
+	return b
 }

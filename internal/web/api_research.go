@@ -168,6 +168,12 @@ func (s *Server) researchRunTrigger(w http.ResponseWriter, r *http.Request) {
 		profile = "complete-stock"
 	}
 
+	// 重活护栏(P12 / issue #78):限流 + 预算。触发即入队跑整条 Python 深研 + LLM 合成,
+	// 此前公网可被任意人反复触发烧钱。挡在入口(建行之前)。
+	if !s.llmGuard(w, r) {
+		return
+	}
+
 	// 触发侧防重(issue #7):同 code+profile 已有「进行中」的 run → 复用它,不落新行。
 	// 同秒双击本由 run_id 的秒级时间戳 + ON CONFLICT 挡住,但隔几秒的重复触发挡不住
 	// (实测 600519 prebuy 15:38:46 与 15:39:39 各落一行)。刷新页面/多标签也走这里。

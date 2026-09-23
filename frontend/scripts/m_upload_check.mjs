@@ -50,8 +50,15 @@ const watchPreview = {
   ],
 };
 
+// P12 访问控制:/m/upload 也在鉴权门内(AuthGate),裸访问会跳 /login 致断言全灭。
+// 用预共享 token(PIKS_AUTH_TOKEN)注入 Authorization 头 —— extraHTTPHeaders 对
+// 页内 fetch 同样生效,故 AuthGate 的 GET /auth/me 会通过。
 const browser = await chromium.launch();
-const ctx = await browser.newContext({ ...devices["iPhone 13"] });
+const AUTH_TOKEN = process.env.PIKS_AUTH_TOKEN || "";
+const ctx = await browser.newContext({
+  ...devices["iPhone 13"],
+  ...(AUTH_TOKEN ? { extraHTTPHeaders: { Authorization: `Bearer ${AUTH_TOKEN}` } } : {}),
+});
 const page = await ctx.newPage();
 const errs = [];
 page.on("pageerror", (e) => errs.push(String(e)));

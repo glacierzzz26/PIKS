@@ -37,6 +37,13 @@ type Config struct {
 	AIModelReasoning   string
 	AIModelVision      string // 截图/视觉模型(5-3 截图识别;空=回退文本模型)
 	AIDailyTokenBudget int64
+
+	// 访问控制(P12 / issue #78)。全部来自环境变量(lab .env,不进 git),
+	// 权威源不是 app_config —— 密钥/口令不能经公网可写的设置页往返。
+	AuthPasswordHash string // bcrypt 哈希(未配置 → web fatal,见 internal/web/auth.go)
+	AuthSecret       string // HMAC 会话签名密钥(未配置 → web fatal)
+	AuthToken        string // 可选预共享长期 token(脚本/部署核对;空 = 该路径关闭)
+	AuthTTLMin       int    // 会话分钟数,默认 60(滑动续期窗口)
 }
 
 func Load() Config {
@@ -44,6 +51,11 @@ func Load() Config {
 		DatabaseURL: getenv("PIKS_DATABASE_URL", "postgres://piks:piks_dev_password@localhost:5433/piks?sslmode=disable"),
 		VaultPath:   getenv("PIKS_VAULT_PATH", ""),       // 迭代 5-2:默认禁用 vault(弃 Obsidian/GitHub)
 		UploadDir:   getenv("PIKS_UPLOAD_DIR", "data/uploads"), // 迭代 5-3:/chat 截图
+
+		AuthPasswordHash: os.Getenv("PIKS_AUTH_PASSWORD_HASH"), // 空 = 未配置(web 拒启动)
+		AuthSecret:       os.Getenv("PIKS_AUTH_SECRET"),
+		AuthToken:        os.Getenv("PIKS_AUTH_TOKEN"),
+		AuthTTLMin:       atoiInt(getenv("PIKS_AUTH_TTL_MIN", "60"), 60),
 	}
 }
 
@@ -89,4 +101,13 @@ func atoi64(s string) int64 {
 		n = n*10 + int64(c-'0')
 	}
 	return n
+}
+
+// atoiInt 解析正整数;非法/非正 → def(用于可调但有安全下限的参数,如 TTL)。
+func atoiInt(s string, def int) int {
+	n := atoi64(s)
+	if n <= 0 {
+		return def
+	}
+	return int(n)
 }

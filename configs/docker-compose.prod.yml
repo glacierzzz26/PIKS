@@ -66,7 +66,10 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8090/api/v1/dashboard || exit 1"]
+      # ⚠️ 必须打**免鉴权**的 /api/v1/healthz(P12 / issue #78):`/api/v1/dashboard` 上了
+      # 鉴权后返回 401 → 本探针恒失败 → web 永远 not healthy → gateway 的
+      # depends_on(service_healthy) 永不满足 → **gateway 起不来,部署挂死**(设计 §4.4)。
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8090/api/v1/healthz || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 5

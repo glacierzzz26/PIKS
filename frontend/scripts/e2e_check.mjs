@@ -1,5 +1,7 @@
 // 前端冒烟(2026-09-14 重写:全站 React SPA,已无 Go HTML 交互页)。
 // 运行:先起 vite dev(:3100,proxy 连真实后端 :8090)→ node scripts/e2e_check.mjs
+//   P12 起后端需登录:导出 PIKS_AUTH_TOKEN=<预共享 token> 以跑全量数据断言(脚本会注入
+//   Authorization 头);不设则只跑壳/导航档(后端已鉴权时数据断言自动跳过,不误报)。
 // 断言分两档,取决于后端是否可达(脚本自动探测):
 //   后端可达: 每页数据加载完成(无「加载中…」)、无降级徽章、无 console 错误
 //   后端不可达: 仅断言 SPA 壳挂载(#root)、无 console 错误 —— 导航/路由回归网仍有效
@@ -55,10 +57,20 @@ function report(page, ok, msg) {
 
 const browser = await chromium.launch({ args: ["--no-sandbox"] });
 
+// P12 访问控制:后端已需登录,裸请求会被 302 到 /login,于是全站页断言会集体误报
+// 「路由回归」。用预共享 token(PIKS_AUTH_TOKEN)注入 Authorization 头绕过登录页。
+// 未设 PIKS_AUTH_TOKEN 时回落到「探测到后端已鉴权则视作不可达」—— 宁可跳过数据断言,
+// 也不把 401 误报成页面回归。
+const AUTH_TOKEN = process.env.PIKS_AUTH_TOKEN || "";
+const ctx = await browser.newContext(
+  AUTH_TOKEN ? { extraHTTPHeaders: { Authorization: `Bearer ${AUTH_TOKEN}` } } : {}
+);
+const newPage = () => ctx.newPage();
+
 // 后端可达性探测:决定断言档位(不可达时不把「加载失败」错报成路由回归)
 let backendUp = false;
 {
-  const p = await browser.newPage();
+  const p = await newPage();
   try {
     const r = await p.goto("http://localhost:8090/api/v1/dashboard", { timeout: 3000 });
     backendUp = !!r && r.ok();
@@ -67,10 +79,13 @@ let backendUp = false;
   }
   await p.close();
 }
+if (!backendUp && !AUTH_TOKEN) {
+  console.log("提示:后端可能已开鉴权(P12)。设 PIKS_AUTH_TOKEN 以跑全量数据断言。\n");
+}
 console.log(backendUp ? "后端 :8090 可达 —— 全量断言\n" : "后端 :8090 不可达 —— 仅壳/导航断言(数据断言跳过)\n");
 
 for (const { path, kind } of PAGES) {
-  const page = await browser.newPage();
+  const page = await newPage();
   const consoleErrors = [];
   page.on("console", (m) => {
     if (m.type() === "error") consoleErrors.push(m.text());
@@ -123,7 +138,7 @@ for (const { path, kind } of PAGES) {
 // 必须断言 tab 条存在 + 点「公告」真的发出 /api/v1/announcements 请求。
 // 曾因 /events 误绑纯列表组件(events.tsx)致 tab 条消失、公告 tab 不可达。
 {
-  const page = await browser.newPage();
+  const page = await newPage();
   const reqs = [];
   page.on("request", (r) => reqs.push(r.url()));
   try {
@@ -158,7 +173,7 @@ for (const { path, kind } of PAGES) {
 //
 // 挂后端 + 有数据才跑；空库/无后端时如实跳过（不把「没样本」误报成回归）。
 if (backendUp) {
-  const page = await browser.newPage();
+  const page = await newPage();
   try {
     await page.goto(BASE + "/events", { waitUntil: "domcontentloaded", timeout: TIMEOUT });
     const hasRows = await page
@@ -242,7 +257,7 @@ if (backendUp) {
 
 // 侧栏导航 11 项：逐项点进，确认渲染 SPA 壳(防导航标签/分组重构断链)
 {
-  const page = await browser.newPage();
+  const page = await newPage();
   try {
     await page.goto(BASE + "/", { waitUntil: "domcontentloaded", timeout: TIMEOUT });
     const links = await page.locator("nav a[href], aside a[href]").evaluateAll((els) =>
@@ -250,7 +265,7 @@ if (backendUp) {
     );
     report("nav", links.length >= 10, `侧栏可点 ${links.length} 项`);
     for (const href of links.slice(0, 14)) {
-      const p = await browser.newPage();
+      const p = await newPage();
       const errs = [];
       p.on("pageerror", (e) => errs.push(String(e)));
       await p.goto(BASE + href, { waitUntil: "domcontentloaded", timeout: TIMEOUT });

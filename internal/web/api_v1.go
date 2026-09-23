@@ -51,6 +51,11 @@ type apiEventItem struct {
 	// EventConflicts 簇内跨源**数值冲突**(issue #49 T3):同一量被报成不同的数。
 	// 仅在真检出冲突时下发;每条带**双方原文**,前端必须两条都显示(禁止静默择一)。
 	EventConflicts []apiEventConflict `json:"event_conflicts,omitempty"`
+	// IndependentCount **独立来源**数(issue #83 P-1):把簇内近逐字的「转载」并成一源后的计数。
+	// 与 SourceCount(机构数)是两件事:同一篇通稿被 3 家原样转发 → SourceCount=3 而
+	// IndependentCount=1。**印证度三级判定(单一来源/多家印证/广泛报道)以本字段为准** ——
+	// 机构数会被转载刷高,只有独立来源数才是「几家在**各自**报」。未聚类事件 = 1。
+	IndependentCount int `json:"independent_count"`
 }
 
 // apiEventConflict 一条跨源数值冲突:什么量、两侧的值、双方原话。
@@ -71,6 +76,9 @@ type apiClusterSource struct {
 	// Origin 上游自带的一级源(金十 extra.source,如「新华社」):「这条快讯转述的是谁」,
 	// 与「我们从哪个机构采到」(Source)是两件事,前端分区展示。
 	Origin string `json:"origin,omitempty"`
+	// Reprint 该来源是否为**转载**(issue #83 P-1):与簇内另一来源的正文近逐字(指纹
+	// Jaccard ≥ 0.85)。仅作如实标注「(转载)」,**不隐藏也不合并显示**(红线「不静默」)。
+	Reprint bool `json:"reprint,omitempty"`
 }
 
 type apiAffected struct {
@@ -580,7 +588,8 @@ func toEventItem(ev store.EventForAPI, idx map[string]nameRef, clusters map[stri
 		Source:     ev.SourceName,
 		SourceURL:  ev.SourceURL,
 		// 未聚类事件确实只有自己那一家 → 1(issue #49)。
-		SourceCount: 1,
+		SourceCount:      1,
+		IndependentCount: 1,
 	}
 	if ev.ClusterID == nil {
 		return out
@@ -590,12 +599,28 @@ func toEventItem(ev store.EventForAPI, idx map[string]nameRef, clusters map[stri
 	if len(srcs) > 0 {
 		out.SourceCount = len(srcs)
 	}
+	// 剥转载(issue #83 P-1):对簇内各机构**代表正文**跑分组,近逐字者并为**一个独立来源**。
+	// 独立来源数 = 组数;逐来源标「(转载)」不隐藏、不合并显示(红线「不静默」)。
+	// 原发锚点 = 本事件(它在簇内即 canonical,见 `ListEventsForAPI` 只发非 merged),
+	// 保证「N 家为转载」与该标记数**恰好对得上**(原发不误标)。
+	// SourceCount 保持机构数不变 —— 它没有错,错的是拿它当印证度用。
+	contents := make([]string, len(srcs))
+	canonicalIdx := -1
+	for i, cs := range srcs {
+		contents[i] = orStr(cs.Content, "")
+		if cs.EventID == ev.ID {
+			canonicalIdx = i
+		}
+	}
+	flags := cluster.ReprintFlags(contents, canonicalIdx)
+	out.IndependentCount = cluster.IndependentCount(contents)
 	// 仅在簇内确有 ≥2 家机构时才挂 cluster_sources —— 单源簇不谎报「多源印证」(issue #48)。
 	if len(srcs) >= 2 {
 		out.ClusterSources = make([]apiClusterSource, 0, len(srcs))
-		for _, cs := range srcs {
+		for i, cs := range srcs {
 			out.ClusterSources = append(out.ClusterSources, apiClusterSource{
 				Source: cs.Source, URL: orStr(cs.URL, ""), Origin: orStr(cs.Origin, ""),
+				Reprint: flags[i],
 			})
 		}
 	}

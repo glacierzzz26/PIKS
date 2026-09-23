@@ -422,6 +422,10 @@ type ClusterSource struct {
 	Source  string  `db:"source"`
 	URL     *string `db:"url"`
 	Origin  *string `db:"origin"`
+	// Content 该机构**代表正文**(去重后优先保留带 url 的那条),供读路径剥转载
+	// (issue #83 P-1:转载 ≠ 独立源,靠簇内正文指纹分组判定)。不直接下发前端,
+	// 仅在 `toEventItem` 内算独立来源数与「(转载)」标记。
+	Content *string `db:"content"`
 }
 
 // ListClusterSources 取若干簇的**全部成员**来源(含 status='merged' 的被并入成员)。
@@ -439,7 +443,7 @@ func (s *Store) ListClusterSources(ctx context.Context, clusterIDs []string) (ma
 	rows, err := s.Pool.Query(ctx, `
 		SELECT DISTINCT ON (e.cluster_id, s.name)
 		       e.id AS event_id, e.cluster_id, s.name AS source, rd.url,
-		       NULLIF(rd.extra->>'source', '') AS origin
+		       NULLIF(rd.extra->>'source', '') AS origin, rd.content
 		FROM events e
 		JOIN sources s ON s.id = e.source_id
 		LEFT JOIN raw_documents rd ON rd.id = e.raw_document_id

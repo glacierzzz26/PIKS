@@ -18,7 +18,7 @@ export default function EventSources({ event }: { event: EventItem }) {
         <SourceLink source={event.source} url={event.source_url} showIcon />
         {/* 单源说明（issue #49 T3）：明说「只有一家在报」，但**不说**它可疑 ——
             独家报道是正常且常见的，这里只陈述事实，判断权交给用户。 */}
-        {event.source_count === 1 && (
+        {(event.independent_count ?? event.source_count) === 1 && (
           <div className="mt-1.5 text-xs leading-relaxed text-faint">
             目前只有这一家机构在报。独家报道很常见，不代表消息不实，只是还没有别家旁证。
           </div>
@@ -26,9 +26,24 @@ export default function EventSources({ event }: { event: EventItem }) {
       </div>
     );
   }
+  // 独立来源数（issue #83 P-1）：把近逐字的转载并成一源后的计数；缺字段（老数据）回落到机构数。
+  const total = srcs.length;
+  const independent = event.independent_count ?? total;
+  // 转载数 = 被归并掉的来源数（机构数 − 独立来源数），用于如实说明「N 家转的是同一篇」。
+  const reprints = total - independent;
   return (
     <div className="text-[13px]">
-      <div className="mb-2 text-faint">{srcs.length} 家媒体报道了同一件事</div>
+      <div className="mb-2 text-faint">
+        {total} 家媒体报道了同一件事
+        {reprints > 0 && (
+          // 诚实标注（issue #83 P-1）：机构数看着多，但其中若干家是**同一篇通稿的转载**，
+          // 独立来源只有这么多 —— 不把转载算成「几家各自在报」。
+          <>
+            {" "}
+            · 其中 {reprints} 家为转载，独立来源 {independent} 家
+          </>
+        )}
+      </div>
       <ul className="m-0 list-none p-0">
         {srcs.map((s, i) => (
           <li
@@ -36,6 +51,10 @@ export default function EventSources({ event }: { event: EventItem }) {
             className="mb-1.5 flex flex-wrap items-baseline gap-2"
           >
             <SourceLink source={s.source} url={s.url} showIcon />
+            {/* 转载标注（issue #83 P-1）：与簇内另一家近逐字，如实标出、**不隐藏也不合并显示**。 */}
+            {s.reprint && (
+              <span className="text-xs text-faint">（转载）</span>
+            )}
             {s.origin && <span className="text-xs text-faint">转自 {s.origin}</span>}
             {!s.url && <span className="text-xs text-faint">（无原文链接）</span>}
           </li>

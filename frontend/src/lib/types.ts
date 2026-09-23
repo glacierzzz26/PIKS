@@ -16,15 +16,23 @@ export type EventItem = {
   /**
    * 簇内各源来源（issue #48 T2）：同一真实事件被 ≥2 家机构报道过时的来源清单。
    * 仅跨源簇下发；单源事件/未聚类事件无此字段（不谎报「多源印证」）。
+   * `reprint`（issue #83 P-1）：该来源与簇内另一来源**近逐字**（转载），如实标注「（转载）」。
    */
-  cluster_sources?: { source: string; url?: string; origin?: string }[];
+  cluster_sources?: { source: string; url?: string; origin?: string; reprint?: boolean }[];
   /**
    * 报道该事件的**机构**数（issue #49 T3），未聚类事件 = 1。
    * 必须看它而非 cluster_sources：后者是 omitempty，单源与未聚类都不下发，
    * 光凭「有没有 cluster_sources」分不清「只有 1 家」和「还没聚类」。
    * ⚠️ 客观计数，不是可信度判断：单一来源 ≠ 消息不实。
+   * ⚠️ 这是**机构数**，会被转载刷高；判印证度三级请看 `independent_count`（issue #83 P-1）。
    */
   source_count?: number;
+  /**
+   * **独立来源**数（issue #83 P-1）：把簇内近逐字的「转载」并成一个来源后的计数。
+   * 与 source_count（机构数）是两件事：同一篇通稿被 3 家原样转发 → 机构数 3、独立来源数 1。
+   * **印证度三级判定（单一来源/多家印证/广泛报道）看它，不看机构数。**
+   */
+  independent_count?: number;
   /**
    * 跨源数值冲突（issue #49 T3）：同一个量被报成不同的数。
    * 带**双方原文**，页面必须两条都显示（禁止静默择一）。

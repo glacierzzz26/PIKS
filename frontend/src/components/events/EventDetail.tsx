@@ -51,8 +51,9 @@ function EventBody({ event }: { event: EventItem }) {
           {event.status === "merged" ? "已被合并" : "已抽取"}
         </Chip>
         {/* 来源维度（issue #49 T3）：与上面的抽取态是**两条正交的轴**。
-            用 dim —— 单源是客观陈述，不是异常（独家报道很常见）。 */}
-        {event.source_count === 1 && (
+            用 dim —— 单源是客观陈述，不是异常（独家报道很常见）。
+            判据取**独立来源数**（issue #83 P-1，把转载并成一源后），非机构数。 */}
+        {(event.independent_count ?? event.source_count) === 1 && (
           <Chip tone="dim">{SINGLE_SOURCE_LABEL}</Chip>
         )}
         <span className="num ml-auto text-xs text-faint">

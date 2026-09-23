@@ -17,7 +17,7 @@ issue 正文 §三 P4 表列了「迁移 8 项」。**勿照字面全做** —�
 | `events.corroboration` | 🔴 **不做** | P-1 已派生 `independent_count`。**持久化会与 `reexamine` 的 `MergeClusters` 漂移** —— 簇成员数一变,印证度就得重算 ⇒ 两处真源 |
 | `event_clusters.canonical_event_id` | ✅ **本迁移新增** | `ApplyClusters` 早已算出 canonical 却**丢弃**,此处持久化 |
 | `raw_documents.origin_kind` | ✅ **本迁移新增** | 给 P-5 实时层立**结构性隔离契约** |
-| `raw_documents.canonical_id` | ✅ **本迁移新增**(只建列) | raw 层转载组代表,**填充属 P-8**,本期无消费端 |
+| `raw_documents.canonical_id` | ✅ **本迁移新增**(只建列) | raw 层转载组代表;**P-4 已回填**(`cmd/cluster-raw-link`)+ 读路径(`ListClusterRawSources`),见 [event-pipeline-p4.md](./event-pipeline-p4.md) §2 |
 | `events.human_verdict` | ✅ **本迁移新增**(只建列) | 人工标记,**引擎永不碰**,本期无 UI |
 
 ## 1. 迁移 `0021_event_pipeline_p2.sql`
@@ -30,7 +30,7 @@ issue 正文 §三 P4 表列了「迁移 8 项」。**勿照字面全做** —�
 |---|---|---|---|---|
 | `origin_kind` | `raw_documents` | `TEXT NOT NULL DEFAULT 'pipeline'` | `pipeline` / `realtime` 分道闸 | worker / reconcile **按 `='pipeline'` 过滤**(P-5 前置契约) |
 | `canonical_event_id` | `event_clusters` | `UUID` | 簇的**详情入口事件** | `ApplyClusters` 写入;存量回填 |
-| `canonical_id` | `raw_documents` | `UUID` | raw 层转载组代表(NULL=自己是代表) | **只建列**,分组填充属 P-8 |
+| `canonical_id` | `raw_documents` | `UUID` | raw 层转载组代表(NULL=自己是代表) | **只建列**(0021);**P-4 已回填** + 读路径,见 [event-pipeline-p4.md](./event-pipeline-p4.md) §2 |
 | `human_verdict` | `events` | `TEXT` | 人工标记 | **只建列**(本期无 UI),引擎永不碰 |
 
 ### 1.1 `origin_kind` 的契约(本迁移只为把门装上,今日无实时行)
@@ -150,8 +150,10 @@ cid, err := s.CreateEventCluster(ctx, &model.EventCluster{
   不同 pair 措辞会发散),见 [event-pipeline-p3.md](./event-pipeline-p3.md) §5。
 - **`canonical_event_id` 的存量回填重算**(P-3):**有意不做**,见 §1.3 与
   [event-pipeline-p3.md](./event-pipeline-p3.md) §4.3。
-- **`canonical_id` 的分组与填充**(P-8):在 P-8 落地前**不得**实现基于本列的读路径
-  (会显示 0 个来源,列全为 NULL)。
+- **`canonical_id` 的分组与填充**(P-8):**P-4 已落地** —— 回填器 `cmd/cluster-raw-link`
+  (纯函数 `internal/cluster/reprint_raw.go`,判据 = P-1 正文指纹 @0.85)+ 读路径
+  `store.ListClusterRawSources`(**必须** `COALESCE(canonical_id, id)`),见
+  [event-pipeline-p4.md](./event-pipeline-p4.md) §2。
 - **`human_verdict` 的写入口 / UI**(P-3/P-4):本版**只建列**,无消费端,**不得**写成已上屏。
 - **`realtime` → `pipeline` 提升**:P-5 的活(见 §1.1)。
 

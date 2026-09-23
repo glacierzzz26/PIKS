@@ -10,6 +10,7 @@ import EventByID from "@/pages/event/[id]";
 import Entities from "@/pages/entities";
 import Graph from "@/pages/graph";
 import Ladder from "@/pages/ladder";
+import Board from "@/pages/board";
 import HotTopics from "@/pages/hotTopics";
 import Messages from "@/pages/messages";
 import Help from "@/pages/help";
@@ -112,6 +113,8 @@ export default function App() {
             <Route path="/entities/:id" element={<EntityRedirect />} />
             <Route path="/graph" element={<Graph />} />
             <Route path="/ladder" element={<Ladder />} />
+            {/* 榜单（issue #83 P-3 接口 / P-4 前端）：早/晚档事件榜，按时间序、不排名。 */}
+            <Route path="/board" element={<Board />} />
             {/* 热榜（issue #68 D 层）：独立数据源 + 独立页，与事件链路零交集。 */}
             <Route path="/hot-topics" element={<HotTopics />} />
             {/* /flashes 旧深链：落到消息页快讯 tab（P6-2 合并，保留路由不断链） */}

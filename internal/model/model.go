@@ -31,8 +31,9 @@ type RawDocument struct {
 	// OriginKind 实时/正式分道闸(issue #83 P-2,迁移 0021):pipeline/realtime。
 	// 空值由 store 落 'pipeline'(defaultStr)。worker 与 reconcile 只处理 'pipeline'。
 	OriginKind string `db:"origin_kind"`
-	// CanonicalID raw 层转载组代表行(P-8 用);NULL = 自己是代表。
-	// ⚠️ 本版**全为 NULL**(只建列),P-8 落地前不得基于它实现读路径。
+	// CanonicalID raw 层转载组代表行(issue #83 P-8,由 P-4 落地);NULL = 自己是代表。
+	// 回填器 = cmd/cluster-raw-link(判据 P-1 正文指纹 @0.85);**代表冻结**:已非 NULL 不重选。
+	// 读路径**必须** COALESCE(canonical_id, id)(未回填时退化为「自己就是代表」,合法)。
 	CanonicalID     *string         `db:"canonical_id"`
 	PipelineVersion *string         `db:"pipeline_version"`
 	Error           *string         `db:"error"`

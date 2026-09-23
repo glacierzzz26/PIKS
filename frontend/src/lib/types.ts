@@ -3,6 +3,14 @@
 export type EventItem = {
   id: string;
   title: string;
+  /**
+   * 簇标题（issue #83 P-4 / P8）：展示单元 = **簇**时，标题取它而非单条事件的 title。
+   * 仅已聚类的多成员簇下发；未聚类/单成员簇无此字段（退化为 `title`）。
+   * `cluster_facts` / `cluster_affected` 同理 —— 是簇内**成员并集**，canonical 单条只是子集。
+   */
+  cluster_title?: string;
+  cluster_facts?: string[];
+  cluster_affected?: { word: string; entity_id?: string; entity_name?: string; code?: string }[];
   event_type: string;
   summary: string;
   facts: string[];
@@ -17,8 +25,17 @@ export type EventItem = {
    * 簇内各源来源（issue #48 T2）：同一真实事件被 ≥2 家机构报道过时的来源清单。
    * 仅跨源簇下发；单源事件/未聚类事件无此字段（不谎报「多源印证」）。
    * `reprint`（issue #83 P-1）：该来源与簇内另一来源**近逐字**（转载），如实标注「（转载）」。
+   * `urls`（issue #83 P-4 / P8）：该机构**全部**原文链接（可能多条）；`url` 保留 = `urls[0]`（兼容旧消费点）。
+   * `canonical`（P-4）：该机构的 raw 层转载组代表行 id；同一代表 = 同一篇稿，可据此判重。
    */
-  cluster_sources?: { source: string; url?: string; origin?: string; reprint?: boolean }[];
+  cluster_sources?: {
+    source: string;
+    url?: string;
+    urls?: string[];
+    origin?: string;
+    reprint?: boolean;
+    canonical?: string;
+  }[];
   /**
    * 报道该事件的**机构**数（issue #49 T3），未聚类事件 = 1。
    * 必须看它而非 cluster_sources：后者是 omitempty，单源与未聚类都不下发，
@@ -755,4 +772,25 @@ export type Watchlist = {
   items: WatchItem[];
   position_date: string; // 全部持仓共用的最新快照日（空 = 无持仓）
   researched: number; // 自选中做过深研的数量（覆盖率）
+};
+
+// ---- 榜单（GET /api/v1/board，issue #83 P-3，设计 event-pipeline-p3.md）----
+
+/** 档位：早盘（前一日 18:30 → 当日 09:15）/ 晚盘（当日 09:15 → 当日 18:30）。两档无缝无重叠。 */
+export type BoardStage = "early" | "late";
+
+/**
+ * 榜单一行 = 事件 + 榜单特有 `score`。
+ * ⚠️ 本版榜单**按时间序**，`score` 带出但**不用于排序**（issue P1 红线「不排名」）；
+ * 印证度三级（单一来源/多家印证/广泛报道）由前端从 `independent_count` 派生。
+ */
+export type BoardItem = EventItem & { score: number };
+
+export type BoardResp = {
+  stage: BoardStage;
+  date: string; // YYYY-MM-DD
+  window_start: string; // RFC3339（含时区）
+  window_end: string;
+  count: number;
+  items: BoardItem[];
 };

@@ -210,6 +210,8 @@ func TestP2CanonicalEventIDBackfill(t *testing.T) {
 	t.Cleanup(pool.Close)
 
 	// 只应用 0001~0020(用临时目录放副本),让 event_clusters 尚无 canonical_event_id。
+	// ⚠️ 0021 及之后一律排除:0021 由下方手工执行;0022 亦依赖 0021 建的列(raw_documents.canonical_id),
+	// 在此阶段会因「列不存在」而失败(P-4 引入)。本测试只关心 0021 的回填,不需要 0022。
 	srcDir := "../../migrations"
 	tmpDir := t.TempDir()
 	entries, err := os.ReadDir(srcDir)
@@ -224,8 +226,8 @@ func TestP2CanonicalEventIDBackfill(t *testing.T) {
 	}
 	sort.Strings(names)
 	for _, n := range names {
-		if strings.HasPrefix(n, "0021") {
-			continue // 留到最后单独执行
+		if strings.HasPrefix(n, "0021") || strings.HasPrefix(n, "0022") {
+			continue // 0021 留到最后单独执行;0022 依赖 0021 的列,本测试不涉及
 		}
 		b, err := os.ReadFile(filepath.Join(srcDir, n))
 		if err != nil {

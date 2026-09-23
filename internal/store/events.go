@@ -476,10 +476,13 @@ func (s *Store) ListClusterSources(ctx context.Context, clusterIDs []string) (ma
 }
 
 // ClusterMember 簇内一个成员的来源归属 + 事实句(issue #49 T3 冲突检测用)。
+// Affected(issue #83 P-4):成员的影响实体**并集**来源 —— 簇合并视图要显示「整个簇涉及什么」,
+// 而 canonical 单个成员的 affected 只是子集。⚠️ 行投影必须同步含 e.affected(RowToStructByName 严格匹配)。
 type ClusterMember struct {
-	EventID string          `db:"event_id"`
-	Source  string          `db:"source"`
-	Facts   json.RawMessage `db:"facts"`
+	EventID  string          `db:"event_id"`
+	Source   string          `db:"source"`
+	Facts    json.RawMessage `db:"facts"`
+	Affected json.RawMessage `db:"affected"`
 }
 
 // ListClusterMembersWithFacts 取若干簇的全部成员的**机构名 + facts**(含 merged 成员)。
@@ -495,7 +498,7 @@ func (s *Store) ListClusterMembersWithFacts(ctx context.Context, clusterIDs []st
 		return nil, nil
 	}
 	rows, err := s.Pool.Query(ctx, `
-		SELECT e.id AS event_id, e.cluster_id, s.name AS source, e.facts
+		SELECT e.id AS event_id, e.cluster_id, s.name AS source, e.facts, e.affected
 		FROM events e
 		JOIN sources s ON s.id = e.source_id
 		WHERE e.cluster_id = ANY($1)
@@ -518,6 +521,112 @@ func (s *Store) ListClusterMembersWithFacts(ctx context.Context, clusterIDs []st
 		out[r.ClusterID] = append(out[r.ClusterID], r.ClusterMember)
 	}
 	return out, nil
+}
+
+// ClusterRawSource 簇的一个 raw 层来源(issue #83 P-4 / P8)。
+//
+// 与 `ClusterSource` 的区别(为何 P-4 新增而非改老的):
+//   - `ClusterSource` 走**事件层**:每机构一条(去重)、取该机构代表 url/正文。事件层是 raw 层的**子集**
+//     —— 某家报了但没被抽出事件时,它根本不在这里。
+//   - `ClusterRawSource` 走 **raw 层全集**:簇内成员的 raw 行 → 其转载组代表(`COALESCE(canonical_id,id)`)
+//     → 该代表名下**全部** raw 行。于是「同一篇稿被 5 家转发」这里能列出 5 家各自 url,
+//     即便其中某家没抽成事件。这是 P8 红线「链接取 raw 层全集」的落地点。
+//
+// 每行 = 一条 raw 文档(同机构可多行,不合并);「该机构计一票」由调用方按 Source 去重满足。
+type ClusterRawSource struct {
+	Source string  `db:"source"` // 机构名
+	URL    *string `db:"url"`    // 该机构这条 raw 的原文链接;NULL = 该源无外链(绝不造链接)
+	// Origin 上游自带的一级源名(金十/同花顺 extra.source,如「新华社」):「这条转述的是谁」。
+	// ⚠️ 与 URL 的配对**不保证同机构** —— 金十的 url 就是一级源的链接(见 collector/jin10.go),
+	// 故前端须把「渠道名」与「一级源名」分区展示,不得把一级源链接挂在渠道名下。
+	Origin *string `db:"origin"`
+	// IsRep 本行是否为其转载组的**代表行**(rd.id == COALESCE(canonical_id,id))。
+	// 代表行不计入「转载」;非代表行 = 转载(issue #83 P-1 判据的 raw 层快照)。
+	// ⚠️ 未回填 canonical_id 时**每行都是代表**(IsRep 恒 true)⇒ 无转载标记 —— 合法退化。
+	IsRep bool `db:"is_rep"`
+	// Canonical 该行的转载组代表 id(COALESCE(canonical_id,id)):同组行共享此值,前端可归并显示。
+	Canonical string `db:"canonical"`
+}
+
+// ListClusterRawSources 取若干簇的 **raw 层全集**来源(issue #83 P-4 / P8)。
+//
+// 取法(候选集 = 簇内事件指向的 raw 行的**转载组代表**):
+//
+//	member_raw:      events(该簇) JOIN raw_documents → 各成员 raw 行
+//	reps:            member_raw 的 COALESCE(canonical_id, id) —— 去重后的代表集合
+//	最终行:          与 reps 同组的**全部** raw_documents(不限成员、不限事件)
+//
+// 🔴 为何用 reps 而非直接 member_raw:同一篇稿被 5 家转发,只有 2 家抽出了事件;
+// 直接取 member_raw 只见 2 家,取代表同组全集才见 5 家 —— 正是 P8 要修的那个「展示层回退到一家」。
+//
+// ⚠️ 依赖 `cmd/cluster-raw-link` 的回填(canonical_id);未回填时 COALESCE 退化为「自己就是代表」,
+// 结果 = 事件层可见的那几家的 raw 行(**合法退化**,不报错、不为 0)。
+// ⚠️ 只取 `origin_kind='pipeline'`:实时层(P-5)不进正式展示来源(与 P-2 门控同旨)。
+func (s *Store) ListClusterRawSources(ctx context.Context, clusterIDs []string) (map[string][]ClusterRawSource, error) {
+	if len(clusterIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := s.Pool.Query(ctx, `
+		WITH member_raw AS (
+			SELECT e.cluster_id, COALESCE(rd.canonical_id, rd.id) AS rep_id
+			FROM events e
+			JOIN raw_documents rd ON rd.id = e.raw_document_id
+			WHERE e.cluster_id = ANY($1) AND rd.origin_kind = 'pipeline'
+			GROUP BY e.cluster_id, COALESCE(rd.canonical_id, rd.id)
+		)
+		SELECT
+			mr.cluster_id,
+			s.name AS source,
+			rd.url,
+			NULLIF(rd.extra->>'source', '') AS origin,
+			rd.id = COALESCE(rd.canonical_id, rd.id) AS is_rep,
+			COALESCE(rd.canonical_id, rd.id)::text AS canonical
+		FROM member_raw mr
+		JOIN raw_documents rd ON COALESCE(rd.canonical_id, rd.id) = mr.rep_id
+		JOIN sources s ON s.id = rd.source_id
+		WHERE rd.origin_kind = 'pipeline'
+		ORDER BY mr.cluster_id, s.name, (rd.url IS NULL), rd.created_at, rd.id`, clusterIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type row struct {
+		ClusterRawSource
+		ClusterID string `db:"cluster_id"`
+	}
+	rs, err := pgx.CollectRows(rows, pgx.RowToStructByName[row])
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string][]ClusterRawSource, len(clusterIDs))
+	for _, r := range rs {
+		out[r.ClusterID] = append(out[r.ClusterID], r.ClusterRawSource)
+	}
+	return out, nil
+}
+
+// ListClusterTitles 取若干簇的标题(id → title)。簇标题是 P8 的「展示单元标题」(issue P8 第 1 条):
+// 抽屉里应显示簇级标题,而非某个成员事件的标题。无此字段的簇不返回。
+func (s *Store) ListClusterTitles(ctx context.Context, clusterIDs []string) (map[string]string, error) {
+	if len(clusterIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := s.Pool.Query(ctx,
+		`SELECT id, title FROM event_clusters WHERE id = ANY($1)`, clusterIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]string, len(clusterIDs))
+	for rows.Next() {
+		var id, title string
+		if err := rows.Scan(&id, &title); err != nil {
+			return nil, err
+		}
+		out[id] = title
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) SetEventCluster(ctx context.Context, eventID, clusterID, status string) error {

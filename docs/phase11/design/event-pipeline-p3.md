@@ -140,8 +140,11 @@ score = Σ wᵢ · normᵢ(信号ᵢ),   normᵢ = sigᵢ / maxᵢ(窗口内最�
 
 - **三档调度 + flock + crontab**(P-5):`scripts/pipeline.sh` 仍是单日锁。
 - **实时层 `origin_kind='realtime'` + 提升**(P-5)。
-- **展示单元 / 簇合并视图 UI**(P-4):本期**无前端消费端**,`/api/v1/board` 仅后端就绪。
-- **`canonical_id` 的 raw 层分组填充**(P-8)。
+- **展示单元 / 簇合并视图 UI**(P-4):**P-4 已落地** —— 新榜单页 `/board` + 详情抽屉簇视图
+  (`cluster_title` / `cluster_facts` / `cluster_affected`)+ 来源按机构分组,见
+  [event-pipeline-p4.md](./event-pipeline-p4.md) §1/§4。
+- **`canonical_id` 的 raw 层分组填充**(P-8):**P-4 已落地** —— `cmd/cluster-raw-link` +
+  `store.ListClusterRawSources`,见 [event-pipeline-p4.md](./event-pipeline-p4.md) §2。
 - **`human_verdict` 写入口 / UI**(P-3/P-4 尚未定义取值域)。
 - **时间衰减**(早盘 14.75h 窗口稀释):issue 待决项,归一化接口**已留位置**。
 - **实体 / 自选信号权重**:本版 `w=0`,接口先立。

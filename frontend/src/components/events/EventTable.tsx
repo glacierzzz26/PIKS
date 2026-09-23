@@ -42,7 +42,8 @@ export default function EventTable({
           <tr key={e.id} className="cursor-pointer" onClick={() => onSelect(e)}>
             <td>
               <div className="ev-title">
-                <b>{e.title}</b>
+                {/* 展示单元 = 簇（issue #83 P-4 / P8）：有簇标题就用它，否则本事件标题。 */}
+                <b>{e.cluster_title || e.title}</b>
                 <span className="meta">
                   来源：<SourceLink source={e.source} url={e.source_url} />
                   {/* 印证度三级（issue #83 P-1）：判据是**独立来源数**（把近逐字转载并成一源后），

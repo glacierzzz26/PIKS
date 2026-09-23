@@ -65,6 +65,12 @@
 
 
 
+## 事件管线 P-4:展示单元(P8)+ 成本粗筛(P7)(issue #83 P-4)✅ 已实现(dev-only)
+
+| 文档 | 状态 | 日期 | 备注 |
+|---|---|---|---|
+| [event-pipeline-p4.md](./event-pipeline-p4.md) | ✅ **已实现**(dev-only) | 2026-09-23 | issue **#83** 分期 **P-4**(收口;依赖 P-1/P-2/P-3)。**整条 epic 第一次变成用户可见的东西**。**P8 展示单元 = 簇**:① 标题取 `event_clusters.title` → `cluster_title`;② 内容 = 簇内**各成员** facts/affected **并集**(`cluster_facts`/`cluster_affected`,字面去重**不做模糊归并**——分歧留给 `event_conflicts`);③ 来源列表**按机构分组** + 每机构**全部** URL(`urls[]`)+ 无 URL 如实写「该源无外链」+ 金十一级源链接**归属一级源**。🔴 **来源走 raw 层全集**(补上「报了这篇稿但**未被抽成事件**」的机构;`raw_documents.canonical_id` 分组回填 = 迁移 **`0022`** 索引 + 新命令 **`cmd/cluster-raw-link`**(第 **12** 个管线命令,判据**复用** P-1 正文指纹 @0.85、代表**冻结**只写 NULL)+ 读路径 `ListClusterRawSources`(**必须** `COALESCE(canonical_id,id)`,合法退化)。🔴 **计数与转载标记仍走事件层**(P-1 实时指纹=真源;raw 层是回填快照,可能漂移)→「宁可多列一个机构,不可多算一票」。**P7 成本粗筛**:`internal/extract/gate.go`(必送→分级→阅读数→时间),落 `status='deferred'`(**≠ failed**:正常分流**不进对账**)+ `task_runs.meta` 记账;🔴 **默认保守**(`-coarse-defer` 默认 false ⇒ 只排序不筛)。前端:新页 `/board`(早/晚档写 URL、**不排名**、显式标注「无热度排序」)+ 抽屉簇视图 + 导航「发现」组 **13→14 项**。**三处 issue 事实前提更正**(raw 层收益今日零实例 / 预算静默降级已关 / 金十无自有 URL)。**一个迁移、零新表、零 LLM 增量**。**未上生产**。 |
+
 ## 阶段序列(epic #43)
 
 | 任务卡 | 内容 | 状态 | 落地 |
@@ -77,14 +83,15 @@
 ## 阶段序列(epic #83:事件管线与展示)
 
 > issue **#83** 是**分期 epic**,按「采集 → 预去重 → 剥转载 → 同事件合并 → 印证分级 → 窗口 → 展示」
-> 顺序推进。**P-1 与 P-2 均 dev-only、未上生产**;epic **保持 OPEN**。
+> 顺序推进。**P-1 ~ P-4 均 dev-only、未上生产**;epic **保持 OPEN**。
 
 | 分期 | 内容 | 状态 | 落地 |
 |---|---|---|---|
 | **P-1** 剥转载(转载 ≠ 独立源) | 读路径派生 `independent_count`/`reprint`,零 schema | ✅ 已实现并合入 dev | [reprint-stripping.md](./reprint-stripping.md) / PR #92(merge `7ff4da8`) |
 | **P-2** 数据面地基(迁移补列) | 迁移 `0021` 四列 + `origin_kind` 门控 + `canonical_event_id` 回填 | ✅ 已实现(dev-only) | [event-pipeline-p2.md](./event-pipeline-p2.md) |
 | **P-3** 早/晚档窗口(P1)+ 簇内代表选取(P6) | 窗口/打分纯函数 + `GET /api/v1/board` + 新代表规则 + 无 LLM 标题 | ✅ 已实现(dev-only) | [event-pipeline-p3.md](./event-pipeline-p3.md) |
-| P-4 ~ P-8 | 展示单元(簇合并视图)/ 实时层 / 调度 / 成本粗筛 等 | ⬜ 未开始 | 见 `event-pipeline-p3.md` §7 |
+| **P-4** 展示单元(P8)+ 成本粗筛(P7) | raw 层全集来源(迁移 `0022` + `cmd/cluster-raw-link`)+ 簇合并视图 + 榜单页 + 粗筛 | ✅ 已实现(dev-only) | [event-pipeline-p4.md](./event-pipeline-p4.md) |
+| P-5 ~ P-8 | 实时层 / 调度(三档 + flock) / 其余收口 | ⬜ 未开始 | 见 `event-pipeline-p3.md` §7 / `event-pipeline-p4.md` §7 |
 
 ## 前序阶段
 

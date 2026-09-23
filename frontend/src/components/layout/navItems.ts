@@ -6,7 +6,8 @@
  * 隐藏管线内部：实体库 /graph 与图谱 /entities **移出侧栏**（路由保留，并入设置页
  *   「数据与运维」卡；⌘K 仍经 /entities 做实体名→个股跳转）；快讯 /flashes 并为
  *   「消息」页的一个 tab，不再占侧栏位。
- * 2026-09-22 issue #68 D 层：新增「热榜」(/hot-topics) 入「发现」组 —— 共 13 项。
+ * 2026-09-22 issue #68 D 层：新增「热榜」(/hot-topics) 入「发现」组。
+ * 2026-09-23 issue #83 P-4：新增「榜单」(/board，早/晚档事件榜) 入「发现」组 —— 共 14 项。
  */
 import type { LucideIcon } from "lucide-react";
 import {
@@ -23,6 +24,7 @@ import {
   Microscope,
   BookOpen,
   Flame,
+  Clock,
 } from "lucide-react";
 
 export type NavItem = { href: string; label: string; icon: LucideIcon };
@@ -39,6 +41,9 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     title: "发现",
     items: [
+      // 榜单（issue #83 P-4）：早/晚档事件榜，按时间序、只有印证度标签 —— **不排名**。
+      // 放「发现」组首位，紧邻「消息」，语义即「这个时段有什么值得看」。
+      { href: "/board", label: "榜单", icon: Clock },
       { href: "/market", label: "市场概况", icon: LayoutDashboard },
       { href: "/ladder", label: "涨停股", icon: TrendingUp },
       { href: "/events", label: "消息", icon: Newspaper },

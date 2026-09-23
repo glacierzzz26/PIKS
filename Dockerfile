@@ -108,7 +108,7 @@ EXPOSE 8090
 CMD ["/app/bin/web", "-listen", "0.0.0.0:8090"]
 
 # ============================================================================
-# tools:11 个批处理管线命令 + 运行时文件资源。compose run --rm 跑一次即退,非常驻。
+# tools:12 个批处理管线命令 + 运行时文件资源。compose run --rm 跑一次即退,非常驻。
 # (watch-sync 常驻但复用本镜像 —— 常驻只体现在 compose 的 command/restart。)
 # ============================================================================
 FROM alpine:3.20 AS tools
@@ -128,7 +128,7 @@ WORKDIR /app
 # 运行时文件资源(migrate 读 migrations/、worker 读 prompts/extract.md),均相对 /app。
 COPY migrations/ /app/migrations
 COPY prompts/ /app/prompts
-# ⚠️ 逐条列出 11 个管线命令,**不用 `COPY --from=build /out/bin/ /app/bin/`**:
+# ⚠️ 逐条列出 12 个管线命令,**不用 `COPY --from=build /out/bin/ /app/bin/`**:
 # /out/bin/ 含全部 15 个二进制(每个 ~10MB,静态链接各自带一份公共库),整目录复制会把
 # web / research-run / research-worker / probe 也塞进 tools —— 既白占体积,又让
 # `run --rm tools ./bin/web` 这类误用成为可能。逐条列 = 内容显式可审计,拓扑检查可断言。
@@ -139,6 +139,7 @@ COPY --from=build /out/bin/hot-topic      /app/bin/hot-topic
 COPY --from=build /out/bin/watch-sync     /app/bin/watch-sync
 COPY --from=build /out/bin/worker         /app/bin/worker
 COPY --from=build /out/bin/cluster        /app/bin/cluster
+COPY --from=build /out/bin/cluster-raw-link /app/bin/cluster-raw-link
 COPY --from=build /out/bin/quote-collector /app/bin/quote-collector
 COPY --from=build /out/bin/entity-build   /app/bin/entity-build
 COPY --from=build /out/bin/market-state   /app/bin/market-state

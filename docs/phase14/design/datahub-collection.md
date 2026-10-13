@@ -1,9 +1,11 @@
-# PIKS 采集收口：全部数据交给 datahub（phase14 · 草案 v0.1）
+# PIKS 采集收口：全部数据交给 datahub（phase14 · 草案 v0.2）
 
-> **状态：草案，未定稿。** 定稿门通过前不写任何业务代码。
+> **状态：草案 v0.2，未定稿（§9 子决策已全部敲定，见 §0 D7–D13）。** 定稿门通过前不写任何业务代码。
 > 本文回答一个问题：把 PIKS 现在自己干的**全部采集**迁入独立取数服务 **datahub**、PIKS 退化为**纯消费方**（需要数据一律调 datahub 的 HTTP/MCP），应该长什么样、分几步走。
 >
 > **一句话**：datahub = 生态里**唯一的数据采集 + 存储 + 供数**方（服务 steady **与** PIKS）；PIKS = **派生 + 展示 + 用户自有数据**方，不再直连任何外部数据源。
+>
+> **v0.2 变更（2026-10-13）**：§9 的 7 个未决问题**逐个敲定**（D7–D13）：原文存亡走 **A**（可丢弃镜像）、游标用 **seq**、拓扑 **同宿主无 TLS**、研报取数 **全迁分期**、保留期 **R3 归档式**、phase13 **P14-1 兼任 P13-1**、存量 **回填**。
 
 ---
 
@@ -17,6 +19,20 @@
 | D4 | 出口形态 | **HTTP 为主契约 + MCP 薄门面** | 沿用 datahub 现状（两出口共享 `service.get_dataset`） |
 | D5 | 迁移形态 | **拒绝 big-bang** | 逐数据集**闸门灰度 + 对账 + 可单步回滚**（对齐 steady datahub Phase 2/3） |
 | D6 | 交付 | **只出设计，暂不实现** | 定稿门通过前不动代码 |
+
+**子决策（v0.2 逐个敲定，对应 §9）**
+
+| # | 决策 | 选择 | 落点 |
+|---|---|---|---|
+| D7 | **`raw_documents` 存亡** | **A：datahub 权威 + PIKS「可丢弃工作镜像」** | §4.3、§4.4 |
+| D8 | **`stream` 游标形态** | **`seq BIGSERIAL`**（提交序单调；拒时间窗） | §3.1 |
+| D9 | **部署拓扑 / TLS** | **同宿主 + docker 共享网络，无 TLS** | §7 |
+| D10 | **研报取数** | **目标全迁、分期**（先迁 datahub 原生更强的行情/财务/估值） | §4.5、§6 |
+| D11 | **保留期清理** | **R3 归档式**（datahub 侧保守归档；精细判据留 PIKS 镜像） | §3.5、§8 |
+| D12 | **与 phase13 合流** | **P14-1 兼任 P13-1**（合流是构造出来的） | §2.3 |
+| D13 | **存量原文回填** | **回填**（跨实例 `pg_dump\|psql`，幂等） | §6 |
+
+D7 的实质：**"权威"= 谁拥有/维护原文**，非"本地不能有副本"。A 下 datahub 拥有采集/存储/保留期；PIKS 镜像是**纯派生、可 `TRUNCATE` 重建**的工作集，不承担维护责任——与 steady §5.3「本地只读缓存非权威副本」同理念，只是升级为"可重建镜像"。
 
 **非目标（明确不做）**
 - ❌ 不迁**自选**（`cmd/watch-sync` / `ths_*` 凭据 / `entities.status` 写入链路）。
@@ -81,9 +97,11 @@
 | 依赖方向 | datahub ⇢ 外部源；**不依赖 PIKS/steady** | PIKS → datahub（**单向**） |
 | 外网 | **唯一出口** | **零外网**（除 LLM 网关 + 自选同花顺） |
 
-### 2.3 与 phase13 的关系（顺带交付）
+### 2.3 与 phase13 的关系（顺带交付 · D12）
 
 phase13「STEADY 经 MCP 接入（唯一）」的 `McpProvider`，其**服务端就是 datahub 的 MCP 出口**。本方案把 datahub 的**数据集目录扩到覆盖研究所需**（行情/财务/**估值分位**/资金流/行业/宏观，§3.4）后，phase13 的数据底座（P13-1）**即由 datahub 提供**——两阶段在此合流，不再重复造接入层。
+
+🔴 **D12：不专门"一次做全"，让 **P14-1 兼任 P13-1**。** P14-1（研报数值域）首批补的**行情/财务/估值**正是 phase13 的核心缺口（估值历史分位，akshare 拿不到）；做完 P14-1，phase13 的 `McpProvider` 直接有数。资金流/宏观等**随 phase13 各分析师按需增量加**，不提前造用不上的数据集。datahub 数据集**机械同时出 HTTP + MCP**，`McpProvider` 复用而不另造。
 
 ---
 
@@ -102,13 +120,13 @@ DatasetKind = Literal["external", "raw", "stream"]   # 新增 stream
 ```
 
 **`stream` 语义**（新）：
-- **游标增量**：`since`（seq 或时间）→ 只返回**新到达**的行；**幂等**（每行 id 稳定）。
+- **游标增量**：`since` = **`seq`（单调到达序）** → 只返回 `seq > since` 的**新到达**行；**幂等**（每行 id/seq 稳定，消费方按 `datahub_id` 去重）。
 - **不缓存**（本地库权威，同 `raw`）。
 - **空结果合法**（无新行 = 正常，不转 503，同 `raw`）。
-- **冻结列契约**：`id, source, external_id, url, title, content, content_hash, published_at, retrieved_at, extra(jsonb), grade`。
+- **冻结列契约**：`id, seq, source, external_id, url, title, content, content_hash, published_at, retrieved_at, extra(jsonb), grade`。
 - **发布语义进契约**：`status` 由 PIKS 派生侧维护（§4.3），datahub 只保证"原文 + 到达时刻"。
 
-> **游标形态（未决 §9）**：`seq BIGSERIAL`（严格到达序，推荐）vs `retrieved_at` 时间窗（有并发乱序风险）。
+> 🔴 **D8：游标 = `seq BIGSERIAL`（决定）**，拒用 `retrieved_at` 时间窗。理由：时间窗有**并发乱序漏读**——两行可能 `retrieved_at=T` 与 `T+ε`，但 `T` 行**晚提交**，时间窗一旦跨过就再捞不回；`seq` 由 DB 序列在**提交序**上单调，天然无此洞，且**免时钟依赖**。初始水位 = 回填时取 `MAX(seq)`；清理删行留 **seq 洞无害**（游标只前进）；`limit` 分页。
 
 ### 3.2 新增采集器（从 PIKS Go **移植**到 datahub Python）
 
@@ -140,9 +158,16 @@ DatasetKind = Literal["external", "raw", "stream"]   # 新增 stream
 复用 datahub **已有** raw 数据集（`daily_price`/`daily_valuation`/`financial_indicator`），**新增**：
 `capital_flow`（龙虎榜/北向/两融）、`industry_index`（申万指数日线）、`industry_members`（已有）、`macro`（CPI/PPI/M2/GDP）、`news_by_stock`（个股新闻）、`announcement_by_stock`——**列照 research 现用 akshare 输出冻结**，各数据集**自动同时出现在 HTTP 与 MCP**（datahub 机械生成）。
 
-### 3.5 保留期清理迁 datahub
+### 3.5 保留期清理（D11 · R3 归档式）
 
-`cmd/cleanup`（issue #83 P-5：只清「到期 + 无消费引用 + 非转载组代表」）的判据搬到 datahub 侧（datahub 是原文权威，自然也是保留期的所有者）；PIKS 侧该命令退役。
+现有判据 `cleanupWhere`（issue #83 P-5）= 到期 **AND** `NOT EXISTS events.raw_document_id` **AND** `NOT EXISTS r2.canonical_id=rd.id`——**后两个否定条件都是 PIKS 派生事实**（events、转载组代表），**datahub 都不知道**。硬塞给 datahub 就要新增回写通道，破 datahub「对外只读」护栏（§8#5）。
+
+🔴 **D11 决定：走 R3「归档式」**——
+- **datahub 侧**：原文**保守归档**（默认长期/永久保留；如需上限，用一个**很长的安全窗口**，如 180 天，覆盖任何可能的派生引用窗口）——**不搬运精细判据**。
+- **PIKS 侧**：现有 `cmd/cleanup` + `cleanupWhere` **原样作用于镜像**（`datahub_id` 关联），红线「已抽取永久保留」**不动**。
+- 理由：① 判据天然属于 PIKS；② 原文归档是资产（event 溯源/重抽取/印证都要历史），存储 0.23GB/年（公告）+ 快讯同量级，数年不过 GB；③ issue #83 P-5 的「28 天」本意是**给盘中高频采集止血**，那个"血"其实在 **PIKS 镜像**上。
+
+> **不采纳** R1（PIKS 回报式：新增回写通道）与 R2（PIKS 驱动 datahub admin 删除：开写端点）——二者都把判据/写权限散到两处，破单一真源纪律。**留作将来升级项**（若 datahub 原文增长需精细清理，再上 R2）。
 
 ---
 
@@ -162,26 +187,31 @@ DatasetKind = Literal["external", "raw", "stream"]   # 新增 stream
 
 D2 定了"原文权威归 datahub"，但 PIKS 的**派生链**（`worker` 必须读 `content` 抽取、按 `status` 记账、`events` 外键引用、`reconcile`/`cleanup`/前端抽屉/`cluster_sources` 全读硬连）注定还要**读**原文。两条路线：
 
-**子方案 A（推荐）：datahub 权威 + PIKS 保留「可丢弃工作镜像」**
+**子方案 A（D7 决定）：datahub 权威 + PIKS 保留「可丢弃工作镜像」**
 - datahub 是**唯一真源**（采集在此、保留期在此、对外供数在此）；
 - PIKS 侧 `raw_documents` **重新定位为"派生工作集"（read-mirror）**——由"拉取步"从 datahub **增量同步**而来，**显式非权威、可整表重建**（`datahub_id` 为业务键）。
 - **派生链几乎不动**（worker/cluster/reconcile/抽屉照旧读本地），**改动面最小、风险最低**；代价 = 原文在 datahub 与 PIKS 各存一份（存储翻倍，但原文量级小：~180 快讯/日 + ~1200 公告/日）。
 - 与 D2 的关系：**"镜像"不是第二真源**——它可随时 `TRUNCATE` 重建，datahub 侧才是权威；这等价于 datahub 的"读闸门关"本地副本（steady §5.3 同款缓存理念）。
 
-**子方案 B（纯零副本，改动大）**
+**子方案 B（纯零副本，改动大 · 不采纳）**
 - PIKS **完全不留** `raw_documents`：`events.raw_document_id` 改为**逻辑引用** datahub id（**去 FK**，迁移）；`worker` 按"未抽取游标"**按需向 datahub 拉**原文；`reconcile`/抽屉/`cluster_sources` 全部改为**读 datahub**（经 web 代理）。
 - 更纯粹、真正单一真源；代价 = **整个派生读路径改走跨系统调用**、`cleanup`/`reconcile` 语义重写、读延迟上升、datahub 成前端展示硬依赖。
 
-> **本方案默认走 A**（在 §9 列为待定，供定稿门拍板）。理由：D2 的实质是"**datahub 负责维护**数据"，A 完全满足（镜像无维护责任），且把跨系统改造压到最小——与 D5「拒绝 big-bang」一致。
+> 🔴 **D7 决定：走 A。** 理由：D2 的实质是"**datahub 负责维护**数据"，A 完全满足（镜像无维护责任），且把跨系统改造压到最小——与 D5「拒绝 big-bang」一致。B 留作将来"极致单一真源"的演进项，本阶段不做。
 
-### 4.4 `events.raw_document_id`
+### 4.4 `events.raw_document_id`（D7 = A）
 
-- 方案 A：仍指向**本地镜像** `raw_documents(id)`（FK 不变，迁移 0）；镜像行携带 `datahub_id` 供回溯。
-- 方案 B：去 FK，`raw_document_id` **逻辑指向** datahub id（迁移新增）。
+- **D7 决定（A）**：仍指向**本地镜像** `raw_documents(id)`（**FK 不变，迁移 0**）；镜像行携带 `datahub_id` 供回溯。
+- （不采纳的 B 会去 FK、逻辑指向 datahub id——见 §4.3。）
 
-### 4.5 research 取数改走 datahub（替 akshare）
+### 4.5 research 取数改走 datahub（替 akshare · D10）
 
 `research/src/providers/*`（唯一 akshare 使用处，§1）逐域改调 datahub：`market→daily_price`、`financial→financial_indicator`、`valuation→daily_valuation`、`capital→capital_flow`、`industry→industry_index`、`macro→macro`。**优先经 MCP**（供 phase13 的 `McpProvider` 复用）。红线不变：**Number Lint / 防未来函数（`as_of` 截断在 datahub 侧或适配层）**。
+
+🔴 **D10 决定：目标全迁（D1 已定"全交"），分期落地、顺序有讲究**：
+1. **先迁 datahub 原生更强的那批**（行情/财务/**估值**）：datahub 的 `daily_price`/`financial_indicator`/`daily_valuation` 是**全历史 + 800 只 + 复权因子**，**严格强于** akshare（估值长期 `unavailable`、行情单源）→ 迁过去是**净收益**，且顺带**解锁 phase13 的估值历史分位**（D12）。
+2. **再迁需新数据集的那批**（capital 龙虎榜/北向、industry 申万、macro NBS、news、announcement-by-stock）。
+3. **不保留 akshare 常驻**——全迁完成后 research 也**零外网**，与 D1 一致。
 
 ### 4.6 删采集代码（收口阶段）
 
@@ -208,7 +238,7 @@ D2 定了"原文权威归 datahub"，但 PIKS 的**派生链**（`worker` 必须
 | `industry_index` | raw | `codes`,`start`,`end` | code,trade_date,close,change_pct | research 申万 |
 | `macro` | raw | `indicator`,`start`,`end` | indicator,period,value | research NBS |
 
-> **粒度/单位/防未来函数语义随契约冻结**；`stream` 的 `since` 游标形态见 §9。
+> **粒度/单位/防未来函数语义随契约冻结**；`stream` 的 `since` 游标 = **`seq`**（D8，见 §3.1）。
 
 ---
 
@@ -216,12 +246,14 @@ D2 定了"原文权威归 datahub"，但 PIKS 的**派生链**（`worker` 必须
 
 > 原则照 steady datahub Phase 2/3：**每数据集一把 env 闸门（默认关 → 部署零行为变更）× 同一时刻单一采集方（防双份）× 切换前逐位对账 × 一键回退**。
 
-- **P14-0 方案定稿**（本文）——过定稿门。
-- **P14-1 研报数值域**：datahub 补 §3.4 数据集 → research `providers` 切读（读闸门）→ **同一只票同一区间，新链路 vs 旧 akshare 逐位一致**为放行门。**先做低风险、且顺带交付 phase13 底座**。
+- **P14-0 方案定稿**（本文）——过定稿门（§9 子决策已定，见 §0 D7–D13）。
+- **P14-1 研报数值域**（**= phase13 的 P13-1**，D12）：datahub 补 §3.4 数据集 → research `providers` 切读（读闸门）→ **同一只票同一区间，新链路 vs 旧 akshare 逐位一致**为放行门。**先做低风险、且顺带交付 phase13 底座**。
 - **P14-2 涨停池/指数**：datahub `quote_market` 采集 + `ladder`/`market_observations` 出口 → `observations` 12 指标对账 → 切采集方。
 - **P14-3 事件原文（最大风险）**：datahub 上 `stream` kind + 移植快讯 6 源 + 公告 → **逐源对账**（同窗口抓取，`content_hash`/`external_id` 对齐）→ 切快讯采集方；**反封禁不变量逐条重验**（§3.2）。
 - **P14-4 热榜 2 源**：迁入 + 对账（两源逐条一致、`rank` 不重排）。
-- **P14-5 收口**：保留期清理迁 datahub、方案 A 的镜像同步定型、删 PIKS 采集代码、CI 守卫落地。
+- **P14-5 收口**：镜像同步定型、**D11 保留期策略落地**、删 PIKS 采集代码、CI 守卫落地。
+
+> 🔴 **D13 存量原文回填（在 P14-3 之前做一次）**：PIKS 历史 `raw_documents`（`piks-postgres`）**跨实例**回灌 datahub（`quant-postgres`）——`pg_dump --data-only | psql`，逐列映射（`source/external_id/content_hash/url/title/content/published_at/retrieved_at/extra`），**去重键（0016 语义）照搬保幂等**（复刻 steady `seed_from_steady.sh` 范式）。回填后取 `MAX(seq)` 作镜像同步初始水位；**避免历史双写**。
 
 > **停止顺序是硬约束**：每个数据集"datahub 采 + PIKS 拉"**并行对账通过**后，才停 PIKS 采集；"datahub 采"与"PIKS 采"**同一数据集不得同时为真**。
 
@@ -229,10 +261,12 @@ D2 定了"原文权威归 datahub"，但 PIKS 的**派生链**（`worker` 必须
 
 ## 7. 部署 / 鉴权 / 拓扑
 
-- **datahub 现绑 `127.0.0.1:8100`**（拓扑未定，蓝图 §9）。PIKS 消费要求二选一：**同宿主**（lab 一体）或**LAN 跨机**（HTTP + token + `DATAHUB_MCP_ALLOWED_HOSTS` 带 `:*`）。
-- **鉴权**：`DATAHUB_TOKEN`（Bearer，fail-closed）；nginx `proxy_set_header Authorization`（否则 401 假象）。
+✅ **D9 决定：同宿主 + docker 共享网络，无 TLS。** 事实依据：PIKS 在 lab `192.168.0.202`（自有 PG `piks-postgres` + 网络 `piks`）；datahub 与 steady 同处 `quant-postgres`（另一实例）——**三者同一台宿主**。
+- **实现**：建一条 external 网络（如 `piks-datahub`），PIKS 的 `web/research/tools` 容器与 datahub 都接；PIKS 按容器名调 `http://datahub:8100`。datahub 无需改绑（凭网络可达）。**流量不出宿主 → 无需 TLS、无 LAN 面**；与 steady「加入 PG 网络按容器名连」同构。
+- **TLS：本阶段不做**；仅当将来 datahub 迁独立宿主机才上（届时 token + `DATAHUB_MCP_ALLOWED_HOSTS` 带 `:*` + nginx TLS——后者是 datahub config 里已写死的 421 坑）。
+- **鉴权**：`DATAHUB_TOKEN`（Bearer，fail-closed）；若经 nginx 反代须 `proxy_set_header Authorization`（否则 401 假象）。
 - **版本/发布**：datahub 独立仓、独立版本（`v0.0.0-<短hash>` + 镜像内烘焙 `APP_VERSION`/`GIT_SHORT`），与 PIKS 发布解耦。
-- **DB**：datahub 库与 PIKS 库同在生产 PG 实例（独立库）。**注意连接池共享**（datahub `DB_POOL_SIZE` 已调小）。
+- **DB**：datahub 库（`quant-postgres`）与 PIKS 库（`piks-postgres`）**不同 PG 实例**；回填走 `pg_dump|psql`（D13）。注意 datahub `DB_POOL_SIZE` 已调小（与 steady 共享 `quant-postgres`）。
 
 ---
 
@@ -242,23 +276,29 @@ D2 定了"原文权威归 datahub"，但 PIKS 的**派生链**（`worker` 必须
 |---|---|---|
 | **Go→Python 移植丢不变量**（最大） | 反封禁护栏/签名/SSR 解析/去重键都是**事故换来的**；一次性迁移 = 把踩坑重验一遍 | §6 逐源灰度 + 逐条不变量清单 + 同窗口对账；**禁止 big-bang** |
 | **新单点** | datahub 挂 → PIKS 采集/研报取数停（与 steady 同因） | 同宿主降网络风险、datahub 自备 restart/healthcheck、PIKS 侧短 TTL 缓存 + 读闸门一键回退 |
-| **跨系统读耦合**（方案 B） | 前端事件抽屉/cluster_sources 依赖 datahub 在线 | **默认走方案 A**（本地镜像，读路径不变） |
-| **存储翻倍**（方案 A） | 原文在 datahub + PIKS 各一份 | 量级小（~1.4 千行/日）；镜像可整表重建 |
+| **跨系统读耦合** | 前端事件抽屉/cluster_sources 若依赖 datahub 在线 | **D7 = A**（本地镜像，读路径不变）——已消解 |
+| **存储翻倍**（D7 = A） | 原文在 datahub + PIKS 各一份 | 量级小（~1.4 千行/日）；镜像可整表重建 |
 | **契约跨仓漂移** | 列变更需 datahub+PIKS 两仓对齐 | 契约冻结 + 契约测试 + 版本化 + 变更须两仓 PR 联动 |
 | **自选游离在外** | D3 留 PIKS，采集不再"全在一个出口" | 如实登记：**凭据类源是唯一例外**（凭据不外流是刻意的安全边界） |
-| **保留期归属** | 清理迁 datahub 后，PIKS 派生的引用关系 datahub 不可见 | datahub 清理判据须含"**是否已被派生消费**"信号（由 PIKS 回报或 datahub 按时间窗保守清理）——须在 P14-5 定 |
+| **保留期归属** | datahub 不知道"某原文已无派生引用" | **D11 = R3**：datahub 保守归档、精细判据留 PIKS 镜像（§3.5）；将来增长需清理再上 R2 |
 
 ---
 
-## 9. 未决问题（须定稿门拍板）
+## 9. 子决策记录（v0.2 已逐个敲定）
 
-1. 🔴 **§4.3 子决策 A vs B**（默认 A：datahub 权威 + PIKS 可丢弃镜像）。
-2. `stream` 游标形态：`seq BIGSERIAL`（推荐）vs `retrieved_at` 时间窗。
-3. **部署拓扑**：datahub 与 PIKS 同宿主 vs LAN 跨机；是否上 TLS。
-4. 研报取数**全迁** vs **部分**（估值分位/资金流等 akshare 本就不全的，迁 datahub 后是否反而更强）。
-5. **保留期清理判据**（§8 最后一行）：如何让 datahub 知道某原文"已无派生引用"。
-6. 与 **phase13** 的合流点：datahub 数据集是否一次做全（供 phase13），还是随 P14 分批。
-7. 事件原文**回填**：迁移时存量 `raw_documents`（历史快讯/公告）是否回灌 datahub 作底种（保连续）。
+> 原 v0.1 §9 的 7 个未决问题，本轮（2026-10-13）**全部敲定**：
+
+| # | 问题 | 决定 | 落点 |
+|---|---|---|---|
+| 1 | 🔴 `raw_documents` 存亡 A vs B | **A**：datahub 权威 + PIKS「可丢弃镜像」（可 `TRUNCATE` 重建） | §4.3、§4.4 |
+| 2 | `stream` 游标 | **`seq BIGSERIAL`**（提交序单调；拒时间窗的乱序漏读） | §3.1 |
+| 3 | 部署拓扑 / TLS | **同宿主 + docker 共享网络**（`http://datahub:8100`），**无 TLS** | §7 |
+| 4 | 研报取数全迁 vs 部分 | **目标全迁**（D1），**分期**：先行情/财务/估值（数据更强），再 capital/industry/macro/news/announcement | §4.5 |
+| 5 | 保留期清理判据 | **R3 归档式**：datahub 保守归档；精细判据留 PIKS 镜像（不采纳 R1 回报/R2 admin 删除） | §3.5 |
+| 6 | 与 phase13 合流点 | **P14-1 兼任 P13-1**（合流是构造出来的，不专门"一次做全"） | §2.3 |
+| 7 | 存量原文回填 | **回填**：跨实例 `pg_dump\|psql`，幂等，取 `MAX(seq)` 作初始水位 | §6 |
+
+**仍未定（留给定稿门 / 后续）**：datahub 归档窗口的具体天数（默认长期）；保留期判据将来是否升级 R2；phase13 各分析师的补口清单（随其落地增量）。
 
 ---
 

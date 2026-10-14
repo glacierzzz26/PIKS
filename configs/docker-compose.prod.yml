@@ -96,6 +96,9 @@ services:
       # 数值取数从 akshare 迁往独立 datahub 服务(HTTP)。**闸门默认关**:
       # DATAHUB_READ_DATASETS 缺省空 ⇒ read_enabled 恒 False ⇒ 全量回退 akshare,
       # 与迁移前字节级同产物。放行靠逐个数据集加白名单(见 docs 数据源总览 §2.3)。
+      # 🔴 **跨机**:datahub 在 quant-server(192.168.0.201)、PIKS 在 lab(192.168.0.202),两台主机
+      #    ⇒ 走 LAN 直连,DATAHUB_BASE_URL 须覆盖为 http://192.168.0.201:8100
+      #    (默认的 datahub:8100 跨宿主解析不了);datahub 侧设 DATAHUB_BIND=192.168.0.201 暴露。
       # ⚠️ token 为空时即便列了白名单也不走 datahub(绝不未鉴权外呼)。
       - DATAHUB_BASE_URL=${DATAHUB_BASE_URL:-http://datahub:8100}
       - DATAHUB_TOKEN=${DATAHUB_TOKEN:-}
@@ -110,8 +113,8 @@ services:
         condition: service_healthy
     restart: unless-stopped
     stop_grace_period: 7m             # > TimeoutTotal:drain 在跑的 run,不 SIGKILL
-    # piks:PIKS 内部; piks-datahub:与 datahub 服务共享的**外部**网络(D9 同宿主私网,无 TLS)。
-    # 未放闸时 research 根本不外呼 datahub,挂上网络无副作用。
+    # piks:PIKS 内部;piks-datahub:**同宿主**与 datahub 共享的外部网络(仅同宿主拓扑可用)。
+    # 跨机 LAN 直连拓扑下不承载流量,保留以兼容 deploy.sh 预建(缺失会让 compose up 报错)。
     networks: [piks, piks-datahub]
 
   # 管线命令入口:`docker compose run --rm tools ./bin/<cmd>`(profile=run,不随 up 常驻)

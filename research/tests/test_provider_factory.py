@@ -45,7 +45,9 @@ def test_gate_on_routes_to_datahub_sibling(monkeypatch):
     monkeypatch.setattr(config, "DATAHUB_TOKEN", "tok")
     monkeypatch.setattr(config, "DATAHUB_READ_DATASETS", ["daily_price"])
     sentinel = object()
-    monkeypatch.setattr(factory, "_load", lambda module, attr: sentinel)
+    # 放闸分支：工厂 `_load` 拿到兄弟 provider **类** 后 `cls(as_of=...)` 实例化。
+    # 注入一个「类 → 返回 sentinel」的桩以隔离尚未接线的真实取数。
+    monkeypatch.setattr(factory, "_load", lambda module, attr: (lambda **kw: sentinel))
 
     assert factory.make_market_provider() is sentinel       # 放闸的域走 datahub
     # 未放闸的域仍回 akshare（证明按数据集逐个灰度，不是全有全无）

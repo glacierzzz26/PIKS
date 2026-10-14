@@ -4,11 +4,7 @@ from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from ..models import Symbol, resolve_symbol
-from ..providers.market import FailoverMarketProvider
-from ..providers.financial import AkShareFinancialProvider
-from ..providers.news import AkShareNewsProvider
-from ..providers.announcement import AkShareAnnouncementProvider
-from ..providers.capital import AkShareLHBProvider
+from ..providers import factory
 from ..analysis.engine import run_analysis as run_analysis_engine
 from ..analysis.capital import analyze_capital
 from ..analysis.price import analyze_price
@@ -171,9 +167,14 @@ class WorkflowEngine:
         provider_name = task.provider
         params = task.params
 
+        # ⚠️ 构造一律经 `providers.factory`（P14-1 / B6）：工厂按**读闸门**决定走 datahub
+        # 兄弟 provider 还是原 akshare provider。闸门默认空 ⇒ 惰性回退 akshare，字节级
+        # 同产物；`as_of` 只喂给 datahub 分支（防未来函数，见 B5）。**不改** task.provider
+        # 字符串 / provider_calls 键 / evidence 标签（Go 契约零改动）。
+
         if provider_name == "market":
             days = params.get("days", 60)
-            provider = FailoverMarketProvider()
+            provider = factory.make_market_provider(self.as_of)
             start = self.as_of - timedelta(days=days * 2)
             bars = provider.get_history(self.symbol, start, self.as_of)
             if len(bars) > days:
@@ -182,7 +183,7 @@ class WorkflowEngine:
 
         elif provider_name == "financial":
             quarters = params.get("quarters", 4)
-            provider = AkShareFinancialProvider()
+            provider = factory.make_financial_provider(self.as_of)
             snapshots = provider.get_financials(self.symbol, quarters=quarters)
             valuation = provider.get_valuation(self.symbol)
             self.context["financial_snapshots"] = snapshots
@@ -190,19 +191,18 @@ class WorkflowEngine:
 
         elif provider_name == "news":
             days = params.get("days", 30)
-            provider = AkShareNewsProvider()
+            provider = factory.make_news_provider(self.as_of)
             news = provider.search(self.symbol, days=days)
             self.context["news"] = news
 
         elif provider_name == "announcement":
             days = params.get("days", 30)
-            provider = AkShareAnnouncementProvider()
+            provider = factory.make_announcement_provider(self.as_of)
             announcements = provider.search(self.symbol, days=days)
             self.context["announcements"] = announcements
 
         elif provider_name == "industry":
-            from ..providers.industry.sw_provider import SwIndustryProvider
-            provider = SwIndustryProvider()
+            provider = factory.make_industry_provider(self.as_of)
             industry = provider.get_industry(self.symbol)
             self.context["industry"] = industry
 
@@ -227,7 +227,7 @@ class WorkflowEngine:
         optional 任务:采不到不阻断(未上榜是合法结论)。失败时写 None,
         渲染层出「数据暂不可得」而非编造。
         """
-        provider = AkShareLHBProvider()
+        provider = factory.make_capital_provider(self.as_of)
         days = 30
         task = next((t for t in self.plan.tasks if t.name == "collect_capital"), None)
         if task:
@@ -254,9 +254,7 @@ class WorkflowEngine:
 
         未知 key(`resolve` 返回 None)同样抛:维度表归 provider 独占,此处不猜。
         """
-        from ..providers.macro.macro_provider import MacroProvider
-
-        provider = MacroProvider()
+        provider = factory.make_macro_provider(self.as_of)
         # symbol.code 是 key(如 "cn_cpi"):Macro 的 market.value 带尾冒号,
         # full_code 才是规范主体码 "macro:cn_cpi"(见 models/symbol.py)。
         ref = provider.resolve(self.symbol.code)
@@ -280,9 +278,7 @@ class WorkflowEngine:
     def _collect_industry_index(self) -> None:
         """行业本体采集(P9 #12)。失败即抛(非 optional)—— 行业报告的行情是主章节,
         采不到就该如实失败,不像「个股的同业对比」那样可降级。"""
-        from ..providers.industry.sw_index_provider import SwIndexProvider
-
-        provider = SwIndexProvider()
+        provider = factory.make_industry_index_provider(self.as_of)
         ref = provider.resolve(self.symbol.code)
         if ref is None:
             raise ValueError(

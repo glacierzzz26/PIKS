@@ -92,6 +92,14 @@ services:
       - PIKS_RESEARCH_OUT_DIR=/data/research  # 产物持久化:断点重跑可复用(容器内 /tmp 易失)
       # 深研合成走 LLM(HTTPS),同 web 需要自签网关 CA。
       - SSL_CERT_DIR=/etc/ssl/certs:/certs
+      # ── datahub 读路径(P14-1 / phase14 §4)────────────────────────────
+      # 数值取数从 akshare 迁往独立 datahub 服务(HTTP)。**闸门默认关**:
+      # DATAHUB_READ_DATASETS 缺省空 ⇒ read_enabled 恒 False ⇒ 全量回退 akshare,
+      # 与迁移前字节级同产物。放行靠逐个数据集加白名单(见 docs 数据源总览 §2.3)。
+      # ⚠️ token 为空时即便列了白名单也不走 datahub(绝不未鉴权外呼)。
+      - DATAHUB_BASE_URL=${DATAHUB_BASE_URL:-http://datahub:8100}
+      - DATAHUB_TOKEN=${DATAHUB_TOKEN:-}
+      - DATAHUB_READ_DATASETS=${DATAHUB_READ_DATASETS:-}
     volumes:
       # 与 web 共享 piks_data,但子目录不重叠(web=/data/uploads,research=/data/research),
       # 故零数据搬迁;拆成两个卷会遗弃 lab 上已有的深研产物。
@@ -102,7 +110,9 @@ services:
         condition: service_healthy
     restart: unless-stopped
     stop_grace_period: 7m             # > TimeoutTotal:drain 在跑的 run,不 SIGKILL
-    networks: [piks]
+    # piks:PIKS 内部; piks-datahub:与 datahub 服务共享的**外部**网络(D9 同宿主私网,无 TLS)。
+    # 未放闸时 research 根本不外呼 datahub,挂上网络无副作用。
+    networks: [piks, piks-datahub]
 
   # 管线命令入口:`docker compose run --rm tools ./bin/<cmd>`(profile=run,不随 up 常驻)
   tools:
@@ -199,6 +209,11 @@ services:
 
 networks:
   piks:
+  # 与 datahub 服务共享的网络(P14-1)。**外部**:由 deploy.sh 预建(`docker network
+  # create piks-datahub`),datahub 仓库的 compose 亦声明加入同名网络 —— 两仓各自
+  # `up` 后 research 才能经服务名 `datahub:8100` 解析到对端(D9:同宿主私网,无 TLS)。
+  piks-datahub:
+    external: true
 
 volumes:
   piks_pgdata:

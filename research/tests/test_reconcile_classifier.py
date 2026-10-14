@@ -84,3 +84,19 @@ def test_hard_drift_false_on_soft_only():
     new = [{"k": "d1", "close": 10.0, "volume": 1, "turnover": 9.0}]
     out = rec.reconcile(legacy, new, "k", COLS)
     assert out["hard_drift"] is False
+
+
+def test_valuation_dataset_registered():
+    """估值虽随 financial 闸门开，但须有独立 spec 覆盖（否则对账漏一域）。"""
+    assert rec._SPECS["daily_valuation"] is rec._spec_valuation
+    assert {"market_cap", "float_cap", "pe_ttm", "pb"} <= set(rec._TOL)
+
+
+def test_drifted_carries_both_side_values():
+    """drifted 行须带双侧数值 —— 供分辨「1 手级厂商差」vs「半量级真 bug」。"""
+    legacy = [{"k": "d1", "close": 10.0, "volume": 100, "turnover": 1.0}]
+    new = [{"k": "d1", "close": 10.0, "volume": 300, "turnover": 1.0}]
+    out = rec.reconcile(legacy, new, "k", COLS)
+    row = out["buckets"]["drifted"][0]
+    assert row["columns"] == ["volume"]
+    assert row["values"]["volume"] == {"legacy": 100.0, "new": 300.0}

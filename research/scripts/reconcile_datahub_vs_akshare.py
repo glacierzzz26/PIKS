@@ -39,6 +39,7 @@ _TOL = {
     "net_margin": ("abs", 0.05), "roe": ("abs", 0.05), "debt_ratio": ("abs", 0.05),
     "level": ("rel", 0.001), "yoy": ("abs", 0.05), "mom": ("abs", 0.05),
     "pe_ttm": ("rel", 0.01), "pb": ("rel", 0.01),
+    "market_cap": ("rel", 0.01), "float_cap": ("rel", 0.01),
 }
 _HARD_COLS = frozenset({"close", "volume"})
 
@@ -75,7 +76,11 @@ def classify_row(legacy: dict, new: dict, columns) -> tuple[str, list[str]]:
 
 
 def reconcile(legacy_rows, new_rows, key_col, columns, hard_cols=_HARD_COLS) -> dict:
-    """按 key_col 比对两批行 → 5 桶 + 硬列漂移标志。"""
+    """按 key_col 比对两批行 → 5 桶 + 硬列漂移标志。
+
+    `drifted` 每项带 `values`（各漂移列的 `{legacy, new}` 双侧归一数值）——
+    用于分辨「厂商差（1 手级）」与「真 bug（半量级）」，别只给列名。
+    """
     lmap = {r.get(key_col): r for r in legacy_rows if r.get(key_col) is not None}
     nmap = {r.get(key_col): r for r in new_rows if r.get(key_col) is not None}
     n_rejected = len(legacy_rows) - len(lmap) + len(new_rows) - len(nmap)
@@ -96,7 +101,10 @@ def reconcile(legacy_rows, new_rows, key_col, columns, hard_cols=_HARD_COLS) -> 
             if status == "accepted":
                 buckets["accepted"].append({"key": str(k)})
             else:
-                buckets["drifted"].append({"key": str(k), "columns": cols})
+                vals = {c: {"legacy": _num(lmap[k].get(c)),
+                            "new": _num(nmap[k].get(c))} for c in cols}
+                buckets["drifted"].append(
+                    {"key": str(k), "columns": cols, "values": vals})
                 if set(cols) & set(hard_cols):
                     hard_drift = True
     return {"buckets": buckets, "hard_drift": hard_drift}
@@ -143,6 +151,31 @@ def _spec_financial(code, start, end, as_of):
 
     return AkShareFinancialProvider(), DataHubFinancialProvider(as_of=as_of), \
         "report_date", cols, extract
+
+
+def _spec_valuation(code, start, end, as_of):
+    """估值是**快照**（取末行），非逐日序列 ⇒ 按 `symbol` 单键比对。
+
+    ⚠️ 估值无独立读闸门，随 `financial_indicator` 闸门开关（`make_financial_provider`
+    以 `financial_indicator` 为准；`DataHubFinancialProvider.get_valuation` 内部读
+    `daily_valuation`）—— 故本 spec 与 `_spec_financial` 用同一对 provider。
+    """
+    from src.providers.financial.datahub_financial import DataHubFinancialProvider
+    from src.providers.financial.akshare_financial import AkShareFinancialProvider
+    from src.models import resolve_symbol
+
+    sym = resolve_symbol(code)
+    cols = ["pe_ttm", "pb", "market_cap", "float_cap"]
+
+    def extract(p):
+        vm = p.get_valuation(sym)
+        if vm is None:
+            return []
+        return [{"symbol": vm.symbol, "pe_ttm": vm.pe_ttm, "pb": vm.pb,
+                 "market_cap": vm.market_cap, "float_cap": vm.float_cap}]
+
+    return AkShareFinancialProvider(), DataHubFinancialProvider(as_of=as_of), \
+        "symbol", cols, extract
 
 
 def _spec_capital_flow(code, start, end, as_of):
@@ -199,6 +232,7 @@ def _spec_macro(key, start, end, as_of):
 _SPECS = {
     "daily_price": _spec_daily_price,
     "financial_indicator": _spec_financial,
+    "daily_valuation": _spec_valuation,
     "capital_flow": _spec_capital_flow,
     "industry_index": _spec_industry_index,
     "macro": _spec_macro,
@@ -209,7 +243,11 @@ def run(dataset: str, code: str, start: date, end: date, as_of: date) -> dict:
     if dataset not in _SPECS:
         raise SystemExit(f"未知数据集 {dataset!r}；支持：{', '.join(_SPECS)}")
     legacy_p, new_p, key_col, cols, extract = _SPECS[dataset](code, start, end, as_of)
-    return reconcile(extract(legacy_p), extract(new_p), key_col, cols)
+    out = reconcile(extract(legacy_p), extract(new_p), key_col, cols)
+    # 每端 provider 名（`name` 属性）：标出「谁 vs 谁」，防把异源断言成 bug。
+    out["legacy_source"] = getattr(legacy_p, "name", "legacy")
+    out["new_source"] = getattr(new_p, "name", "datahub")
+    return out
 
 
 def main(argv=None) -> int:
@@ -232,14 +270,20 @@ def main(argv=None) -> int:
 
     if args.json:
         print(json.dumps({"dataset": args.dataset, "code": args.code,
+                          "legacy_source": result.get("legacy_source"),
+                          "new_source": result.get("new_source"),
                           "summary": summary, "hard_drift": result["hard_drift"],
                           "buckets": buckets}, ensure_ascii=False, indent=2))
     else:
         print(f"[{args.dataset}] {args.code} {start}..{end} (as_of={as_of})")
+        print(f"  source: legacy={result.get('legacy_source')}  new={result.get('new_source')}")
         for k in ("accepted", "drifted", "missing_local", "extra_datahub", "rejected"):
             print(f"  {k:14s}: {len(buckets[k])}")
         for row in buckets["drifted"][:20]:
-            print(f"    drift {row['key']}: {row['columns']}")
+            vals = ", ".join(
+                f"{c}={row['values'][c]['legacy']}→{row['values'][c]['new']}"
+                for c in row["columns"])
+            print(f"    drift {row['key']}: {vals}")
         if result["hard_drift"]:
             print("  ✗ 硬列(close/volume)漂移 —— 放行门未过")
 

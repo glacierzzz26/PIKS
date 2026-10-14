@@ -39,6 +39,7 @@ _TOL = {
     "net_margin": ("abs", 0.05), "roe": ("abs", 0.05), "debt_ratio": ("abs", 0.05),
     "level": ("rel", 0.001), "yoy": ("abs", 0.05), "mom": ("abs", 0.05),
     "pe_ttm": ("rel", 0.01), "pb": ("rel", 0.01),
+    "market_cap": ("rel", 0.01), "float_cap": ("rel", 0.01),
 }
 _HARD_COLS = frozenset({"close", "volume"})
 
@@ -145,6 +146,31 @@ def _spec_financial(code, start, end, as_of):
         "report_date", cols, extract
 
 
+def _spec_valuation(code, start, end, as_of):
+    """估值是**快照**（取末行），非逐日序列 ⇒ 按 `symbol` 单键比对。
+
+    ⚠️ 估值无独立读闸门，随 `financial_indicator` 闸门开关（`make_financial_provider`
+    以 `financial_indicator` 为准；`DataHubFinancialProvider.get_valuation` 内部读
+    `daily_valuation`）—— 故本 spec 与 `_spec_financial` 用同一对 provider。
+    """
+    from src.providers.financial.datahub_financial import DataHubFinancialProvider
+    from src.providers.financial.akshare_financial import AkShareFinancialProvider
+    from src.models import resolve_symbol
+
+    sym = resolve_symbol(code)
+    cols = ["pe_ttm", "pb", "market_cap", "float_cap"]
+
+    def extract(p):
+        vm = p.get_valuation(sym)
+        if vm is None:
+            return []
+        return [{"symbol": vm.symbol, "pe_ttm": vm.pe_ttm, "pb": vm.pb,
+                 "market_cap": vm.market_cap, "float_cap": vm.float_cap}]
+
+    return AkShareFinancialProvider(), DataHubFinancialProvider(as_of=as_of), \
+        "symbol", cols, extract
+
+
 def _spec_capital_flow(code, start, end, as_of):
     from src.providers.capital.datahub_lhb import DataHubLHBProvider
     from src.providers.capital.akshare_lhb import AkShareLHBProvider
@@ -199,6 +225,7 @@ def _spec_macro(key, start, end, as_of):
 _SPECS = {
     "daily_price": _spec_daily_price,
     "financial_indicator": _spec_financial,
+    "daily_valuation": _spec_valuation,
     "capital_flow": _spec_capital_flow,
     "industry_index": _spec_industry_index,
     "macro": _spec_macro,

@@ -84,3 +84,9 @@ def test_hard_drift_false_on_soft_only():
     new = [{"k": "d1", "close": 10.0, "volume": 1, "turnover": 9.0}]
     out = rec.reconcile(legacy, new, "k", COLS)
     assert out["hard_drift"] is False
+
+
+def test_valuation_dataset_registered():
+    """估值虽随 financial 闸门开，但须有独立 spec 覆盖（否则对账漏一域）。"""
+    assert rec._SPECS["daily_valuation"] is rec._spec_valuation
+    assert {"market_cap", "float_cap", "pe_ttm", "pb"} <= set(rec._TOL)

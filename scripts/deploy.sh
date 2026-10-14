@@ -209,6 +209,11 @@ ssh "$LAB" "chmod +x $C/scripts/*.sh"
 # migrate 之后起即可;不碰 gateway。
 # ⚠️ hot-topic 依赖迁移 0018 的 hot_topic_items 表、watch-sync 依赖迁移 0020 的
 #   watchlist_entries 表,**必须排在 migrate 之后**(与 web 同理:缺表会报错空转)。
+# ⚠️ piks-datahub 是**外部**网络(P14-1):compose 里 research 声明加入它,但外部网络
+#   不存在则 `compose up` 直接报错。故预建(已存在则忽略);datahub 仓库的 compose
+#   亦声明加入同名网络,两仓各自 up 后 research 才能经服务名 `datahub:8100` 解析。
+echo "== ensure external network piks-datahub (P14-1)"
+ssh "$LAB" "docker network create piks-datahub >/dev/null 2>&1 || true"
 echo "== rollout: postgres → migrate → web/research/collector/hot-topic/watch-sync → gateway"
 ssh "$LAB" "$DC up -d postgres"
 ssh "$LAB" "until $DC exec -T postgres pg_isready -U piks -d piks >/dev/null 2>&1; do sleep 2; done"
